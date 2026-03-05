@@ -16,6 +16,8 @@
   } from "../lib/speechService";
   import { recordUsage } from "../lib/usageStore";
   import { addHistoryEntry, getHistory, deleteHistoryEntry, formatRelativeTime, type HistoryEntry } from "../lib/historyStore";
+  import { getTemplates, addTemplate, type PromptTemplate } from "../lib/templateStore";
+  import { listen } from "@tauri-apps/api/event";
   import MicButton from "./MicButton.svelte";
 
   interface Props {
@@ -61,6 +63,13 @@
 
   // Help overlay
   let helpOpen = $state(false);
+
+  // Templates
+  let templatesOpen = $state(false);
+  let templateEntries = $state<PromptTemplate[]>([]);
+  let saveTemplateMode = $state(false);
+  let saveTemplateName = $state("");
+  let showTemplateSavedToast = $state(false);
 
   // Copied toast
   let showCopiedToast = $state(false);
@@ -428,8 +437,12 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      if (helpOpen) {
+      if (saveTemplateMode) {
+        saveTemplateMode = false;
+      } else if (helpOpen) {
         helpOpen = false;
+      } else if (templatesOpen) {
+        templatesOpen = false;
       } else if (historyOpen) {
         historyOpen = false;
       } else {
@@ -472,6 +485,44 @@
   async function copyHistoryEntry(text: string) {
     await writeText(text);
   }
+
+  // Template functions
+  async function toggleTemplatesPanel() {
+    if (!templatesOpen) {
+      templateEntries = await getTemplates();
+      saveTemplateMode = false;
+      saveTemplateName = "";
+    }
+    templatesOpen = !templatesOpen;
+  }
+
+  function selectTemplate(t: PromptTemplate) {
+    editedText = t.text;
+    userHasEdited = true;
+    templatesOpen = false;
+  }
+
+  async function saveAsTemplate() {
+    const name = saveTemplateName.trim();
+    const text = editedText.trim();
+    if (!name || !text) return;
+    await addTemplate(name, text);
+    saveTemplateMode = false;
+    saveTemplateName = "";
+    showTemplateSavedToast = true;
+    setTimeout(() => { showTemplateSavedToast = false; }, 1800);
+  }
+
+  // Listen to templates-updated from Settings
+  $effect(() => {
+    let unlistenFn: (() => void) | null = null;
+    listen("templates-updated", async () => {
+      if (templatesOpen) {
+        templateEntries = await getTemplates();
+      }
+    }).then((fn) => { unlistenFn = fn; });
+    return () => { unlistenFn?.(); };
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -500,6 +551,16 @@
       {/if}
     </div>
     <div class="titlebar-buttons">
+      <button
+        class="history-toggle"
+        onclick={toggleTemplatesPanel}
+        class:active={templatesOpen}
+        aria-label="Toggle templates"
+        aria-pressed={templatesOpen}
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Templates
+      </button>
       {#if settings.history_enabled}
         <button
           class="history-toggle"
@@ -634,6 +695,9 @@
             <button class="btn btn-secondary" onclick={clearText} aria-label="Clear text" title="Clear text">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
+            <button class="btn btn-secondary" onclick={() => { saveTemplateMode = true; saveTemplateName = ""; }} aria-label="Save as template" title="Save as template">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            </button>
           {/if}
         {/if}
       </div>
@@ -646,6 +710,30 @@
         </div>
       {/if}
 
+      <!-- Save as template inline prompt -->
+      {#if saveTemplateMode}
+        <div class="save-template-prompt">
+          <span class="save-template-label">Save as template:</span>
+          <input
+            class="save-template-input"
+            type="text"
+            placeholder="Template name..."
+            bind:value={saveTemplateName}
+            onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveAsTemplate(); } if (e.key === 'Escape') { saveTemplateMode = false; } }}
+          />
+          <button class="save-template-btn" onclick={saveAsTemplate} disabled={!saveTemplateName.trim()}>Save</button>
+          <button class="save-template-cancel" onclick={() => saveTemplateMode = false}>✕</button>
+        </div>
+      {/if}
+
+      <!-- Template saved toast -->
+      {#if showTemplateSavedToast}
+        <div class="copied-toast">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Template saved!
+        </div>
+      {/if}
+
       <!-- Undo clear toast -->
       {#if showUndoToast}
         <div class="undo-toast">
@@ -655,6 +743,30 @@
       {/if}
 
     </div>
+
+    <!-- Templates side panel -->
+    {#if templatesOpen}
+      <div class="history-panel">
+        <div class="history-header">
+          <span class="history-title">Templates</span>
+          <button class="titlebar-btn" onclick={() => templatesOpen = false} aria-label="Close templates" title="Close templates">✕</button>
+        </div>
+        <div class="history-list">
+          {#if templateEntries.length === 0}
+            <div class="history-empty">No templates yet. Save text from the popup or create templates in Settings.</div>
+          {:else}
+            {#each templateEntries as t (t.id)}
+              <div class="history-entry">
+                <button class="history-entry-body" onclick={() => selectTemplate(t)} title={t.text}>
+                  <span class="history-text" style="font-weight: 600;">{t.name}</span>
+                  <span class="history-text" style="font-size: 11px; color: var(--text-secondary);">{t.text.length > 60 ? t.text.slice(0, 60) + '…' : t.text}</span>
+                </button>
+              </div>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {/if}
 
     <!-- History side panel -->
     {#if historyOpen}
@@ -1440,5 +1552,59 @@
 
   .history-action-btn.delete:hover {
     color: var(--error);
+  }
+
+  /* Save as template prompt */
+  .save-template-prompt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .save-template-label {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .save-template-input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 12px;
+    outline: none;
+  }
+  .save-template-input:focus {
+    border-color: var(--accent);
+  }
+  .save-template-btn {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .save-template-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .save-template-cancel {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+  }
+  .save-template-cancel:hover {
+    color: var(--text-primary);
   }
 </style>
