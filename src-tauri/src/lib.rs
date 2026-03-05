@@ -18,7 +18,7 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
         }
     } else {
         let _win = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("/".into()))
-            .title("Dictation")
+            .title("Voice to Prompt")
             .inner_size(420.0, 320.0)
             .decorations(false)
             .resizable(false)
@@ -30,7 +30,7 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
     }
 }
 
-fn show_settings(app: &tauri::AppHandle) {
+pub fn show_settings(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
@@ -38,7 +38,7 @@ fn show_settings(app: &tauri::AppHandle) {
 }
 
 fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let open_item = MenuItemBuilder::with_id("open", "Open Dictation").build(app)?;
+    let open_item = MenuItemBuilder::with_id("open", "Open Voice to Prompt").build(app)?;
     let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
     let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
@@ -51,7 +51,7 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 
     let _tray = TrayIconBuilder::new()
         .icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)
-        .tooltip("Speech to Text")
+        .tooltip("Developer Voice to Prompt")
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => create_or_toggle_popup(app),
@@ -120,6 +120,7 @@ pub fn run() {
             commands::update_shortcut,
             commands::get_settings,
             commands::save_settings,
+            commands::show_settings,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app

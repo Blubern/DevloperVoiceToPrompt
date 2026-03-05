@@ -11,6 +11,7 @@
     startContinuousRecognition,
     stopContinuousRecognition,
     disposeRecognizer,
+    checkMicrophonePermission,
     type SpeechCallbacks,
   } from "../lib/speechService";
   import MicButton from "./MicButton.svelte";
@@ -76,6 +77,12 @@
 
     if (!settings.azure_speech_key || !settings.azure_region) {
       errorMessage = "Please configure your Azure Speech key in Settings first.";
+      return;
+    }
+
+    const micPermission = await checkMicrophonePermission();
+    if (micPermission === "denied") {
+      errorMessage = "Microphone access was denied. Please allow microphone access in your system settings.";
       return;
     }
 
@@ -160,8 +167,13 @@
 <div class="popup-container">
   <!-- Custom title bar / drag area -->
   <div class="titlebar" data-tauri-drag-region>
-    <span class="title">Dictation</span>
-    <button class="close-btn" onclick={dismiss} title="Close (Esc)">✕</button>
+    <span class="title">Developer Voice to Prompt</span>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn" onclick={() => invoke('show_settings')} title="Settings">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="titlebar-btn close-btn" onclick={dismiss} title="Close (Esc)">✕</button>
+    </div>
   </div>
 
   <div class="content">
@@ -251,7 +263,13 @@
     color: var(--text-secondary);
   }
 
-  .close-btn {
+  .titlebar-buttons {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .titlebar-btn {
     background: none;
     border: none;
     color: var(--text-secondary);
@@ -260,10 +278,17 @@
     padding: 2px 6px;
     border-radius: 4px;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .titlebar-btn:hover {
+    background: var(--surface-hover);
+    color: var(--accent);
   }
 
   .close-btn:hover {
-    background: var(--surface-hover);
     color: var(--error);
   }
 

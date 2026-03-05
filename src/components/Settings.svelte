@@ -7,7 +7,7 @@
     AZURE_REGIONS,
     saveSettings,
   } from "../lib/settingsStore";
-  import { enumerateAudioDevices, type AudioDevice } from "../lib/speechService";
+  import { enumerateAudioDevices, checkMicrophonePermission, testAzureConnection, type AudioDevice } from "../lib/speechService";
   import ShortcutRecorder from "./ShortcutRecorder.svelte";
   import { onMount } from "svelte";
 
@@ -30,6 +30,27 @@
   let showKey = $state(false);
   let langFilter = $state("");
   let audioDevices = $state<AudioDevice[]>([]);
+  let micWarning = $state("");
+  let apiStatus = $state<"idle" | "checking" | "ok" | "error">("idle");
+  let apiError = $state("");
+
+  async function checkConnection() {
+    if (!key || !region) {
+      apiStatus = "error";
+      apiError = "Enter a speech key and region first.";
+      return;
+    }
+    apiStatus = "checking";
+    apiError = "";
+    const result = await testAzureConnection(key, region);
+    if (result.ok) {
+      apiStatus = "ok";
+      apiError = "";
+    } else {
+      apiStatus = "error";
+      apiError = result.error ?? "Connection failed.";
+    }
+  }
 
   // Sync local state when initialSettings loads (async prop)
   $effect(() => {
@@ -39,13 +60,16 @@
       languages = initialSettings.languages ?? [...DEFAULT_SETTINGS.languages];
       shortcut = initialSettings.shortcut ?? DEFAULT_SETTINGS.shortcut;
       microphoneDeviceId = initialSettings.microphone_device_id ?? "";
-      theme = initialSettings.theme ?? DEFAULT_SETTINGS.theme;
-      document.documentElement.dataset.theme = theme;
+      const savedTheme = initialSettings.theme ?? DEFAULT_SETTINGS.theme;
+      theme = savedTheme;
+      document.documentElement.dataset.theme = savedTheme;
     }
   });
 
   onMount(async () => {
-    audioDevices = await enumerateAudioDevices();
+    const result = await enumerateAudioDevices();
+    audioDevices = result.devices;
+    micWarning = result.error ?? "";
   });
 
   let filteredLanguages = $derived(
@@ -150,6 +174,32 @@
       </label>
 
       <div class="field">
+        <span class="label">Connection Status</span>
+        <div class="connection-row">
+          <button
+            type="button"
+            class="test-btn"
+            onclick={checkConnection}
+            disabled={apiStatus === 'checking'}
+          >
+            {apiStatus === 'checking' ? 'Checking...' : 'Test Connection'}
+          </button>
+          <span
+            class="status-dot"
+            class:dot-ok={apiStatus === 'ok'}
+            class:dot-error={apiStatus === 'error'}
+            class:dot-checking={apiStatus === 'checking'}
+            title={apiStatus === 'ok' ? 'Connected' : apiStatus === 'error' ? apiError : apiStatus === 'checking' ? 'Checking...' : 'Not tested'}
+          ></span>
+          {#if apiStatus === 'ok'}
+            <span class="connection-text ok">Connected</span>
+          {:else if apiStatus === 'error'}
+            <span class="connection-text err" title={apiError}>{apiError}</span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="field">
         <span class="label">Languages ({languages.length} selected)</span>
         <input
           type="text"
@@ -181,7 +231,11 @@
             <option value={device.deviceId}>{device.label}</option>
           {/each}
         </select>
-        <span class="hint">Select the microphone to use for dictation.</span>
+        {#if micWarning}
+          <span class="hint mic-warning">{micWarning}</span>
+        {:else}
+          <span class="hint">Select the microphone to use for dictation.</span>
+        {/if}
       </label>
     </div>
 
@@ -321,6 +375,76 @@
     background: var(--surface-hover);
   }
 
+  .connection-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .test-btn {
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--surface-hover);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .test-btn:hover:not(:disabled) {
+    background: var(--surface-hover);
+  }
+
+  .test-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+  }
+
+  .dot-ok {
+    background: var(--success, #a6e3a1);
+    box-shadow: 0 0 6px var(--success, #a6e3a1);
+  }
+
+  .dot-error {
+    background: var(--error, #f38ba8);
+    box-shadow: 0 0 6px var(--error, #f38ba8);
+  }
+
+  .dot-checking {
+    background: var(--warning, #f9e2af);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .connection-text {
+    font-size: 12px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .connection-text.ok {
+    color: var(--success, #a6e3a1);
+  }
+
+  .connection-text.err {
+    color: var(--error, #f38ba8);
+  }
+
   input,
   select {
     width: 100%;
@@ -351,6 +475,11 @@
   .hint {
     font-size: 11px;
     color: var(--text-muted);
+  }
+
+  .mic-warning {
+    color: var(--error, #e74c3c);
+    font-weight: 500;
   }
 
   .message {

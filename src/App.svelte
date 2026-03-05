@@ -78,7 +78,7 @@
     --input-bg: #11111b;
     --text-primary: #cdd6f4;
     --text-secondary: #a6adc8;
-    --text-muted: #7f849c;
+    --text-muted: #b0b4cc;
     --border: #45475a;
     --surface: #313244;
     --surface-hover: #585b70;

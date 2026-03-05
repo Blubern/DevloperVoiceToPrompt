@@ -39,6 +39,11 @@ pub fn hide_popup(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+pub fn show_settings(app: tauri::AppHandle) {
+    crate::show_settings(&app);
+}
+
+#[tauri::command]
 pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
     let stores = app.store("settings.json");
     if let Ok(store) = stores {
