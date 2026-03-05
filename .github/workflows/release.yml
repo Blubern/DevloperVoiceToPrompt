@@ -6,19 +6,23 @@ on:
       - 'v*'
 
 jobs:
-  release:
-    permissions:
-      contents: write
+  build:
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
             args: ''
+            os: windows
+            arch: x64
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
+            os: macos
+            arch: arm64
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
+            os: macos
+            arch: x64
 
     runs-on: ${{ matrix.platform }}
 
@@ -39,14 +43,92 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build and release
+      - name: Build Tauri app
+        id: tauri-build
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Speech to Text ${{ github.ref_name }}'
-          releaseBody: 'See the assets below to download and install this version.'
-          releaseDraft: true
-          prerelease: false
+          includeRelease: false
           args: ${{ matrix.args }}
+
+      - name: Rename artifacts
+        shell: bash
+        env:
+          ARTIFACTS: ${{ steps.tauri-build.outputs.artifactPaths }}
+          APP_VERSION: ${{ github.ref_name }}
+          OS: ${{ matrix.os }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p renamed
+
+          # Strip leading "v" from tag (v0.1.0 -> 0.1.0)
+          VERSION="${APP_VERSION#v}"
+          PREFIX="developer-voice-to-prompt-${VERSION}-${OS}-${ARCH}"
+
+          echo "Artifact paths: $ARTIFACTS"
+
+          # Parse JSON array of paths
+          echo "$ARTIFACTS" | tr -d '[]"' | tr ',' '\n' | while read -r filepath; do
+            filepath="$(echo "$filepath" | xargs)"  # trim whitespace
+            [ -z "$filepath" ] && continue
+
+            filename="$(basename "$filepath")"
+            echo "Processing: $filename"
+
+            # Determine new filename based on extension patterns
+            case "$filename" in
+              *.app.tar.gz.sig) newname="${PREFIX}.tar.gz.sig" ;;
+              *.app.tar.gz)     newname="${PREFIX}.tar.gz" ;;
+              *-setup.nsis.zip.sig) newname="${PREFIX}.nsis.zip.sig" ;;
+              *-setup.nsis.zip) newname="${PREFIX}.nsis.zip" ;;
+              *-setup.exe)      newname="${PREFIX}.exe" ;;
+              *_en-US.msi)      newname="${PREFIX}-en-us.msi" ;;
+              *.dmg)            newname="${PREFIX}.dmg" ;;
+              *.sig)            newname="${PREFIX}.sig" ;;
+              *)
+                echo "  Skipping unknown artifact: $filename"
+                continue
+                ;;
+            esac
+
+            echo "  -> $newname"
+            cp "$filepath" "renamed/$newname"
+          done
+
+          echo "Renamed artifacts:"
+          ls -la renamed/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: renamed/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -la artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Developer Voice to Prompt ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: artifacts/*
