@@ -9,6 +9,7 @@
   } from "../lib/settingsStore";
   import { enumerateAudioDevices, checkMicrophonePermission, testAzureConnection, type AudioDevice } from "../lib/speechService";
   import { getUsageStats, resetUsage, pruneOldEntries, formatDuration, type UsageStats } from "../lib/usageStore";
+  import { clearHistory, pruneHistory } from "../lib/historyStore";
   import ShortcutRecorder from "./ShortcutRecorder.svelte";
   import { onMount } from "svelte";
 
@@ -40,10 +41,18 @@
   let autoPunctuation = $state(DEFAULT_SETTINGS.auto_punctuation);
   let silenceTimeoutEnabled = $state(true);
   let silenceTimeoutSeconds = $state(DEFAULT_SETTINGS.silence_timeout_seconds);
+  let historyEnabled = $state(DEFAULT_SETTINGS.history_enabled);
+  let historyMaxEntries = $state(DEFAULT_SETTINGS.history_max_entries);
+  let popupCopyShortcut = $state(DEFAULT_SETTINGS.popup_copy_shortcut);
+  let popupVoiceShortcut = $state(DEFAULT_SETTINGS.popup_voice_shortcut);
+
+  // Tab navigation
+  let activeTab = $state<"general" | "speech" | "phrases" | "history" | "usage">("general");
 
   // Usage statistics
   let usageStats = $state<UsageStats | null>(null);
   let showResetConfirm = $state(false);
+  let showClearHistoryConfirm = $state(false);
 
   async function checkConnection() {
     if (!key || !region) {
@@ -77,6 +86,10 @@
       const savedTimeout = initialSettings.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
       silenceTimeoutEnabled = savedTimeout > 0;
       silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
+      historyEnabled = initialSettings.history_enabled ?? DEFAULT_SETTINGS.history_enabled;
+      historyMaxEntries = initialSettings.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
+      popupCopyShortcut = initialSettings.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
+      popupVoiceShortcut = initialSettings.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
       const savedTheme = initialSettings.theme ?? DEFAULT_SETTINGS.theme;
       theme = savedTheme;
       document.documentElement.dataset.theme = savedTheme;
@@ -146,6 +159,10 @@
         always_on_top: alwaysOnTop,
         auto_punctuation: autoPunctuation,
         silence_timeout_seconds: silenceTimeoutEnabled ? silenceTimeoutSeconds : 0,
+        history_enabled: historyEnabled,
+        history_max_entries: historyMaxEntries,
+        popup_copy_shortcut: popupCopyShortcut,
+        popup_voice_shortcut: popupVoiceShortcut,
       });
       success = true;
       onSaved?.();
@@ -178,6 +195,15 @@
   </div>
 
   <form onsubmit={(e) => { e.preventDefault(); handleSave(); }}>
+    <div class="tab-bar">
+      <button type="button" class="tab" class:active={activeTab === 'general'} onclick={() => activeTab = 'general'}>General</button>
+      <button type="button" class="tab" class:active={activeTab === 'speech'} onclick={() => activeTab = 'speech'}>Speech</button>
+      <button type="button" class="tab" class:active={activeTab === 'phrases'} onclick={() => activeTab = 'phrases'}>Phrases</button>
+      <button type="button" class="tab" class:active={activeTab === 'history'} onclick={() => activeTab = 'history'}>History</button>
+      <button type="button" class="tab" class:active={activeTab === 'usage'} onclick={() => activeTab = 'usage'}>Usage</button>
+    </div>
+
+    {#if activeTab === 'speech'}
     <div class="section">
       <h2>Azure Speech Service</h2>
 
@@ -274,8 +300,15 @@
         {/if}
       </label>
 
+    </div>
+    {/if}
+
+    {#if activeTab === 'phrases'}
+    <div class="section">
+      <h2>Phrase List</h2>
+
       <div class="field">
-        <span class="label">Phrase List ({phraseList.length} phrases)</span>
+        <span class="label">Custom Phrases ({phraseList.length})</span>
         <div class="input-row">
           <input
             type="text"
@@ -295,9 +328,34 @@
             {/each}
           </div>
         {/if}
-        <span class="hint">Add words or phrases to improve recognition accuracy (e.g. technical terms, names).</span>
+        <span class="hint">Add words or phrases to improve recognition accuracy (e.g. technical terms, names, project-specific vocabulary).</span>
       </div>
     </div>
+    {/if}
+
+    {#if activeTab === 'general'}
+    <div class="section">
+      <h2>General</h2>
+
+      <div class="field">
+        <span class="label">Theme</span>
+        <div class="toggle-row">
+          <button
+            type="button"
+            class="theme-toggle-inline"
+            onclick={toggleTheme}
+          >
+            {#if theme === 'dark'}
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              Light Mode
+            {:else}
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              Dark Mode
+            {/if}
+          </button>
+        </div>
+        <span class="hint">Switch between dark and light theme.</span>
+      </div>
 
     <div class="section">
       <h2>Behavior</h2>
@@ -308,6 +366,30 @@
         <span class="hint">
           {#if shortcut}
             Click "Record" to change, or "✕" to disable the shortcut
+          {:else}
+            No shortcut set. Click "Record" to assign one.
+          {/if}
+        </span>
+      </div>
+
+      <div class="field">
+        <span class="label">Popup Copy & Close Shortcut</span>
+        <ShortcutRecorder bind:value={popupCopyShortcut} />
+        <span class="hint">
+          {#if popupCopyShortcut}
+            Keyboard shortcut to copy text and close the popup.
+          {:else}
+            No shortcut set. Click "Record" to assign one.
+          {/if}
+        </span>
+      </div>
+
+      <div class="field">
+        <span class="label">Voice Toggle Shortcut</span>
+        <ShortcutRecorder bind:value={popupVoiceShortcut} />
+        <span class="hint">
+          {#if popupVoiceShortcut}
+            Keyboard shortcut to start/stop voice recording in the popup.
           {:else}
             No shortcut set. Click "Record" to assign one.
           {/if}
@@ -355,7 +437,54 @@
         <span class="hint">Automatically stop recording after this many seconds of silence to save costs. Set 10–300 seconds, or disable.</span>
       </div>
     </div>
+    </div>
+    {/if}
 
+    {#if activeTab === 'history'}
+    <div class="section">
+      <h2>History</h2>
+
+      <label class="field toggle-field">
+        <span class="label">Enable History</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={historyEnabled} class="toggle-checkbox" />
+          <span class="toggle-label">{historyEnabled ? 'On' : 'Off'}</span>
+        </div>
+        <span class="hint">Save transcription history for later reference.</span>
+      </label>
+
+      <label class="field">
+        <span class="label">Maximum Entries</span>
+        <input
+          type="number"
+          min="1"
+          max="500"
+          bind:value={historyMaxEntries}
+          disabled={!historyEnabled}
+          style="width: 100px;"
+        />
+        <span class="hint">Oldest entries are removed when the limit is reached (1–500).</span>
+      </label>
+
+      <div class="field">
+        <span class="label">Clear History</span>
+        {#if showClearHistoryConfirm}
+          <div class="usage-actions">
+            <span class="reset-confirm-text">Delete all history entries?</span>
+            <button type="button" class="toggle-btn reset-yes" onclick={async () => { await clearHistory(); showClearHistoryConfirm = false; }}>Yes, clear</button>
+            <button type="button" class="toggle-btn" onclick={() => (showClearHistoryConfirm = false)}>Cancel</button>
+          </div>
+        {:else}
+          <div class="usage-actions">
+            <button type="button" class="toggle-btn" onclick={() => (showClearHistoryConfirm = true)}>Clear All History</button>
+          </div>
+        {/if}
+        <span class="hint">Permanently remove all saved transcription history.</span>
+      </div>
+    </div>
+    {/if}
+
+    {#if activeTab === 'usage'}
     <div class="section">
       <h2>Usage Statistics</h2>
       {#if usageStats}
@@ -391,6 +520,7 @@
         <p class="hint">Loading usage data...</p>
       {/if}
     </div>
+    {/if}
 
     {#if error}
       <div class="message error">{error}</div>
@@ -431,6 +561,40 @@
     font-weight: 600;
   }
 
+  .tab-bar {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 3px;
+    border: 1px solid var(--border);
+  }
+
+  .tab {
+    flex: 1;
+    padding: 7px 0;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.15s;
+  }
+
+  .tab:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
+  .tab.active {
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-weight: 600;
+  }
+
   h2 {
     margin: 0 0 12px 0;
     font-size: 14px;
@@ -454,6 +618,26 @@
   }
 
   .theme-toggle:hover {
+    background: var(--surface-hover);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .theme-toggle-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--surface-hover);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+
+  .theme-toggle-inline:hover {
     background: var(--surface-hover);
     color: var(--accent);
     border-color: var(--accent);

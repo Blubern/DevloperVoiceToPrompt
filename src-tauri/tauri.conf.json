@@ -18,8 +18,8 @@
       {
         "label": "main",
         "title": "Developer Voice to Prompt - Settings",
-        "width": 520,
-        "height": 620,
+        "width": 720,
+        "height": 780,
         "resizable": true,
         "visible": false,
         "center": true

@@ -15,6 +15,10 @@ pub struct AppSettings {
     pub always_on_top: bool,
     pub auto_punctuation: bool,
     pub silence_timeout_seconds: u32,
+    pub history_enabled: bool,
+    pub history_max_entries: u32,
+    pub popup_copy_shortcut: String,
+    pub popup_voice_shortcut: String,
 }
 
 impl Default for AppSettings {
@@ -30,6 +34,10 @@ impl Default for AppSettings {
             always_on_top: true,
             auto_punctuation: true,
             silence_timeout_seconds: 30,
+            history_enabled: true,
+            history_max_entries: 50,
+            popup_copy_shortcut: "CommandOrControl+Enter".into(),
+            popup_voice_shortcut: "CommandOrControl+Shift+R".into(),
         }
     }
 }
@@ -69,6 +77,10 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
         let always_on_top = store.get("always_on_top").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
         let auto_punctuation = store.get("auto_punctuation").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
         let silence_timeout_seconds = store.get("silence_timeout_seconds").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(30) as u32;
+        let history_enabled = store.get("history_enabled").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(false);
+        let history_max_entries = store.get("history_max_entries").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(50) as u32;
+        let popup_copy_shortcut = store.get("popup_copy_shortcut").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "CommandOrControl+Enter".into());
+        let popup_voice_shortcut = store.get("popup_voice_shortcut").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "CommandOrControl+Shift+R".into());
         AppSettings {
             azure_speech_key: key,
             azure_region: region,
@@ -80,6 +92,10 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
             always_on_top,
             auto_punctuation,
             silence_timeout_seconds,
+            history_enabled,
+            history_max_entries,
+            popup_copy_shortcut,
+            popup_voice_shortcut,
         }
     } else {
         AppSettings::default()
@@ -100,6 +116,10 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     store.set("always_on_top", serde_json::json!(settings.always_on_top));
     store.set("auto_punctuation", serde_json::json!(settings.auto_punctuation));
     store.set("silence_timeout_seconds", serde_json::json!(settings.silence_timeout_seconds));
+    store.set("history_enabled", serde_json::json!(settings.history_enabled));
+    store.set("history_max_entries", serde_json::json!(settings.history_max_entries));
+    store.set("popup_copy_shortcut", serde_json::json!(settings.popup_copy_shortcut));
+    store.set("popup_voice_shortcut", serde_json::json!(settings.popup_voice_shortcut));
 
     // Flush to disk immediately so settings survive dev restarts
     store.save().map_err(|e| format!("Failed to save settings to disk: {}", e))?;

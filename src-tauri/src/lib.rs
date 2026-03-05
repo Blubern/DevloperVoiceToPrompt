@@ -12,7 +12,7 @@ mod commands;
 fn create_or_toggle_popup(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
         if win.is_visible().unwrap_or(false) {
-            let _ = win.hide();
+            let _ = win.set_focus();
         } else {
             let _ = win.show();
             let _ = win.set_focus();

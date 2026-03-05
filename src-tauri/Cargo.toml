@@ -1,12 +1,12 @@
 [package]
-name = "speech-to-text"
+name = "DeveloperVoiceToPrompt"
 version = "0.1.0"
 description = "Azure Speech to Text dictation tool"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "speech_to_text_lib"
+name = "developer_voice_to_prompt_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

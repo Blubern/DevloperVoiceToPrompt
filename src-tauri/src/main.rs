@@ -1,3 +1,3 @@
 fn main() {
-    speech_to_text_lib::run()
+    developer_voice_to_prompt_lib::run()
 }

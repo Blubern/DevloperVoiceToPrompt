@@ -16,6 +16,9 @@ A lightweight desktop dictation tool powered by Azure Speech Services, built wit
 - **Copy to clipboard** — one-click copy and dismiss
 - **Microphone selection** — choose from available audio input devices
 - **Dark / Light theme** — Catppuccin Mocha and Latte color palettes
+- **Tabbed settings** — settings organized into General, Speech, History, and Usage tabs for a cleaner experience
+- **Transcription history** — optionally save transcription history with configurable max entries
+- **History side panel** — slide-out panel in the dictation popup to browse, reuse, copy, or delete past transcriptions
 - **Persistent settings** — configuration survives app restarts
 - **Always-on-top popup** — floating dictation window stays above other apps
 
@@ -109,9 +112,9 @@ The installer is output to `src-tauri/target/release/bundle/`.
 │  ┌───────────────┐  ┌────────────────────────┐  │
 │  │ Settings      │  │ Popup (Dictation)      │  │
 │  │ Window        │  │ Window                 │  │
-│  │ (520×620)     │  │ (600×450 default,      │  │
-│  │               │  │  resizable, always-on- │  │
-│  │               │  │  top, no decorations)  │  │
+│  │ (520×620,     │  │ (600×450 default,      │  │
+│  │  tabbed)      │  │  resizable, always-on- │  │
+│  │               │  │  top, + history panel)  │  │
 │  └───────────────┘  └────────────────────────┘  │
 │              │                    │               │
 │         Azure Speech SDK (WebSocket)             │
@@ -125,7 +128,7 @@ The installer is output to `src-tauri/target/release/bundle/`.
 - **Main window** — Settings configuration with OS window decorations
 - **Popup window** — Floating dictation overlay, draggable custom title bar, resizable with saved position, no taskbar entry
 
-Settings are stored via `tauri-plugin-store` as a JSON file (`settings.json`). Usage statistics are tracked in a separate `usage.json` store. The global shortcut is registered at startup from stored settings and re-registered on save. The Azure Speech SDK runs in the WebView, connecting via WebSocket to Azure for real-time transcription.
+Settings are stored via `tauri-plugin-store` as a JSON file (`settings.json`). Usage statistics are tracked in a separate `usage.json` store, and transcription history is stored in `history.json`. The global shortcut is registered at startup from stored settings and re-registered on save. The Azure Speech SDK runs in the WebView, connecting via WebSocket to Azure for real-time transcription.
 
 ## Theming
 

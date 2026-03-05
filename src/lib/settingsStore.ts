@@ -11,6 +11,10 @@ export interface AppSettings {
   always_on_top: boolean;
   auto_punctuation: boolean;
   silence_timeout_seconds: number;
+  history_enabled: boolean;
+  history_max_entries: number;
+  popup_copy_shortcut: string;
+  popup_voice_shortcut: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -24,6 +28,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   always_on_top: true,
   auto_punctuation: true,
   silence_timeout_seconds: 30,
+  history_enabled: true,
+  history_max_entries: 50,
+  popup_copy_shortcut: "CommandOrControl+Enter",
+  popup_voice_shortcut: "CommandOrControl+Shift+R",
 };
 
 export const AZURE_REGIONS = [

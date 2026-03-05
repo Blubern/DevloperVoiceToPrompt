@@ -14,6 +14,8 @@
     "core:window:allow-inner-size",
     "core:window:allow-outer-position",
     "core:window:allow-scale-factor",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
