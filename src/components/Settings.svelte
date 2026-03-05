@@ -47,6 +47,7 @@
   let newPhrase = $state("");
   let alwaysOnTop = $state(DEFAULT_SETTINGS.always_on_top);
   let autoPunctuation = $state(DEFAULT_SETTINGS.auto_punctuation);
+  let autoStartRecording = $state(DEFAULT_SETTINGS.auto_start_recording);
   let silenceTimeoutEnabled = $state(true);
   let silenceTimeoutSeconds = $state(DEFAULT_SETTINGS.silence_timeout_seconds);
   let maxRecordingEnabled = $state(DEFAULT_SETTINGS.max_recording_enabled);
@@ -146,6 +147,7 @@
       phraseList = initialSettings.phrase_list ? [...initialSettings.phrase_list] : [];
       alwaysOnTop = initialSettings.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
       autoPunctuation = initialSettings.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
+      autoStartRecording = initialSettings.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording;
       const savedTimeout = initialSettings.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
       silenceTimeoutEnabled = savedTimeout > 0;
       silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
@@ -182,6 +184,7 @@
     if (JSON.stringify(phraseList) !== JSON.stringify(saved.phrase_list ?? [])) return true;
     if (alwaysOnTop !== (saved.always_on_top ?? DEFAULT_SETTINGS.always_on_top)) return true;
     if (autoPunctuation !== (saved.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation)) return true;
+    if (autoStartRecording !== (saved.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording)) return true;
     const savedTimeout = saved.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
     const currentTimeout = silenceTimeoutEnabled ? silenceTimeoutSeconds : 0;
     if (currentTimeout !== savedTimeout) return true;
@@ -213,6 +216,7 @@
     phraseList = s.phrase_list ? [...s.phrase_list] : [];
     alwaysOnTop = s.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
     autoPunctuation = s.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
+    autoStartRecording = s.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording;
     const savedTimeout = s.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
     silenceTimeoutEnabled = savedTimeout > 0;
     silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
@@ -388,6 +392,7 @@
         phrase_list: phraseList,
         always_on_top: alwaysOnTop,
         auto_punctuation: autoPunctuation,
+        auto_start_recording: autoStartRecording,
         silence_timeout_seconds: silenceTimeoutEnabled ? silenceTimeoutSeconds : 0,
         history_enabled: historyEnabled,
         history_max_entries: historyMaxEntries,
@@ -653,6 +658,15 @@
         {/if}
       </label>
 
+      <label class="field toggle-field">
+        <span class="label">Auto Punctuation</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={autoPunctuation} class="toggle-checkbox" />
+          <span class="toggle-label">{autoPunctuation ? 'On' : 'Off'}</span>
+        </div>
+        <span class="hint">Automatically add punctuation and capitalization to dictated text (Azure only).</span>
+      </label>
+
     </div>
     {/if}
 
@@ -871,12 +885,12 @@
       </label>
 
       <label class="field toggle-field">
-        <span class="label">Auto Punctuation</span>
+        <span class="label">Auto-Start Recording</span>
         <div class="toggle-row">
-          <input type="checkbox" bind:checked={autoPunctuation} class="toggle-checkbox" />
-          <span class="toggle-label">{autoPunctuation ? 'On' : 'Off'}</span>
+          <input type="checkbox" bind:checked={autoStartRecording} class="toggle-checkbox" />
+          <span class="toggle-label">{autoStartRecording ? 'On' : 'Off'}</span>
         </div>
-        <span class="hint">Automatically add punctuation and capitalization to dictated text.</span>
+        <span class="hint">Automatically start recording when the popup opens.</span>
       </label>
 
       <div class="field">

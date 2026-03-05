@@ -6,6 +6,7 @@
   import type { AppSettings } from "../lib/settingsStore";
   import {
     SUPPORTED_LANGUAGES,
+    saveSettings,
   } from "../lib/settingsStore";
   import {
     createSpeechProvider,
@@ -17,7 +18,7 @@
   import { recordUsage } from "../lib/usageStore";
   import { addHistoryEntry, getHistory, deleteHistoryEntry, formatRelativeTime, type HistoryEntry } from "../lib/historyStore";
   import { getTemplates, addTemplate, type PromptTemplate } from "../lib/templateStore";
-  import { listen } from "@tauri-apps/api/event";
+  import { listen, emit } from "@tauri-apps/api/event";
   import MicButton from "./MicButton.svelte";
 
   interface Props {
@@ -97,6 +98,20 @@
   // Elapsed time display
   let elapsedSeconds = $state(0);
   let elapsedInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Language dropdown state
+  let langDropdownOpen = $state(false);
+  let langDropdownFilter = $state("");
+
+  let filteredPopupLanguages = $derived(
+    langDropdownFilter.trim()
+      ? SUPPORTED_LANGUAGES.filter(
+          (l) =>
+            l.label.toLowerCase().includes(langDropdownFilter.trim().toLowerCase()) ||
+            l.code.toLowerCase().includes(langDropdownFilter.trim().toLowerCase())
+        )
+      : SUPPORTED_LANGUAGES
+  );
 
   // Auto-scroll tracking
   let userScrolledUp = false;
@@ -271,6 +286,43 @@
       getHistory().then(entries => { historyCount = entries.length; });
     } else {
       historyCount = 0;
+    }
+  });
+
+  // Auto-start recording when popup opens / regains focus
+  let autoStartDone = $state(false);
+
+  // Reset auto-start flag when popup regains focus (popup is show/hide, not recreated)
+  $effect(() => {
+    const win = getCurrentWindow();
+    let unlisten: (() => void) | null = null;
+    win.onFocusChanged(({ payload: focused }) => {
+      if (focused && settings.auto_start_recording && status === "idle" && !editedText) {
+        autoStartDone = false;
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  });
+
+  $effect(() => {
+    if (settings.auto_start_recording && status === "idle" && !editedText && !autoStartDone) {
+      // Check provider config validity before auto-starting
+      const canStart =
+        (settings.speech_provider === "azure" && settings.azure_speech_key && settings.azure_region) ||
+        (settings.speech_provider === "os" && webSpeechAvailable) ||
+        (settings.speech_provider === "whisper" && settings.whisper_model);
+      if (canStart) {
+        autoStartDone = true;
+        // Slight delay to let the popup fully render
+        setTimeout(() => toggleMic(), 150);
+      }
+    }
+  });
+
+  // Close language dropdown when recording starts
+  $effect(() => {
+    if (status === "listening") {
+      langDropdownOpen = false;
     }
   });
 
@@ -562,6 +614,42 @@
     setTimeout(() => { showTemplateSavedToast = false; }, 1800);
   }
 
+  // Language selector functions for popup
+  function togglePopupAzureLang(code: string) {
+    const current = settings.languages;
+    let newLangs: string[];
+    if (current.includes(code)) {
+      if (current.length > 1) {
+        newLangs = current.filter((l) => l !== code);
+      } else {
+        return; // Keep at least one
+      }
+    } else {
+      newLangs = [...current, code];
+    }
+    settings = { ...settings, languages: newLangs };
+    persistLanguageChange();
+  }
+
+  function selectPopupSingleLang(code: string) {
+    if (settings.speech_provider === "os") {
+      settings = { ...settings, os_language: code };
+    } else if (settings.speech_provider === "whisper") {
+      settings = { ...settings, whisper_language: code };
+    }
+    langDropdownOpen = false;
+    persistLanguageChange();
+  }
+
+  async function persistLanguageChange() {
+    try {
+      await saveSettings(settings);
+      await emit("settings-updated");
+    } catch (e) {
+      console.error("Failed to persist language change:", e);
+    }
+  }
+
   // Listen to templates-updated from Settings
   $effect(() => {
     let unlistenFn: (() => void) | null = null;
@@ -574,7 +662,7 @@
   });
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onclick={() => { langDropdownOpen = false; }} />
 
 <div class="popup-container">
   <!-- Compact title bar -->
@@ -594,11 +682,68 @@
         {providerLabel(settings.speech_provider)}
       </button>
       {#if settings.speech_provider === "azure" && settings.languages.length > 0}
-        <span class="lang-indicator" title={languageDisplayLabels.join(', ')}>{languageDisplayLabels.join(' · ')}</span>
+        {#if status === "listening"}
+          <span class="lang-indicator" title={languageDisplayLabels.join(', ')}>{languageDisplayLabels.join(' · ')}</span>
+        {:else}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change languages">
+            {languageDisplayLabels.join(' · ')} ▾
+          </button>
+        {/if}
       {:else if settings.speech_provider === "os"}
-        <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel()}</span>
+        {#if status === "listening"}
+          <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel()}</span>
+        {:else}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
+            {osLanguageDisplayLabel()} ▾
+          </button>
+        {/if}
       {:else if settings.speech_provider === "whisper"}
-        <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel()}</span>
+        {#if status === "listening"}
+          <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel()}</span>
+        {:else}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
+            {whisperLanguageDisplayLabel()} ▾
+          </button>
+        {/if}
+      {/if}
+      {#if langDropdownOpen && status !== "listening"}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="lang-dropdown" onclick={(e) => e.stopPropagation()}>
+          <input
+            class="lang-dropdown-filter"
+            type="text"
+            placeholder="Filter languages..."
+            bind:value={langDropdownFilter}
+          />
+          <div class="lang-dropdown-list">
+            {#each filteredPopupLanguages as lang}
+              {#if settings.speech_provider === "azure"}
+                <label class="lang-dropdown-item">
+                  <input
+                    type="checkbox"
+                    checked={settings.languages.includes(lang.code)}
+                    onchange={() => togglePopupAzureLang(lang.code)}
+                  />
+                  <span>{lang.label}</span>
+                  <span class="lang-dropdown-code">{lang.code}</span>
+                </label>
+              {:else}
+                <button
+                  class="lang-dropdown-item"
+                  class:selected={settings.speech_provider === 'os' ? settings.os_language === lang.code : settings.whisper_language === lang.code}
+                  onclick={() => selectPopupSingleLang(lang.code)}
+                >
+                  <span>{lang.label}</span>
+                  <span class="lang-dropdown-code">{lang.code}</span>
+                </button>
+              {/if}
+            {/each}
+          </div>
+        </div>
       {/if}
     </div>
     <div class="titlebar-buttons">
@@ -693,6 +838,11 @@
               <span class="empty-state-text">Download a Whisper model in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
             {:else}
               <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
+            {/if}
+            {#if settings.provider_switch_shortcut}
+              <span class="empty-state-hint">Press <kbd>{formatShortcutLabel(settings.provider_switch_shortcut)}</kbd> to switch between Web, Azure, and Whisper</span>
+            {:else}
+              <span class="empty-state-hint">Configure a provider switch shortcut in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to quickly switch providers</span>
             {/if}
           </div>
         {/if}
@@ -1659,5 +1809,94 @@
   }
   .save-template-cancel:hover {
     color: var(--text-primary);
+  }
+
+  /* Empty state hint for provider switch shortcut */
+  .empty-state-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+    pointer-events: auto;
+    opacity: 0.7;
+  }
+  .empty-state-hint kbd {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    font-weight: 600;
+  }
+
+  /* Language selector dropdown */
+  .lang-selector-btn {
+    cursor: pointer;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .lang-selector-btn:hover {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+
+  .titlebar-left {
+    position: relative;
+  }
+
+  .lang-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    width: 240px;
+    max-height: 280px;
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
+  }
+  .lang-dropdown-filter {
+    padding: 6px 8px;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 11px;
+    outline: none;
+    border-radius: 6px 6px 0 0;
+  }
+  .lang-dropdown-list {
+    overflow-y: auto;
+    max-height: 240px;
+    padding: 4px 0;
+  }
+  .lang-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--text-primary);
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+  .lang-dropdown-item:hover {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+  .lang-dropdown-item.selected {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    font-weight: 600;
+  }
+  .lang-dropdown-code {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 10px;
   }
 </style>

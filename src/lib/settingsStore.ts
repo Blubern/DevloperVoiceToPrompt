@@ -17,6 +17,7 @@ export interface AppSettings {
   phrase_list: string[];
   always_on_top: boolean;
   auto_punctuation: boolean;
+  auto_start_recording: boolean;
   silence_timeout_seconds: number;
   history_enabled: boolean;
   history_max_entries: number;
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   phrase_list: [],
   always_on_top: true,
   auto_punctuation: true,
+  auto_start_recording: false,
   silence_timeout_seconds: 30,
   history_enabled: true,
   history_max_entries: 50,

@@ -20,6 +20,7 @@ pub struct AppSettings {
     pub phrase_list: Vec<String>,
     pub always_on_top: bool,
     pub auto_punctuation: bool,
+    pub auto_start_recording: bool,
     pub silence_timeout_seconds: u32,
     pub history_enabled: bool,
     pub history_max_entries: u32,
@@ -49,6 +50,7 @@ impl Default for AppSettings {
             phrase_list: vec![],
             always_on_top: true,
             auto_punctuation: true,
+            auto_start_recording: false,
             silence_timeout_seconds: 30,
             history_enabled: true,
             history_max_entries: 50,
@@ -102,6 +104,7 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
         }).unwrap_or_default();
         let always_on_top = store.get("always_on_top").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
         let auto_punctuation = store.get("auto_punctuation").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
+        let auto_start_recording = store.get("auto_start_recording").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(false);
         let silence_timeout_seconds = store.get("silence_timeout_seconds").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(30) as u32;
         let history_enabled = store.get("history_enabled").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(false);
         let history_max_entries = store.get("history_max_entries").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(50) as u32;
@@ -127,6 +130,7 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
             phrase_list,
             always_on_top,
             auto_punctuation,
+            auto_start_recording,
             silence_timeout_seconds,
             history_enabled,
             history_max_entries,
@@ -161,6 +165,7 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     store.set("phrase_list", serde_json::json!(settings.phrase_list));
     store.set("always_on_top", serde_json::json!(settings.always_on_top));
     store.set("auto_punctuation", serde_json::json!(settings.auto_punctuation));
+    store.set("auto_start_recording", serde_json::json!(settings.auto_start_recording));
     store.set("silence_timeout_seconds", serde_json::json!(settings.silence_timeout_seconds));
     store.set("history_enabled", serde_json::json!(settings.history_enabled));
     store.set("history_max_entries", serde_json::json!(settings.history_max_entries));
