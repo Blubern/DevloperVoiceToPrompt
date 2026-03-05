@@ -12,7 +12,7 @@
   "app": {
     "withGlobalTauri": true,
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://*.speech.microsoft.com https://*.api.cognitive.microsoft.com wss://*.speech.microsoft.com wss://*.stt.speech.microsoft.com; media-src 'self'; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' https://*.speech.microsoft.com https://*.api.cognitive.microsoft.com wss://*.speech.microsoft.com wss://*.stt.speech.microsoft.com https://github.com https://api.github.com; img-src 'self' https://github.com https://avatars.githubusercontent.com; media-src 'self'; script-src 'self'"
     },
     "windows": [
       {
@@ -29,6 +29,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": [
+      "scripts/copilot-bridge.mjs"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

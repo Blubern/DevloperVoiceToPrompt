@@ -23,6 +23,7 @@
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
     "store:default",
-    "process:default"
+    "process:default",
+    "shell:default"
   ]
 }

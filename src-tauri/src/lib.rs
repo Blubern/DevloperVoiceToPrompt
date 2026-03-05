@@ -8,6 +8,7 @@ use tauri::{
 use tauri_plugin_store::StoreExt;
 
 mod commands;
+mod copilot;
 mod whisper;
 
 fn create_or_toggle_popup(app: &tauri::AppHandle) {
@@ -137,7 +138,9 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(whisper::WhisperState::default())
+        .manage(copilot::CopilotState::default())
         .invoke_handler(tauri::generate_handler![
             commands::toggle_popup,
             commands::hide_popup,
@@ -150,6 +153,10 @@ pub fn run() {
             commands::whisper_delete_model,
             commands::whisper_load_model,
             commands::whisper_transcribe,
+            copilot::copilot_init,
+            copilot::copilot_auth_status,
+            copilot::copilot_list_models,
+            copilot::copilot_stop,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app
