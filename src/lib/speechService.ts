@@ -1,4 +1,5 @@
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
+import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "./settingsStore";
 
 // ---------------------------------------------------------------------------
@@ -301,6 +302,178 @@ export class AzureSpeechProvider implements SpeechProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Whisper (local) provider
+// ---------------------------------------------------------------------------
+
+export class WhisperSpeechProvider implements SpeechProvider {
+  private callbacks: SpeechCallbacks | null = null;
+  private audioContext: AudioContext | null = null;
+  private mediaStream: MediaStream | null = null;
+  private workletNode: AudioWorkletNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private pcmBuffer: Float32Array = new Float32Array(0);
+  private chunkTimer: ReturnType<typeof setInterval> | null = null;
+  private running = false;
+
+  constructor(
+    private modelName: string,
+    private language: string,
+    private chunkSeconds: number,
+    private microphoneDeviceId?: string,
+    private phraseList?: string[],
+  ) {}
+
+  start(callbacks: SpeechCallbacks): void {
+    this.callbacks = callbacks;
+    this.running = true;
+    this._startAsync(callbacks).catch((err) => {
+      callbacks.onError(String(err));
+      callbacks.onStatusChange("error");
+    });
+  }
+
+  private async _startAsync(callbacks: SpeechCallbacks): Promise<void> {
+    // Ensure model is loaded
+    await invoke("whisper_load_model", { modelName: this.modelName });
+
+    // Open mic at 16 kHz
+    const constraints: MediaStreamConstraints = {
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        ...(this.microphoneDeviceId ? { deviceId: { exact: this.microphoneDeviceId } } : {}),
+      },
+    };
+    this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+    this.audioContext = new AudioContext({ sampleRate: 16000 });
+
+    // Use AudioWorklet for PCM capture
+    const workletCode = `
+      class PCMProcessor extends AudioWorkletProcessor {
+        process(inputs) {
+          const ch = inputs[0]?.[0];
+          if (ch) this.port.postMessage(ch);
+          return true;
+        }
+      }
+      registerProcessor('pcm-processor', PCMProcessor);
+    `;
+    const blob = new Blob([workletCode], { type: "application/javascript" });
+    const workletUrl = URL.createObjectURL(blob);
+    await this.audioContext.audioWorklet.addModule(workletUrl);
+    URL.revokeObjectURL(workletUrl);
+
+    this.workletNode = new AudioWorkletNode(this.audioContext, "pcm-processor");
+    this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+      if (!this.running) return;
+      const incoming = e.data;
+      const merged = new Float32Array(this.pcmBuffer.length + incoming.length);
+      merged.set(this.pcmBuffer);
+      merged.set(incoming, this.pcmBuffer.length);
+      this.pcmBuffer = merged;
+    };
+
+    this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
+    this.sourceNode.connect(this.workletNode);
+    this.workletNode.connect(this.audioContext.destination); // required for processing
+
+    callbacks.onStatusChange("listening");
+
+    // Periodically flush buffer and transcribe
+    const chunkMs = this.chunkSeconds * 1000;
+    this.chunkTimer = setInterval(() => {
+      this._flushAndTranscribe();
+    }, chunkMs);
+  }
+
+  private async _flushAndTranscribe(): Promise<void> {
+    if (!this.running || !this.callbacks) return;
+    if (this.pcmBuffer.length === 0) return;
+
+    const samples = this.pcmBuffer;
+    this.pcmBuffer = new Float32Array(0);
+
+    // Skip silent chunks — compute RMS energy and discard if below threshold.
+    // This prevents Whisper from hallucinating phrase-list text on silence.
+    let sumSq = 0;
+    for (let i = 0; i < samples.length; i++) {
+      sumSq += samples[i] * samples[i];
+    }
+    const rms = Math.sqrt(sumSq / samples.length);
+    if (rms < 0.01) return; // ~-40 dB, effectively silence
+
+    // Encode float32 PCM to base64
+    const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const audioB64 = btoa(binary);
+
+    const initialPrompt =
+      this.phraseList && this.phraseList.length > 0
+        ? this.phraseList.join(", ")
+        : undefined;
+
+    try {
+      const text = await invoke<string>("whisper_transcribe", {
+        audioB64,
+        sampleRate: 16000,
+        language: this.language,
+        initialPrompt,
+      });
+      if (text && this.running) {
+        this.callbacks.onFinal(text);
+      }
+    } catch (err) {
+      if (this.running) {
+        this.callbacks?.onError(`Whisper transcription error: ${err}`);
+      }
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.running = false;
+    if (this.chunkTimer) {
+      clearInterval(this.chunkTimer);
+      this.chunkTimer = null;
+    }
+    // Transcribe any remaining audio
+    await this._flushAndTranscribe();
+    this._cleanup();
+    this.callbacks?.onStatusChange("idle");
+  }
+
+  dispose(): void {
+    this.running = false;
+    if (this.chunkTimer) {
+      clearInterval(this.chunkTimer);
+      this.chunkTimer = null;
+    }
+    this._cleanup();
+    this.callbacks = null;
+  }
+
+  private _cleanup(): void {
+    this.workletNode?.disconnect();
+    this.workletNode = null;
+    this.sourceNode?.disconnect();
+    this.sourceNode = null;
+    if (this.audioContext) {
+      this.audioContext.close().catch(() => {});
+      this.audioContext = null;
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((t) => t.stop());
+      this.mediaStream = null;
+    }
+    this.pcmBuffer = new Float32Array(0);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -313,6 +486,15 @@ export function createSpeechProvider(settings: AppSettings): SpeechProvider {
       settings.microphone_device_id || undefined,
       settings.phrase_list.length > 0 ? settings.phrase_list : undefined,
       settings.auto_punctuation,
+    );
+  }
+  if (settings.speech_provider === "whisper") {
+    return new WhisperSpeechProvider(
+      settings.whisper_model,
+      settings.whisper_language,
+      settings.whisper_chunk_seconds,
+      settings.microphone_device_id || undefined,
+      settings.phrase_list.length > 0 ? settings.phrase_list : undefined,
     );
   }
   return new OsSpeechProvider(

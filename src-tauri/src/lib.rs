@@ -8,6 +8,7 @@ use tauri::{
 use tauri_plugin_store::StoreExt;
 
 mod commands;
+mod whisper;
 
 fn create_or_toggle_popup(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
@@ -136,6 +137,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(whisper::WhisperState::default())
         .invoke_handler(tauri::generate_handler![
             commands::toggle_popup,
             commands::hide_popup,
@@ -143,6 +145,11 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::show_settings,
+            commands::whisper_list_models,
+            commands::whisper_download_model,
+            commands::whisper_delete_model,
+            commands::whisper_load_model,
+            commands::whisper_transcribe,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app

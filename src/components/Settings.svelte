@@ -7,6 +7,8 @@
     AZURE_REGIONS,
     saveSettings,
   } from "../lib/settingsStore";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { enumerateAudioDevices, checkMicrophonePermission, testAzureConnection, webSpeechAvailable, type AudioDevice } from "../lib/speechService";
   import { getUsageStats, resetUsage, pruneOldEntries, formatDuration, type UsageStats } from "../lib/usageStore";
   import { clearHistory, pruneHistory } from "../lib/historyStore";
@@ -27,7 +29,7 @@
   let shortcut = $state(DEFAULT_SETTINGS.shortcut);
   let microphoneDeviceId = $state("");
   let theme = $state(DEFAULT_SETTINGS.theme);
-  let speechProvider = $state<"os" | "azure">(DEFAULT_SETTINGS.speech_provider);
+  let speechProvider = $state<"os" | "azure" | "whisper">(DEFAULT_SETTINGS.speech_provider);
   let osLanguage = $state(DEFAULT_SETTINGS.os_language);
   let osAutoRestart = $state(DEFAULT_SETTINGS.os_auto_restart);
   let osMaxRestarts = $state(DEFAULT_SETTINGS.os_max_restarts);
@@ -46,14 +48,33 @@
   let autoPunctuation = $state(DEFAULT_SETTINGS.auto_punctuation);
   let silenceTimeoutEnabled = $state(true);
   let silenceTimeoutSeconds = $state(DEFAULT_SETTINGS.silence_timeout_seconds);
+  let maxRecordingEnabled = $state(DEFAULT_SETTINGS.max_recording_enabled);
+  let maxRecordingSeconds = $state(DEFAULT_SETTINGS.max_recording_seconds);
   let historyEnabled = $state(DEFAULT_SETTINGS.history_enabled);
   let historyMaxEntries = $state(DEFAULT_SETTINGS.history_max_entries);
   let popupCopyShortcut = $state(DEFAULT_SETTINGS.popup_copy_shortcut);
   let popupVoiceShortcut = $state(DEFAULT_SETTINGS.popup_voice_shortcut);
   let providerSwitchShortcut = $state(DEFAULT_SETTINGS.provider_switch_shortcut);
 
-  // Sub-tab navigation within Speech tab (separate from savedProvider)
-  let speechSubTab = $state<"os" | "azure">(DEFAULT_SETTINGS.speech_provider);
+  // Whisper-specific state
+  let whisperModel = $state(DEFAULT_SETTINGS.whisper_model);
+  let whisperLanguage = $state(DEFAULT_SETTINGS.whisper_language);
+  let whisperChunkSeconds = $state(DEFAULT_SETTINGS.whisper_chunk_seconds);
+
+  // Whisper model management
+  interface WhisperModelInfo {
+    name: string;
+    label: string;
+    size_mb: number;
+    downloaded: boolean;
+  }
+  let whisperModels = $state<WhisperModelInfo[]>([]);
+  let whisperDownloading = $state<string | null>(null);
+  let whisperDownloadProgress = $state(0);
+  let whisperDownloadTotal = $state(0);
+
+  // Sub-tab navigation within Speech tab (independent of selected provider)
+  let speechSubTab = $state<"os" | "azure" | "whisper">("os");
 
   // Detect browser engine
   let browserEngine = $derived.by(() => {
@@ -104,7 +125,6 @@
   $effect(() => {
     if (initialSettings) {
       speechProvider = initialSettings.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
-      speechSubTab = initialSettings.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
       osLanguage = initialSettings.os_language ?? DEFAULT_SETTINGS.os_language;
       osAutoRestart = initialSettings.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
       osMaxRestarts = initialSettings.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
@@ -119,11 +139,16 @@
       const savedTimeout = initialSettings.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
       silenceTimeoutEnabled = savedTimeout > 0;
       silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
+      maxRecordingEnabled = initialSettings.max_recording_enabled ?? DEFAULT_SETTINGS.max_recording_enabled;
+      maxRecordingSeconds = initialSettings.max_recording_seconds ?? DEFAULT_SETTINGS.max_recording_seconds;
       historyEnabled = initialSettings.history_enabled ?? DEFAULT_SETTINGS.history_enabled;
       historyMaxEntries = initialSettings.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
       popupCopyShortcut = initialSettings.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
       popupVoiceShortcut = initialSettings.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
       providerSwitchShortcut = initialSettings.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut;
+      whisperModel = initialSettings.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
+      whisperLanguage = initialSettings.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
+      whisperChunkSeconds = initialSettings.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
       const savedTheme = initialSettings.theme ?? DEFAULT_SETTINGS.theme;
       theme = savedTheme;
       document.documentElement.dataset.theme = savedTheme;
@@ -155,6 +180,11 @@
     if (popupCopyShortcut !== (saved.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut)) return true;
     if (popupVoiceShortcut !== (saved.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut)) return true;
     if (providerSwitchShortcut !== (saved.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut)) return true;
+    if (whisperModel !== (saved.whisper_model ?? DEFAULT_SETTINGS.whisper_model)) return true;
+    if (whisperLanguage !== (saved.whisper_language ?? DEFAULT_SETTINGS.whisper_language)) return true;
+    if (whisperChunkSeconds !== (saved.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds)) return true;
+    if (maxRecordingEnabled !== (saved.max_recording_enabled ?? DEFAULT_SETTINGS.max_recording_enabled)) return true;
+    if (maxRecordingSeconds !== (saved.max_recording_seconds ?? DEFAULT_SETTINGS.max_recording_seconds)) return true;
     return false;
   });
 
@@ -162,7 +192,6 @@
     if (!initialSettings) return;
     const s = initialSettings;
     speechProvider = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
-    speechSubTab = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
     osLanguage = s.os_language ?? DEFAULT_SETTINGS.os_language;
     osAutoRestart = s.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
     osMaxRestarts = s.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
@@ -177,11 +206,16 @@
     const savedTimeout = s.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
     silenceTimeoutEnabled = savedTimeout > 0;
     silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
+    maxRecordingEnabled = s.max_recording_enabled ?? DEFAULT_SETTINGS.max_recording_enabled;
+    maxRecordingSeconds = s.max_recording_seconds ?? DEFAULT_SETTINGS.max_recording_seconds;
     historyEnabled = s.history_enabled ?? DEFAULT_SETTINGS.history_enabled;
     historyMaxEntries = s.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
     popupCopyShortcut = s.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
     popupVoiceShortcut = s.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
     providerSwitchShortcut = s.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut;
+    whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
+    whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
+    whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -198,7 +232,52 @@
     usageStats = await getUsageStats();
     // Load templates
     templates = await getTemplates();
+    // Load whisper models
+    await refreshWhisperModels();
   });
+
+  async function refreshWhisperModels() {
+    try {
+      whisperModels = await invoke<WhisperModelInfo[]>("whisper_list_models");
+    } catch {
+      whisperModels = [];
+    }
+  }
+
+  async function downloadWhisperModel(name: string) {
+    whisperDownloading = name;
+    whisperDownloadProgress = 0;
+    whisperDownloadTotal = 0;
+
+    const unlisten = await listen<{ model: string; downloaded: number; total: number }>(
+      "whisper-download-progress",
+      (event) => {
+        if (event.payload.model === name) {
+          whisperDownloadProgress = event.payload.downloaded;
+          whisperDownloadTotal = event.payload.total;
+        }
+      }
+    );
+
+    try {
+      await invoke("whisper_download_model", { modelName: name });
+      await refreshWhisperModels();
+    } catch (e) {
+      error = `Download failed: ${e}`;
+    } finally {
+      unlisten();
+      whisperDownloading = null;
+    }
+  }
+
+  async function deleteWhisperModel(name: string) {
+    try {
+      await invoke("whisper_delete_model", { modelName: name });
+      await refreshWhisperModels();
+    } catch (e) {
+      error = `Delete failed: ${e}`;
+    }
+  }
 
   async function handleAddTemplate() {
     if (!newTemplateName.trim() || !newTemplateText.trim()) return;
@@ -289,6 +368,9 @@
         os_max_restarts: osMaxRestarts,
         azure_speech_key: key,
         azure_region: region,
+        whisper_model: whisperModel,
+        whisper_language: whisperLanguage,
+        whisper_chunk_seconds: whisperChunkSeconds,
         languages,
         shortcut,
         microphone_device_id: microphoneDeviceId,
@@ -302,6 +384,8 @@
         popup_copy_shortcut: popupCopyShortcut,
         popup_voice_shortcut: popupVoiceShortcut,
         provider_switch_shortcut: providerSwitchShortcut,
+        max_recording_enabled: maxRecordingEnabled,
+        max_recording_seconds: maxRecordingSeconds,
       });
       success = true;
       onSaved?.();
@@ -351,10 +435,11 @@
     <div class="section">
       <h2>Speech Provider</h2>
       <label class="field">
-        <span class="label">Default Provider</span>
+        <span class="label">Default Speech Provider</span>
         <select bind:value={speechProvider}>
           <option value="os">Web Speech</option>
           <option value="azure">Azure Speech</option>
+          <option value="whisper">Whisper (Local)</option>
         </select>
         <span class="hint">Choose which speech engine is used by default when recording.</span>
       </label>
@@ -367,6 +452,9 @@
       </button>
       <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'azure'} onclick={() => speechSubTab = 'azure'}>
         Azure Speech
+      </button>
+      <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'whisper'} onclick={() => speechSubTab = 'whisper'}>
+        Whisper (Local)
       </button>
     </div>
 
@@ -556,12 +644,110 @@
 
     </div>
     {/if}
+
+    {#if speechSubTab === 'whisper'}
+    <div class="section">
+      <h2>Whisper (Local) Settings</h2>
+
+      <div class="speech-notice">
+        <div class="notice-icon" title="Info">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+        </div>
+        <div class="notice-content">
+          <strong>Local Speech Recognition</strong>
+          <p>
+            Whisper runs entirely on your device using <a href="https://github.com/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via <a href="https://github.com/tazz4843/whisper-rs" target="_blank" rel="noopener noreferrer">whisper-rs</a>. No data is sent to any cloud service.
+            Download a model below to get started. Larger models are more accurate but use more RAM and are slower.
+          </p>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Model</span>
+        <select bind:value={whisperModel}>
+          {#each whisperModels as m}
+            <option value={m.name} disabled={!m.downloaded}>{m.label}{m.downloaded ? '' : ' (not downloaded)'}</option>
+          {/each}
+        </select>
+        <span class="hint">Select the Whisper model to use. Larger models are more accurate but slower.</span>
+      </div>
+
+      <div class="field">
+        <span class="label">Model Management</span>
+        <span class="hint">Models are downloaded from <a href="https://huggingface.co/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">HuggingFace (ggerganov/whisper.cpp)</a>.</span>
+        <div class="whisper-model-list">
+          {#each whisperModels as m}
+            <div class="whisper-model-row">
+              <span class="whisper-model-name">{m.label}</span>
+              {#if m.downloaded}
+                <span class="whisper-model-badge downloaded">Downloaded</span>
+                <button type="button" class="toggle-btn whisper-delete-btn" onclick={() => deleteWhisperModel(m.name)}>Delete</button>
+              {:else if whisperDownloading === m.name}
+                <span class="whisper-model-badge downloading">
+                  {#if whisperDownloadTotal > 0}
+                    {Math.round(whisperDownloadProgress / whisperDownloadTotal * 100)}%
+                  {:else}
+                    Downloading...
+                  {/if}
+                </span>
+              {:else}
+                <button type="button" class="toggle-btn" onclick={() => downloadWhisperModel(m.name)} disabled={whisperDownloading !== null}>
+                  Download ({m.size_mb} MB)
+                </button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+
+      <label class="field">
+        <span class="label">Language</span>
+        <select bind:value={whisperLanguage}>
+          {#each SUPPORTED_LANGUAGES as lang}
+            <option value={lang.code}>{lang.label} ({lang.code})</option>
+          {/each}
+        </select>
+        <span class="hint">Select the language you will be speaking. This improves transcription speed and accuracy.</span>
+      </label>
+
+      <label class="field">
+        <span class="label">Chunk Duration: {whisperChunkSeconds}s</span>
+        <input
+          type="range"
+          min="3"
+          max="15"
+          step="1"
+          bind:value={whisperChunkSeconds}
+        />
+        <span class="hint">Audio is buffered in chunks and sent to Whisper for transcription. Shorter chunks give faster feedback; longer chunks may be more accurate.</span>
+      </label>
+
+      <label class="field">
+        <span class="label">Microphone</span>
+        <select bind:value={microphoneDeviceId}>
+          <option value="">System Default</option>
+          {#each audioDevices as device}
+            <option value={device.deviceId}>{device.label}</option>
+          {/each}
+        </select>
+        {#if micWarning}
+          <span class="hint mic-warning">{micWarning}</span>
+        {:else}
+          <span class="hint">Select the microphone to use for dictation.</span>
+        {/if}
+      </label>
+    </div>
+    {/if}
     {/if}
 
     {#if activeTab === 'phrases'}
     <div class="section">
       <h2>Phrase List</h2>
-      <p class="section-note">Phrase lists improve recognition accuracy for the <strong>Azure Speech</strong> provider. They are not used with Web Speech.</p>
+      <p class="section-note">Phrase lists improve recognition accuracy for <strong>Azure Speech</strong> (boost) and <strong>Whisper</strong> (initial prompt). They are not used with Web Speech.</p>
 
       <div class="field">
         <span class="label">Custom Phrases ({phraseList.length})</span>
@@ -653,11 +839,11 @@
       </div>
 
       <div class="field">
-        <span class="label">Provider Switch Shortcut</span>
+        <span class="label">Speech Provider Switch Shortcut</span>
         <ShortcutRecorder bind:value={providerSwitchShortcut} />
         <span class="hint">
           {#if providerSwitchShortcut}
-            Keyboard shortcut to toggle between Web Speech and Azure providers.
+            Keyboard shortcut to cycle between Web Speech, Azure, and Whisper providers.
           {:else}
             No shortcut set. Click "Record" to assign one.
           {/if}
@@ -703,6 +889,29 @@
           </div>
         {/if}
         <span class="hint">Automatically stop recording after this many seconds of silence to save costs. Set 10–300 seconds, or disable.</span>
+      </div>
+
+      <div class="field">
+        <label class="toggle-field">
+          <span class="label">Max Recording Time</span>
+          <div class="toggle-row">
+            <input type="checkbox" bind:checked={maxRecordingEnabled} class="toggle-checkbox" />
+            <span class="toggle-label">{maxRecordingEnabled ? 'On' : 'Off'}</span>
+          </div>
+        </label>
+        {#if maxRecordingEnabled}
+          <div class="input-row" style="margin-top: 6px;">
+            <input
+              type="number"
+              min="30"
+              max="600"
+              bind:value={maxRecordingSeconds}
+              style="width: 80px;"
+            />
+            <span class="timeout-unit">seconds</span>
+          </div>
+        {/if}
+        <span class="hint">Safety limit to prevent accidental long recordings. Automatically stops after this duration regardless of speech activity. Default 180 seconds (3 minutes).</span>
       </div>
     </div>
     </div>
@@ -880,6 +1089,24 @@
             <div class="usage-card">
               <span class="usage-label">Last 30 Days</span>
               <span class="usage-value">{formatDuration(usageStats.azure.last30Days)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="usage-provider-group">
+          <h3 class="usage-provider-title">Whisper (Local)</h3>
+          <div class="usage-grid">
+            <div class="usage-card">
+              <span class="usage-label">Today</span>
+              <span class="usage-value">{formatDuration(usageStats.whisper.today)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">This Week</span>
+              <span class="usage-value">{formatDuration(usageStats.whisper.thisWeek)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">Last 30 Days</span>
+              <span class="usage-value">{formatDuration(usageStats.whisper.last30Days)}</span>
             </div>
           </div>
         </div>
@@ -1698,5 +1925,53 @@
   .template-edit-actions {
     display: flex;
     gap: 6px;
+  }
+
+  /* Whisper model management */
+  .whisper-model-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .whisper-model-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--bg-secondary, #1e1e1e);
+  }
+
+  .whisper-model-name {
+    flex: 1;
+    font-size: 0.92em;
+  }
+
+  .whisper-model-badge {
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .whisper-model-badge.downloaded {
+    background: rgba(72, 199, 142, 0.15);
+    color: #48c78e;
+  }
+
+  .whisper-model-badge.downloading {
+    background: rgba(62, 142, 208, 0.15);
+    color: #3e8ed0;
+  }
+
+  .whisper-delete-btn {
+    color: var(--error, #f56c6c) !important;
+    border-color: var(--error, #f56c6c) !important;
+  }
+
+  .whisper-delete-btn:hover {
+    background: rgba(245, 108, 108, 0.1);
   }
 </style>

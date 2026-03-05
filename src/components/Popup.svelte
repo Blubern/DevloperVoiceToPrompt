@@ -26,6 +26,18 @@
 
   let { settings }: Props = $props();
 
+  const PROVIDER_ORDER: AppSettings["speech_provider"][] = ["os", "azure", "whisper"];
+  function cycleProvider(current: AppSettings["speech_provider"]): AppSettings["speech_provider"] {
+    const idx = PROVIDER_ORDER.indexOf(current);
+    return PROVIDER_ORDER[(idx + 1) % PROVIDER_ORDER.length];
+  }
+
+  function providerLabel(p: AppSettings["speech_provider"]): string {
+    if (p === "os") return "Web";
+    if (p === "azure") return "Azure";
+    return "Whisper";
+  }
+
   let status = $state<"idle" | "listening" | "error">("idle");
   let finalSegments = $state<string[]>([]);
   let interimText = $state("");
@@ -45,6 +57,9 @@
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let silenceMessage = $state("");
   let silenceMessageFading = $state(false);
+
+  // Max recording time timer
+  let maxRecordingTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Window resize/move debounce
   let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -131,6 +146,11 @@
   let osLanguageDisplayLabel = $derived(() => {
     const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.os_language);
     return lang ? `${lang.label.split(" ")[0]} (${settings.os_language})` : settings.os_language;
+  });
+
+  let whisperLanguageDisplayLabel = $derived(() => {
+    const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.whisper_language);
+    return lang ? `${lang.label.split(" ")[0]} (${settings.whisper_language})` : settings.whisper_language;
   });
 
   // Context-aware button label
@@ -267,6 +287,28 @@
     }
   }
 
+  function clearMaxRecordingTimer() {
+    if (maxRecordingTimer) {
+      clearTimeout(maxRecordingTimer);
+      maxRecordingTimer = null;
+    }
+  }
+
+  function startMaxRecordingTimer() {
+    clearMaxRecordingTimer();
+    if (settings.max_recording_enabled && settings.max_recording_seconds > 0) {
+      maxRecordingTimer = setTimeout(async () => {
+        silenceMessage = `Auto-stopped after ${settings.max_recording_seconds}s max recording time`;
+        silenceMessageFading = false;
+        await stopAndRecordUsage();
+        setTimeout(() => {
+          silenceMessageFading = true;
+          setTimeout(() => { silenceMessage = ""; silenceMessageFading = false; }, 500);
+        }, 3500);
+      }, settings.max_recording_seconds * 1000);
+    }
+  }
+
   function resetSilenceTimer() {
     clearSilenceTimer();
     const timeout = settings.silence_timeout_seconds;
@@ -291,10 +333,11 @@
     }
     status = "idle";
     clearSilenceTimer();
+    clearMaxRecordingTimer();
     if (sessionStartTime !== null) {
       const elapsed = (Date.now() - sessionStartTime) / 1000;
       sessionStartTime = null;
-      await recordUsage(elapsed, settings.speech_provider as "os" | "azure");
+      await recordUsage(elapsed, settings.speech_provider);
     }
   }
 
@@ -311,6 +354,11 @@
 
     if (settings.speech_provider === "os" && !webSpeechAvailable) {
       errorMessage = "Web Speech API is not available in this browser.";
+      return;
+    }
+
+    if (settings.speech_provider === "whisper" && !settings.whisper_model) {
+      errorMessage = "No Whisper model selected. Go to Settings → Speech → Whisper.";
       return;
     }
 
@@ -348,6 +396,7 @@
         if (s === "listening") {
           sessionStartTime = Date.now();
           resetSilenceTimer();
+          startMaxRecordingTimer();
         }
       },
     };
@@ -456,7 +505,7 @@
     } else if (matchesShortcut(e, settings.provider_switch_shortcut)) {
       e.preventDefault();
       if (status !== "listening") {
-        settings = { ...settings, speech_provider: settings.speech_provider === "os" ? "azure" : "os" };
+        settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
       }
     }
   }
@@ -536,18 +585,20 @@
         class="provider-toggle"
         onclick={() => {
           if (status !== "listening") {
-            settings = { ...settings, speech_provider: settings.speech_provider === "os" ? "azure" : "os" };
+            settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
           }
         }}
         disabled={status === "listening"}
-        title={settings.speech_provider === "os" ? "Using Web Speech — click to switch to Azure" : "Using Azure — click to switch to Web Speech"}
+        title={`Using ${providerLabel(settings.speech_provider)} — click to switch`}
       >
-        {settings.speech_provider === "os" ? "Web" : "Azure"}
+        {providerLabel(settings.speech_provider)}
       </button>
       {#if settings.speech_provider === "azure" && settings.languages.length > 0}
         <span class="lang-indicator" title={languageDisplayLabels.join(', ')}>{languageDisplayLabels.join(' · ')}</span>
       {:else if settings.speech_provider === "os"}
         <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel()}</span>
+      {:else if settings.speech_provider === "whisper"}
+        <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel()}</span>
       {/if}
     </div>
     <div class="titlebar-buttons">
@@ -637,7 +688,9 @@
             {#if settings.speech_provider === "azure" && !settings.azure_speech_key}
               <span class="empty-state-text">Configure your Azure Speech key in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
             {:else if settings.speech_provider === "os" && !webSpeechAvailable}
-              <span class="empty-state-text">Web Speech API is not available. Switch to Azure in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button></span>
+              <span class="empty-state-text">Web Speech API is not available. Switch to Azure or Whisper in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button></span>
+            {:else if settings.speech_provider === "whisper" && !settings.whisper_model}
+              <span class="empty-state-text">Download a Whisper model in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
             {:else}
               <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
             {/if}

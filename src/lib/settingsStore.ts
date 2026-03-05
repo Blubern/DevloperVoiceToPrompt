@@ -1,12 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface AppSettings {
-  speech_provider: "os" | "azure";
+  speech_provider: "os" | "azure" | "whisper";
   os_language: string;
   os_auto_restart: boolean;
   os_max_restarts: number;
   azure_speech_key: string;
   azure_region: string;
+  whisper_model: string;
+  whisper_language: string;
+  whisper_chunk_seconds: number;
   languages: string[];
   shortcut: string;
   microphone_device_id: string;
@@ -20,6 +23,8 @@ export interface AppSettings {
   popup_copy_shortcut: string;
   popup_voice_shortcut: string;
   provider_switch_shortcut: string;
+  max_recording_enabled: boolean;
+  max_recording_seconds: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -29,6 +34,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   os_max_restarts: 3,
   azure_speech_key: "",
   azure_region: "eastus",
+  whisper_model: "base",
+  whisper_language: "en-US",
+  whisper_chunk_seconds: 5,
   languages: ["en-US"],
   shortcut: "CommandOrControl+Shift+Space",
   microphone_device_id: "",
@@ -42,6 +50,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   popup_copy_shortcut: "CommandOrControl+Enter",
   popup_voice_shortcut: "CommandOrControl+Shift+R",
   provider_switch_shortcut: "",
+  max_recording_enabled: true,
+  max_recording_seconds: 180,
 };
 
 export const AZURE_REGIONS = [

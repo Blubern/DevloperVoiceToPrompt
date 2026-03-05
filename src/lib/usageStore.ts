@@ -9,6 +9,7 @@ export interface ProviderUsage {
 export interface UsageStats {
   web: ProviderUsage;
   azure: ProviderUsage;
+  whisper: ProviderUsage;
   total: ProviderUsage;
 }
 
@@ -47,10 +48,10 @@ async function migrateIfNeeded(s: Store): Promise<void> {
   await s.delete("daily");
 }
 
-export async function recordUsage(seconds: number, provider: "os" | "azure"): Promise<void> {
+export async function recordUsage(seconds: number, provider: "os" | "azure" | "whisper"): Promise<void> {
   if (seconds <= 0) return;
   const s = await getStore();
-  const storeKey = provider === "os" ? "daily_web" : "daily_azure";
+  const storeKey = provider === "os" ? "daily_web" : provider === "azure" ? "daily_azure" : "daily_whisper";
   const key = todayKey();
   const raw = await s.get<Record<string, number>>(storeKey);
   const daily: Record<string, number> = raw ?? {};
@@ -85,22 +86,25 @@ export async function getUsageStats(): Promise<UsageStats> {
 
   const rawWeb = (await s.get<Record<string, number>>("daily_web")) ?? {};
   const rawAzure = (await s.get<Record<string, number>>("daily_azure")) ?? {};
+  const rawWhisper = (await s.get<Record<string, number>>("daily_whisper")) ?? {};
 
   const web = computeProviderUsage(rawWeb);
   const azure = computeProviderUsage(rawAzure);
+  const whisper = computeProviderUsage(rawWhisper);
   const total: ProviderUsage = {
-    today: web.today + azure.today,
-    thisWeek: web.thisWeek + azure.thisWeek,
-    last30Days: web.last30Days + azure.last30Days,
+    today: web.today + azure.today + whisper.today,
+    thisWeek: web.thisWeek + azure.thisWeek + whisper.thisWeek,
+    last30Days: web.last30Days + azure.last30Days + whisper.last30Days,
   };
 
-  return { web, azure, total };
+  return { web, azure, whisper, total };
 }
 
 export async function resetUsage(): Promise<void> {
   const s = await getStore();
   await s.set("daily_web", {});
   await s.set("daily_azure", {});
+  await s.set("daily_whisper", {});
   await s.delete("daily"); // clean up legacy
 }
 
@@ -109,7 +113,7 @@ export async function pruneOldEntries(): Promise<void> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 90);
 
-  for (const storeKey of ["daily_web", "daily_azure"] as const) {
+  for (const storeKey of ["daily_web", "daily_azure", "daily_whisper"] as const) {
     const raw = await s.get<Record<string, number>>(storeKey);
     if (!raw) continue;
     const pruned: Record<string, number> = {};
