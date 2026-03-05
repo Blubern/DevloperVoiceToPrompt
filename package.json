@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -26,6 +28,8 @@
     "@tauri-apps/plugin-updater": "^2.2.0",
     "@tauri-apps/plugin-autostart": "^2.2.0",
     "@tsconfig/svelte": "^5.0.8",
+    "vitest": "^3.0.0",
+    "jsdom": "^25.0.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "tslib": "^2.8.0",

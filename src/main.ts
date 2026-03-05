@@ -1,3 +1,7 @@
+import "./styles/themes.css";
+import "./styles/base.css";
+import "./styles/settings.css";
+import "./styles/popup.css";
 import App from "./App.svelte";
 import { mount } from "svelte";
 

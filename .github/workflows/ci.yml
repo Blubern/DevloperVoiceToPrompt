@@ -24,11 +24,30 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install LLVM (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: choco install llvm -y
+
+      - name: Set LIBCLANG_PATH (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Install LLVM (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: brew install llvm
+
+      - name: Set LIBCLANG_PATH (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> $GITHUB_ENV
+
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Check frontend
+      - name: Check frontend types
         run: npm run check
+
+      - name: Run frontend tests
+        run: npx vitest run
 
       - name: Build frontend
         run: npm run build
@@ -36,3 +55,7 @@ jobs:
       - name: Check Rust
         working-directory: src-tauri
         run: cargo check
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test

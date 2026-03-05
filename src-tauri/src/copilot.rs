@@ -52,10 +52,13 @@ struct BridgeResponse {
 }
 
 /// Send a JSON request to the bridge and read the JSON response line.
+/// Times out after 30 seconds to prevent hangs if the bridge freezes.
 async fn bridge_call(
     bridge: &mut BridgeProcess,
     method: &str,
 ) -> Result<serde_json::Value, String> {
+    use tokio::time::{timeout, Duration};
+
     let id = bridge.next_id.fetch_add(1, Ordering::Relaxed);
     let req = serde_json::json!({ "id": id, "method": method });
     let mut line = serde_json::to_string(&req).unwrap();
@@ -73,20 +76,29 @@ async fn bridge_call(
         .map_err(|e| format!("Failed to flush bridge stdin: {}", e))?;
 
     let mut buf = String::new();
-    bridge
-        .stdout
-        .read_line(&mut buf)
-        .await
-        .map_err(|e| format!("Failed to read from bridge: {}", e))?;
+    let _read_result = timeout(
+        Duration::from_secs(30),
+        bridge.stdout.read_line(&mut buf),
+    )
+    .await
+    .map_err(|_| "Copilot bridge did not respond within 30 seconds".to_string())?
+    .map_err(|e| format!("Failed to read from bridge: {}", e))?;
 
     if buf.is_empty() {
-        // Bridge exited — read all of stderr for a useful error message
+        // Bridge exited — read stderr for a useful error message (capped at 4KB)
         let mut err_lines = Vec::new();
+        let mut total_len = 0usize;
         loop {
             let mut err_line = String::new();
             match bridge.stderr.read_line(&mut err_line).await {
                 Ok(0) | Err(_) => break,
-                Ok(_) => err_lines.push(err_line),
+                Ok(n) => {
+                    total_len += n;
+                    err_lines.push(err_line);
+                    if total_len > 4096 {
+                        break;
+                    }
+                }
             }
         }
         let full_err = err_lines.join("").trim().to_string();

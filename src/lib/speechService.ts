@@ -1,6 +1,7 @@
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "./settingsStore";
+import { WHISPER_SILENCE_RMS_THRESHOLD } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -402,7 +403,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
       sumSq += samples[i] * samples[i];
     }
     const rms = Math.sqrt(sumSq / samples.length);
-    if (rms < 0.01) return; // ~-40 dB, effectively silence
+    if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return; // ~-40 dB, effectively silence
 
     // Encode float32 PCM to base64
     const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);

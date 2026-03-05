@@ -9,6 +9,7 @@ use tauri_plugin_store::StoreExt;
 
 mod commands;
 mod copilot;
+pub mod settings;
 mod whisper;
 
 fn create_or_toggle_popup(app: &tauri::AppHandle) {
@@ -28,8 +29,8 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
 
         // Read saved popup geometry from store
         let store = app.store("settings.json").ok();
-        let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(600.0);
-        let popup_h = store.as_ref().and_then(|s| s.get("popup_height").and_then(|v| v.as_f64())).unwrap_or(450.0);
+        let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(926.0);
+        let popup_h = store.as_ref().and_then(|s| s.get("popup_height").and_then(|v| v.as_f64())).unwrap_or(582.0);
         let popup_x = store.as_ref().and_then(|s| s.get("popup_x").and_then(|v| v.as_f64()));
         let popup_y = store.as_ref().and_then(|s| s.get("popup_y").and_then(|v| v.as_f64()));
 

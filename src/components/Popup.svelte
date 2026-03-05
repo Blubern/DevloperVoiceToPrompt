@@ -12,14 +12,31 @@
     createSpeechProvider,
     checkMicrophonePermission,
     webSpeechAvailable,
+    enumerateAudioDevices,
     type SpeechCallbacks,
     type SpeechProvider,
+    type AudioDevice,
   } from "../lib/speechService";
   import { recordUsage } from "../lib/usageStore";
-  import { addHistoryEntry, getHistory, deleteHistoryEntry, formatRelativeTime, type HistoryEntry } from "../lib/historyStore";
+  import { addHistoryEntry, getHistory, deleteHistoryEntry, type HistoryEntry } from "../lib/historyStore";
   import { getTemplates, addTemplate, type PromptTemplate } from "../lib/templateStore";
   import { listen, emit } from "@tauri-apps/api/event";
   import MicButton from "./MicButton.svelte";
+  import HelpOverlay from "./popup/HelpOverlay.svelte";
+  import TemplatesPanel from "./popup/TemplatesPanel.svelte";
+  import HistoryPanel from "./popup/HistoryPanel.svelte";
+  import {
+    PROVIDER_AZURE,
+    PROVIDER_OS,
+    PROVIDER_WHISPER,
+    cycleProvider,
+    providerLabel,
+    EVENT_SETTINGS_UPDATED,
+    EVENT_TEMPLATES_UPDATED,
+    type RecordingStatus,
+  } from "../lib/constants";
+  import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
+  import { AudioLevelMeter } from "../lib/audioLevelMeter";
 
   interface Props {
     settings: AppSettings;
@@ -27,19 +44,7 @@
 
   let { settings }: Props = $props();
 
-  const PROVIDER_ORDER: AppSettings["speech_provider"][] = ["os", "azure", "whisper"];
-  function cycleProvider(current: AppSettings["speech_provider"]): AppSettings["speech_provider"] {
-    const idx = PROVIDER_ORDER.indexOf(current);
-    return PROVIDER_ORDER[(idx + 1) % PROVIDER_ORDER.length];
-  }
-
-  function providerLabel(p: AppSettings["speech_provider"]): string {
-    if (p === "os") return "Web";
-    if (p === "azure") return "Azure";
-    return "Whisper";
-  }
-
-  let status = $state<"idle" | "listening" | "error">("idle");
+  let status = $state<RecordingStatus>("idle");
   let finalSegments = $state<string[]>([]);
   let interimText = $state("");
   let errorMessage = $state("");
@@ -53,6 +58,10 @@
   // Usage tracking: record start time of current recognition session
   let sessionStartTime: number | null = null;
   let activeProvider: SpeechProvider | null = null;
+
+  // Audio level meter
+  let audioLevel = $state(0);
+  let levelMeter: AudioLevelMeter | null = null;
 
   // Silence auto-stop timer
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -70,12 +79,6 @@
   let historyEntries = $state<HistoryEntry[]>([]);
   let historyCount = $state(0);
   let historySearch = $state("");
-
-  let filteredHistoryEntries = $derived(
-    historySearch.trim()
-      ? historyEntries.filter(e => e.text.toLowerCase().includes(historySearch.trim().toLowerCase()))
-      : historyEntries
-  );
 
   // Help overlay
   let helpOpen = $state(false);
@@ -116,38 +119,14 @@
   // Auto-scroll tracking
   let userScrolledUp = false;
 
-  // Parse a Tauri-format shortcut string and match against a KeyboardEvent
-  function matchesShortcut(e: KeyboardEvent, shortcutStr: string): boolean {
-    if (!shortcutStr) return false;
-    const parts = shortcutStr.split("+").map((p) => p.trim().toLowerCase());
-    const key = parts[parts.length - 1];
-    const mods = new Set(parts.slice(0, -1));
-
-    const needCtrlOrMeta = mods.has("commandorcontrol");
-    const needCtrl = mods.has("control") || needCtrlOrMeta;
-    const needMeta = mods.has("meta") || needCtrlOrMeta;
-    const needShift = mods.has("shift");
-    const needAlt = mods.has("alt");
-
-    const ctrlOk = needCtrlOrMeta ? (e.ctrlKey || e.metaKey) : (needCtrl ? e.ctrlKey : !e.ctrlKey);
-    const metaOk = needCtrlOrMeta ? true : (needMeta ? e.metaKey : !e.metaKey);
-    const shiftOk = needShift ? e.shiftKey : !e.shiftKey;
-    const altOk = needAlt ? e.altKey : !e.altKey;
-
-    const keyMatch = e.key.toLowerCase() === key || e.code.toLowerCase() === key;
-
-    return ctrlOk && metaOk && shiftOk && altOk && keyMatch;
-  }
-
-  // Format a Tauri shortcut string to a human-readable label
-  function formatShortcutLabel(shortcutStr: string): string {
-    if (!shortcutStr) return "";
-    return shortcutStr
-      .replace(/CommandOrControl/gi, "Ctrl")
-      .replace(/Control/gi, "Ctrl")
-      .replace(/Meta/gi, "⌘")
-      .replace(/\+/g, "+");
-  }
+  // Microphone selector
+  let micDropdownOpen = $state(false);
+  let audioDevices = $state<AudioDevice[]>([]);
+  let selectedMicLabel = $derived(() => {
+    if (!settings.microphone_device_id) return "Default Mic";
+    const dev = audioDevices.find(d => d.deviceId === settings.microphone_device_id);
+    return dev ? dev.label : "Default Mic";
+  });
 
   // Language labels for display: "Name (code)" format
   let languageDisplayLabels = $derived(
@@ -308,9 +287,9 @@
     if (settings.auto_start_recording && status === "idle" && !editedText && !autoStartDone) {
       // Check provider config validity before auto-starting
       const canStart =
-        (settings.speech_provider === "azure" && settings.azure_speech_key && settings.azure_region) ||
-        (settings.speech_provider === "os" && webSpeechAvailable) ||
-        (settings.speech_provider === "whisper" && settings.whisper_model);
+        (settings.speech_provider === PROVIDER_AZURE && settings.azure_speech_key && settings.azure_region) ||
+        (settings.speech_provider === PROVIDER_OS && webSpeechAvailable) ||
+        (settings.speech_provider === PROVIDER_WHISPER && settings.whisper_model);
       if (canStart) {
         autoStartDone = true;
         // Slight delay to let the popup fully render
@@ -386,6 +365,9 @@
     status = "idle";
     clearSilenceTimer();
     clearMaxRecordingTimer();
+    levelMeter?.stop();
+    levelMeter = null;
+    audioLevel = 0;
     if (sessionStartTime !== null) {
       const elapsed = (Date.now() - sessionStartTime) / 1000;
       sessionStartTime = null;
@@ -399,17 +381,17 @@
       return;
     }
 
-    if (settings.speech_provider === "azure" && (!settings.azure_speech_key || !settings.azure_region)) {
+    if (settings.speech_provider === PROVIDER_AZURE && (!settings.azure_speech_key || !settings.azure_region)) {
       errorMessage = "Azure Speech key not configured. Go to Settings → Speech.";
       return;
     }
 
-    if (settings.speech_provider === "os" && !webSpeechAvailable) {
+    if (settings.speech_provider === PROVIDER_OS && !webSpeechAvailable) {
       errorMessage = "Web Speech API is not available in this browser.";
       return;
     }
 
-    if (settings.speech_provider === "whisper" && !settings.whisper_model) {
+    if (settings.speech_provider === PROVIDER_WHISPER && !settings.whisper_model) {
       errorMessage = "No Whisper model selected. Go to Settings → Speech → Whisper.";
       return;
     }
@@ -455,6 +437,10 @@
 
     activeProvider = provider;
     provider.start(callbacks);
+
+    // Start audio level meter (non-critical, runs independently)
+    levelMeter = new AudioLevelMeter();
+    levelMeter.start((level) => { audioLevel = level; }, settings.microphone_device_id || undefined);
   }
 
   function clearText() {
@@ -583,10 +569,6 @@
     historyOpen = false;
   }
 
-  async function copyHistoryEntry(text: string) {
-    await writeText(text);
-  }
-
   // Template functions
   async function toggleTemplatesPanel() {
     if (!templatesOpen) {
@@ -632,9 +614,9 @@
   }
 
   function selectPopupSingleLang(code: string) {
-    if (settings.speech_provider === "os") {
+    if (settings.speech_provider === PROVIDER_OS) {
       settings = { ...settings, os_language: code };
-    } else if (settings.speech_provider === "whisper") {
+    } else if (settings.speech_provider === PROVIDER_WHISPER) {
       settings = { ...settings, whisper_language: code };
     }
     langDropdownOpen = false;
@@ -644,16 +626,34 @@
   async function persistLanguageChange() {
     try {
       await saveSettings(settings);
-      await emit("settings-updated");
+      await emit(EVENT_SETTINGS_UPDATED);
     } catch (e) {
       console.error("Failed to persist language change:", e);
+    }
+  }
+
+  // Load audio devices on mount
+  $effect(() => {
+    enumerateAudioDevices().then(result => {
+      audioDevices = result.devices;
+    });
+  });
+
+  async function selectMicrophone(deviceId: string) {
+    settings = { ...settings, microphone_device_id: deviceId };
+    micDropdownOpen = false;
+    try {
+      await saveSettings(settings);
+      await emit(EVENT_SETTINGS_UPDATED);
+    } catch (e) {
+      console.error("Failed to persist microphone change:", e);
     }
   }
 
   // Listen to templates-updated from Settings
   $effect(() => {
     let unlistenFn: (() => void) | null = null;
-    listen("templates-updated", async () => {
+    listen(EVENT_TEMPLATES_UPDATED, async () => {
       if (templatesOpen) {
         templateEntries = await getTemplates();
       }
@@ -662,7 +662,7 @@
   });
 </script>
 
-<svelte:window onkeydown={handleKeydown} onclick={() => { langDropdownOpen = false; }} />
+<svelte:window onkeydown={handleKeydown} onclick={() => { langDropdownOpen = false; micDropdownOpen = false; }} />
 
 <div class="popup-container">
   <!-- Compact title bar -->
@@ -681,7 +681,7 @@
       >
         {providerLabel(settings.speech_provider)}
       </button>
-      {#if settings.speech_provider === "azure" && settings.languages.length > 0}
+      {#if settings.speech_provider === PROVIDER_AZURE && settings.languages.length > 0}
         {#if status === "listening"}
           <span class="lang-indicator" title={languageDisplayLabels.join(', ')}>{languageDisplayLabels.join(' · ')}</span>
         {:else}
@@ -690,7 +690,7 @@
             {languageDisplayLabels.join(' · ')} ▾
           </button>
         {/if}
-      {:else if settings.speech_provider === "os"}
+      {:else if settings.speech_provider === PROVIDER_OS}
         {#if status === "listening"}
           <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel()}</span>
         {:else}
@@ -699,7 +699,7 @@
             {osLanguageDisplayLabel()} ▾
           </button>
         {/if}
-      {:else if settings.speech_provider === "whisper"}
+      {:else if settings.speech_provider === PROVIDER_WHISPER}
         {#if status === "listening"}
           <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel()}</span>
         {:else}
@@ -721,7 +721,7 @@
           />
           <div class="lang-dropdown-list">
             {#each filteredPopupLanguages as lang}
-              {#if settings.speech_provider === "azure"}
+              {#if settings.speech_provider === PROVIDER_AZURE}
                 <label class="lang-dropdown-item">
                   <input
                     type="checkbox"
@@ -734,7 +734,7 @@
               {:else}
                 <button
                   class="lang-dropdown-item"
-                  class:selected={settings.speech_provider === 'os' ? settings.os_language === lang.code : settings.whisper_language === lang.code}
+                  class:selected={settings.speech_provider === PROVIDER_OS ? settings.os_language === lang.code : settings.whisper_language === lang.code}
                   onclick={() => selectPopupSingleLang(lang.code)}
                 >
                   <span>{lang.label}</span>
@@ -747,6 +747,40 @@
       {/if}
     </div>
     <div class="titlebar-buttons">
+      <!-- Microphone selector -->
+      <div class="mic-selector-wrapper" onclick={(e) => e.stopPropagation()}>
+        <button
+          class="mic-selector-btn"
+          onclick={() => { micDropdownOpen = !micDropdownOpen; }}
+          disabled={status === "listening"}
+          title={`Microphone: ${selectedMicLabel()}`}
+        >
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+          <span class="mic-selector-label">{selectedMicLabel()}</span>
+          <span class="mic-selector-chevron">▾</span>
+        </button>
+        {#if micDropdownOpen && status !== "listening"}
+          <div class="mic-dropdown">
+            <button
+              class="mic-dropdown-item"
+              class:selected={!settings.microphone_device_id}
+              onclick={() => selectMicrophone("")}
+            >
+              System Default
+            </button>
+            {#each audioDevices as device}
+              <button
+                class="mic-dropdown-item"
+                class:selected={settings.microphone_device_id === device.deviceId}
+                onclick={() => selectMicrophone(device.deviceId)}
+              >
+                {device.label}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
       <button
         class="history-toggle"
         onclick={toggleTemplatesPanel}
@@ -783,30 +817,7 @@
   </div>
 
   <!-- Help overlay (keyboard shortcuts) -->
-  {#if helpOpen}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="help-backdrop" onclick={() => helpOpen = false}></div>
-    <div class="help-overlay">
-      <div class="help-title">Keyboard Shortcuts</div>
-      <div class="help-grid">
-        <span class="help-action">Show Popup</span>
-        <kbd>{formatShortcutLabel(settings.shortcut)}</kbd>
-        <span class="help-action">Start / Stop Voice</span>
-        <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd>
-        <span class="help-action">Copy & Close</span>
-        <kbd>{formatShortcutLabel(settings.popup_copy_shortcut)}</kbd>
-        <span class="help-action">Dismiss</span>
-        <kbd>Esc</kbd>
-      </div>
-      {#if settings.phrase_list.length > 0}
-        <div class="help-extra">
-          <span class="help-extra-label">Custom phrases:</span> {settings.phrase_list.length} active
-        </div>
-      {/if}
-      <div class="help-tip">Pro tip: Do everything via keyboard — no mouse needed.</div>
-    </div>
-  {/if}
+  <HelpOverlay {settings} bind:open={helpOpen} />
 
   <div class="content">
     <div class="main-content">
@@ -815,6 +826,9 @@
         <div class="recording-bar">
           <span class="rec-dot"></span>
           <span class="rec-label">Listening...</span>
+          <div class="level-meter">
+            <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
+          </div>
           <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
         </div>
       {/if}
@@ -830,11 +844,11 @@
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
-            {#if settings.speech_provider === "azure" && !settings.azure_speech_key}
+            {#if settings.speech_provider === PROVIDER_AZURE && !settings.azure_speech_key}
               <span class="empty-state-text">Configure your Azure Speech key in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
-            {:else if settings.speech_provider === "os" && !webSpeechAvailable}
+            {:else if settings.speech_provider === PROVIDER_OS && !webSpeechAvailable}
               <span class="empty-state-text">Web Speech API is not available. Switch to Azure or Whisper in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button></span>
-            {:else if settings.speech_provider === "whisper" && !settings.whisper_model}
+            {:else if settings.speech_provider === PROVIDER_WHISPER && !settings.whisper_model}
               <span class="empty-state-text">Download a Whisper model in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
             {:else}
               <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
@@ -948,75 +962,11 @@
     </div>
 
     <!-- Templates side panel -->
-    {#if templatesOpen}
-      <div class="history-panel">
-        <div class="history-header">
-          <span class="history-title">Templates</span>
-          <button class="titlebar-btn" onclick={() => templatesOpen = false} aria-label="Close templates" title="Close templates">✕</button>
-        </div>
-        <div class="history-list">
-          {#if templateEntries.length === 0}
-            <div class="history-empty">No templates yet. Save text from the popup or create templates in Settings.</div>
-          {:else}
-            {#each templateEntries as t (t.id)}
-              <div class="history-entry">
-                <button class="history-entry-body" onclick={() => selectTemplate(t)} title={t.text}>
-                  <span class="history-text" style="font-weight: 600;">{t.name}</span>
-                  <span class="history-text" style="font-size: 11px; color: var(--text-secondary);">{t.text.length > 60 ? t.text.slice(0, 60) + '…' : t.text}</span>
-                </button>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      </div>
-    {/if}
+    <TemplatesPanel bind:open={templatesOpen} entries={templateEntries} onSelect={selectTemplate} />
 
     <!-- History side panel -->
-    {#if historyOpen}
-      <div class="history-panel">
-        <div class="history-header">
-          <span class="history-title">History</span>
-          <button class="titlebar-btn" onclick={() => historyOpen = false} aria-label="Close history" title="Close history">✕</button>
-        </div>
-        <div class="history-search">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            class="history-search-input"
-            type="text"
-            placeholder="Search history..."
-            bind:value={historySearch}
-          />
-          {#if historySearch}
-            <button class="history-search-clear" onclick={() => historySearch = ""} aria-label="Clear search">✕</button>
-          {/if}
-        </div>
-        <div class="history-list">
-          {#if filteredHistoryEntries.length === 0}
-            <div class="history-empty">{historyEntries.length === 0 ? 'No history yet' : 'No matches'}</div>
-          {:else}
-            {#each filteredHistoryEntries as entry}
-              <div class="history-entry">
-                <button class="history-entry-body" onclick={() => insertHistoryEntry(entry.text)} title={entry.text}>
-                  <span class="history-text">{entry.text.length > 80 ? entry.text.slice(0, 80) + '…' : entry.text}</span>
-                  <span class="history-time">{formatRelativeTime(entry.timestamp)}</span>
-                </button>
-                <div class="history-entry-actions">
-                  <button class="history-action-btn" onclick={() => insertHistoryEntry(entry.text)} aria-label="Insert" title="Insert into text">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                  </button>
-                  <button class="history-action-btn" onclick={() => copyHistoryEntry(entry.text)} aria-label="Copy" title="Copy to clipboard">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  </button>
-                  <button class="history-action-btn delete" onclick={() => handleHistoryDelete(entry.timestamp)} aria-label="Delete" title="Delete">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  </button>
-                </div>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      </div>
-    {/if}
+    <HistoryPanel bind:open={historyOpen} entries={historyEntries} bind:search={historySearch}
+      onInsert={insertHistoryEntry} onDelete={handleHistoryDelete} />
   </div>
 </div>
 
@@ -1128,6 +1078,93 @@
     color: var(--error);
   }
 
+  /* ---- Mic Selector ---- */
+  .mic-selector-wrapper {
+    position: relative;
+    margin-right: 4px;
+  }
+
+  .mic-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    line-height: 1;
+    max-width: 180px;
+  }
+
+  .mic-selector-btn:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .mic-selector-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .mic-selector-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+  }
+
+  .mic-selector-chevron {
+    font-size: 8px;
+    opacity: 0.6;
+  }
+
+  .mic-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 100;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    width: 260px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 4px;
+    padding: 4px 0;
+  }
+
+  .mic-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--text-primary);
+    cursor: pointer;
+    border: none;
+    background: none;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mic-dropdown-item:hover {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .mic-dropdown-item.selected {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    font-weight: 600;
+    color: var(--accent);
+  }
+
   .history-toggle {
     display: flex;
     align-items: center;
@@ -1175,85 +1212,6 @@
   .history-toggle.active .history-badge {
     background: var(--bg-primary);
     color: var(--accent);
-  }
-
-  /* ---- Help Overlay ---- */
-  .help-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 90;
-  }
-
-  .help-overlay {
-    position: absolute;
-    top: 44px;
-    right: 50px;
-    z-index: 100;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 18px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-    animation: fadeIn 0.12s ease-out;
-    min-width: 240px;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .help-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 10px;
-  }
-
-  .help-grid {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 6px 16px;
-    align-items: center;
-  }
-
-  .help-action {
-    font-size: 12px;
-    color: var(--text-primary);
-  }
-
-  .help-grid kbd {
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .help-extra {
-    margin-top: 10px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
-    font-size: 11px;
-    color: var(--text-secondary);
-  }
-
-  .help-extra-label {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .help-tip {
-    margin-top: 8px;
-    font-size: 10px;
-    color: var(--text-muted);
-    font-style: italic;
   }
 
   /* ---- Content Layout ---- */
@@ -1306,6 +1264,23 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--recording);
+  }
+
+  .level-meter {
+    flex: 1;
+    height: 6px;
+    background: rgba(243, 139, 168, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 40px;
+  }
+
+  .level-bar {
+    height: 100%;
+    background: var(--recording);
+    border-radius: 3px;
+    transition: width 0.08s ease-out;
+    min-width: 2px;
   }
 
   .rec-elapsed {
@@ -1591,170 +1566,6 @@
   .mic-float :global(.mic-button svg) {
     width: 26px;
     height: 26px;
-  }
-
-  /* ---- History Panel ---- */
-  .history-panel {
-    width: 260px;
-    min-width: 260px;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    animation: slideIn 0.15s ease-out;
-  }
-
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(20px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-
-  .history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .history-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .history-search {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-muted);
-  }
-
-  .history-search-input {
-    flex: 1;
-    background: none;
-    border: none;
-    outline: none;
-    color: var(--text-primary);
-    font-size: 11px;
-    font-family: inherit;
-    padding: 0;
-  }
-
-  .history-search-input::placeholder {
-    color: var(--text-muted);
-  }
-
-  .history-search-clear {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 10px;
-    padding: 0 2px;
-    line-height: 1;
-  }
-
-  .history-search-clear:hover {
-    color: var(--text-primary);
-  }
-
-  .history-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .history-empty {
-    padding: 20px 12px;
-    text-align: center;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .history-entry {
-    display: flex;
-    align-items: stretch;
-    border-radius: 6px;
-    margin-bottom: 6px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    transition: background 0.1s, border-color 0.1s;
-  }
-
-  .history-entry:hover {
-    background: var(--surface-hover);
-    border-color: var(--accent);
-  }
-
-  .history-entry-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 6px 8px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-align: left;
-    min-width: 0;
-    color: inherit;
-  }
-
-  .history-text {
-    font-size: 12px;
-    color: var(--text-primary);
-    line-height: 1.3;
-    word-break: break-word;
-  }
-
-  .history-time {
-    font-size: 10px;
-    color: var(--text-muted);
-  }
-
-  .history-entry-actions {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    padding: 2px 4px;
-    opacity: 0;
-    transition: opacity 0.1s;
-  }
-
-  .history-entry:hover .history-entry-actions {
-    opacity: 1;
-  }
-
-  .history-action-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 3px;
-    border-radius: 3px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .history-action-btn:hover {
-    background: var(--surface);
-    color: var(--accent);
-  }
-
-  .history-action-btn.delete:hover {
-    color: var(--error);
   }
 
   /* Save as template prompt */
