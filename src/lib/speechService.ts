@@ -87,7 +87,9 @@ export function createRecognizer(
   key: string,
   region: string,
   languages: string[],
-  microphoneDeviceId?: string
+  microphoneDeviceId?: string,
+  phraseList?: string[],
+  autoPunctuation?: boolean
 ): sdk.SpeechRecognizer {
   const speechConfig = sdk.SpeechConfig.fromSubscription(key, region);
 
@@ -101,18 +103,34 @@ export function createRecognizer(
     "5000"
   );
 
+  // Disable automatic punctuation and ITN (inverse text normalization) unless enabled
+  if (!autoPunctuation) {
+    speechConfig.setProperty("postprocessingoption", "0");
+  }
+
   const audioConfig = microphoneDeviceId
     ? sdk.AudioConfig.fromMicrophoneInput(microphoneDeviceId)
     : sdk.AudioConfig.fromDefaultMicrophoneInput();
 
+  let recognizerInstance: sdk.SpeechRecognizer;
+
   if (languages.length > 1) {
     // Use auto-detect language with multiple candidates
     const autoDetect = sdk.AutoDetectSourceLanguageConfig.fromLanguages(languages);
-    return sdk.SpeechRecognizer.FromConfig(speechConfig, autoDetect, audioConfig);
+    recognizerInstance = sdk.SpeechRecognizer.FromConfig(speechConfig, autoDetect, audioConfig);
   } else {
     speechConfig.speechRecognitionLanguage = languages[0] || "en-US";
-    return new sdk.SpeechRecognizer(speechConfig, audioConfig);
+    recognizerInstance = new sdk.SpeechRecognizer(speechConfig, audioConfig);
   }
+
+  if (phraseList && phraseList.length > 0) {
+    const grammar = sdk.PhraseListGrammar.fromRecognizer(recognizerInstance);
+    for (const phrase of phraseList) {
+      grammar.addPhrase(phrase);
+    }
+  }
+
+  return recognizerInstance;
 }
 
 export function startContinuousRecognition(

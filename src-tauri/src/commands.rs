@@ -11,6 +11,10 @@ pub struct AppSettings {
     pub shortcut: String,
     pub microphone_device_id: String,
     pub theme: String,
+    pub phrase_list: Vec<String>,
+    pub always_on_top: bool,
+    pub auto_punctuation: bool,
+    pub silence_timeout_seconds: u32,
 }
 
 impl Default for AppSettings {
@@ -22,6 +26,10 @@ impl Default for AppSettings {
             shortcut: "CommandOrControl+Shift+Space".into(),
             microphone_device_id: String::new(),
             theme: "dark".into(),
+            phrase_list: vec![],
+            always_on_top: true,
+            auto_punctuation: true,
+            silence_timeout_seconds: 30,
         }
     }
 }
@@ -55,6 +63,12 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
         let shortcut = store.get("shortcut").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "CommandOrControl+Shift+Space".into());
         let microphone_device_id = store.get("microphone_device_id").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_default();
         let theme = store.get("theme").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "dark".into());
+        let phrase_list = store.get("phrase_list").and_then(|v: serde_json::Value| {
+            v.as_array().map(|arr| arr.iter().filter_map(|item| item.as_str().map(String::from)).collect())
+        }).unwrap_or_default();
+        let always_on_top = store.get("always_on_top").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
+        let auto_punctuation = store.get("auto_punctuation").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
+        let silence_timeout_seconds = store.get("silence_timeout_seconds").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(30) as u32;
         AppSettings {
             azure_speech_key: key,
             azure_region: region,
@@ -62,6 +76,10 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
             shortcut,
             microphone_device_id,
             theme,
+            phrase_list,
+            always_on_top,
+            auto_punctuation,
+            silence_timeout_seconds,
         }
     } else {
         AppSettings::default()
@@ -78,6 +96,10 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     store.set("shortcut", serde_json::json!(settings.shortcut));
     store.set("microphone_device_id", serde_json::json!(settings.microphone_device_id));
     store.set("theme", serde_json::json!(settings.theme));
+    store.set("phrase_list", serde_json::json!(settings.phrase_list));
+    store.set("always_on_top", serde_json::json!(settings.always_on_top));
+    store.set("auto_punctuation", serde_json::json!(settings.auto_punctuation));
+    store.set("silence_timeout_seconds", serde_json::json!(settings.silence_timeout_seconds));
 
     // Flush to disk immediately so settings survive dev restarts
     store.save().map_err(|e| format!("Failed to save settings to disk: {}", e))?;

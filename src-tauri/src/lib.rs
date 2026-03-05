@@ -5,6 +5,7 @@ use tauri::{
     webview::WebviewWindowBuilder,
     Emitter, Manager, WebviewUrl,
 };
+use tauri_plugin_store::StoreExt;
 
 mod commands;
 
@@ -17,16 +18,37 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
             let _ = win.set_focus();
         }
     } else {
-        let _win = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("/".into()))
+        let on_top = app
+            .store("settings.json")
+            .ok()
+            .and_then(|store| store.get("always_on_top").and_then(|v| v.as_bool()))
+            .unwrap_or(true);
+
+        // Read saved popup geometry from store
+        let store = app.store("settings.json").ok();
+        let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(600.0);
+        let popup_h = store.as_ref().and_then(|s| s.get("popup_height").and_then(|v| v.as_f64())).unwrap_or(450.0);
+        let popup_x = store.as_ref().and_then(|s| s.get("popup_x").and_then(|v| v.as_f64()));
+        let popup_y = store.as_ref().and_then(|s| s.get("popup_y").and_then(|v| v.as_f64()));
+
+        let mut builder = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("/".into()))
             .title("Voice to Prompt")
-            .inner_size(420.0, 320.0)
+            .inner_size(popup_w, popup_h)
+            .min_inner_size(350.0, 280.0)
             .decorations(false)
-            .resizable(false)
+            .resizable(true)
             .skip_taskbar(true)
-            .always_on_top(true)
-            .center()
-            .visible(true)
-            .build();
+            .always_on_top(on_top)
+            .visible(true);
+
+        // Restore saved position, or center if none saved
+        if let (Some(x), Some(y)) = (popup_x, popup_y) {
+            builder = builder.position(x, y);
+        } else {
+            builder = builder.center();
+        }
+
+        let _win = builder.build();
     }
 }
 

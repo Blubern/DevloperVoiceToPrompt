@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { load, type Store } from "@tauri-apps/plugin-store";
   import type { AppSettings } from "../lib/settingsStore";
   import {
     SUPPORTED_LANGUAGES,
@@ -14,6 +15,7 @@
     checkMicrophonePermission,
     type SpeechCallbacks,
   } from "../lib/speechService";
+  import { recordUsage } from "../lib/usageStore";
   import MicButton from "./MicButton.svelte";
 
   interface Props {
@@ -32,6 +34,16 @@
   let editedText = $state("");
   let userHasEdited = $state(false);
   let lastSyncedSegmentCount = $state(0);
+
+  // Usage tracking: record start time of current recognition session
+  let sessionStartTime: number | null = null;
+
+  // Silence auto-stop timer
+  let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+  let silenceMessage = $state("");
+
+  // Window resize/move debounce
+  let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
 
   // Language labels for display
   let languageLabels = $derived(
@@ -62,16 +74,77 @@
     }
   });
 
+  // Persist window size and position on resize/move
+  $effect(() => {
+    const win = getCurrentWindow();
+    const unlisteners: Array<() => void> = [];
+
+    async function saveGeometry() {
+      try {
+        const size = await win.innerSize();
+        const pos = await win.outerPosition();
+        const s: Store = await load("settings.json");
+        await s.set("popup_width", size.width / (await win.scaleFactor()));
+        await s.set("popup_height", size.height / (await win.scaleFactor()));
+        await s.set("popup_x", pos.x / (await win.scaleFactor()));
+        await s.set("popup_y", pos.y / (await win.scaleFactor()));
+      } catch {}
+    }
+
+    function debouncedSave() {
+      if (resizeDebounce) clearTimeout(resizeDebounce);
+      resizeDebounce = setTimeout(saveGeometry, 300);
+    }
+
+    win.onResized(() => debouncedSave()).then((u) => unlisteners.push(u));
+    win.onMoved(() => debouncedSave()).then((u) => unlisteners.push(u));
+
+    return () => {
+      unlisteners.forEach((u) => u());
+      if (resizeDebounce) clearTimeout(resizeDebounce);
+    };
+  });
+
   function handleTextInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
     editedText = target.value;
     userHasEdited = true;
   }
 
+  function clearSilenceTimer() {
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+  }
+
+  function resetSilenceTimer() {
+    clearSilenceTimer();
+    const timeout = settings.silence_timeout_seconds;
+    if (timeout > 0 && status === "listening") {
+      silenceTimer = setTimeout(async () => {
+        silenceMessage = "Stopped — no speech detected";
+        await stopAndRecordUsage();
+        setTimeout(() => (silenceMessage = ""), 4000);
+      }, timeout * 1000);
+    }
+  }
+
+  async function stopAndRecordUsage() {
+    await stopContinuousRecognition();
+    status = "idle";
+    clearSilenceTimer();
+    // Record usage
+    if (sessionStartTime !== null) {
+      const elapsed = (Date.now() - sessionStartTime) / 1000;
+      sessionStartTime = null;
+      await recordUsage(elapsed);
+    }
+  }
+
   async function toggleMic() {
     if (status === "listening") {
-      await stopContinuousRecognition();
-      status = "idle";
+      await stopAndRecordUsage();
       return;
     }
 
@@ -87,27 +160,32 @@
     }
 
     errorMessage = "";
-    finalSegments = [];
+    silenceMessage = "";
+    // Feature 1: Do NOT clear text state — preserve existing text across stop/start
+    // Only clear interim text since old interim is stale
     interimText = "";
-    userHasEdited = false;
-    editedText = "";
-    lastSyncedSegmentCount = 0;
+    // Sync the segment count so the $effect doesn't re-process existing segments
+    lastSyncedSegmentCount = finalSegments.length;
 
     const rec = createRecognizer(
       settings.azure_speech_key,
       settings.azure_region,
       settings.languages,
-      settings.microphone_device_id || undefined
+      settings.microphone_device_id || undefined,
+      settings.phrase_list,
+      settings.auto_punctuation
     );
 
     const callbacks: SpeechCallbacks = {
       onInterim: (text) => {
         interimText = text;
+        resetSilenceTimer();
       },
       onFinal: (text) => {
         if (text) {
           finalSegments = [...finalSegments, text];
           interimText = "";
+          resetSilenceTimer();
         }
       },
       onError: (err) => {
@@ -115,10 +193,22 @@
       },
       onStatusChange: (s) => {
         status = s;
+        if (s === "listening") {
+          sessionStartTime = Date.now();
+          resetSilenceTimer();
+        }
       },
     };
 
     startContinuousRecognition(rec, callbacks);
+  }
+
+  function clearText() {
+    finalSegments = [];
+    interimText = "";
+    editedText = "";
+    userHasEdited = false;
+    lastSyncedSegmentCount = 0;
   }
 
   async function copyAndClose() {
@@ -126,13 +216,14 @@
     if (text) {
       await writeText(text);
     }
+    // Stop recording if active
+    if (status === "listening") {
+      await stopAndRecordUsage();
+    }
     // Reset state
-    finalSegments = [];
-    interimText = "";
-    editedText = "";
-    userHasEdited = false;
-    lastSyncedSegmentCount = 0;
+    clearText();
     errorMessage = "";
+    silenceMessage = "";
     status = "idle";
     disposeRecognizer();
     await invoke("hide_popup");
@@ -140,14 +231,11 @@
 
   async function dismiss() {
     if (status === "listening") {
-      await stopContinuousRecognition();
+      await stopAndRecordUsage();
     }
-    finalSegments = [];
-    interimText = "";
-    editedText = "";
-    userHasEdited = false;
-    lastSyncedSegmentCount = 0;
+    clearText();
     errorMessage = "";
+    silenceMessage = "";
     status = "idle";
     disposeRecognizer();
     await invoke("hide_popup");
@@ -204,6 +292,14 @@
 
     <!-- Text area for live editing -->
     <div class="text-area">
+      <div class="text-header">
+        {#if editedText}
+          <button class="clear-btn" onclick={clearText} title="Clear text">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Clear
+          </button>
+        {/if}
+      </div>
       <textarea
         bind:this={textareaEl}
         value={editedText}
@@ -218,6 +314,11 @@
     <!-- Error message -->
     {#if errorMessage}
       <div class="error">{errorMessage}</div>
+    {/if}
+
+    <!-- Silence auto-stop message -->
+    {#if silenceMessage}
+      <div class="silence-msg">{silenceMessage}</div>
     {/if}
 
     <!-- Action buttons -->
@@ -339,6 +440,39 @@
   .text-area {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .text-header {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 22px;
+    margin-bottom: 2px;
+  }
+
+  .clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .clear-btn:hover {
+    background: var(--surface-hover);
+    color: var(--error);
+  }
+
+  .silence-msg {
+    font-size: 12px;
+    color: var(--warning);
+    padding: 4px 0;
   }
 
   textarea {

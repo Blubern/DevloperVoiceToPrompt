@@ -1,12 +1,16 @@
-# Speech to Text
+# Developer Voice to Prompt
 
-A lightweight desktop dictation tool powered by Azure Speech Services, built with Tauri v2 and Svelte 5.
+A lightweight desktop dictation tool powered by Azure Speech Services, built with Tauri v2 and Svelte 5. Designed for developers who want to dictate prompts, notes, or code comments using their voice.
 
 ## Features
 
 - **Real-time transcription** — live speech-to-text as you speak
 - **Multi-language support** — 35+ languages with auto-detection when multiple are selected
 - **Editable dictation** — modify transcribed text while still dictating
+- **Persistent text across mic toggles** — stop and restart the microphone without losing your text; new speech appends to existing content
+- **Resizable popup with saved geometry** — resize and reposition the dictation window; size and position are remembered across sessions
+- **Silence auto-stop** — automatically stops recording after a configurable period of silence (10–300 seconds) to save Azure costs
+- **Usage statistics** — track daily, weekly, calendar month, and 30-day speech usage in seconds to monitor Azure spend
 - **Global keyboard shortcut** — toggle the dictation popup from anywhere
 - **System tray** — runs in the background with quick access via tray icon
 - **Copy to clipboard** — one-click copy and dismiss
@@ -105,7 +109,8 @@ The installer is output to `src-tauri/target/release/bundle/`.
 │  ┌───────────────┐  ┌────────────────────────┐  │
 │  │ Settings      │  │ Popup (Dictation)      │  │
 │  │ Window        │  │ Window                 │  │
-│  │ (520×620)     │  │ (420×320, always-on-   │  │
+│  │ (520×620)     │  │ (600×450 default,      │  │
+│  │               │  │  resizable, always-on- │  │
 │  │               │  │  top, no decorations)  │  │
 │  └───────────────┘  └────────────────────────┘  │
 │              │                    │               │
@@ -118,9 +123,9 @@ The installer is output to `src-tauri/target/release/bundle/`.
 **Two-window design:**
 
 - **Main window** — Settings configuration with OS window decorations
-- **Popup window** — Floating dictation overlay, draggable custom title bar, no taskbar entry
+- **Popup window** — Floating dictation overlay, draggable custom title bar, resizable with saved position, no taskbar entry
 
-Settings are stored via `tauri-plugin-store` as a JSON file. The global shortcut is registered at startup from stored settings and re-registered on save. The Azure Speech SDK runs in the WebView, connecting via WebSocket to Azure for real-time transcription.
+Settings are stored via `tauri-plugin-store` as a JSON file (`settings.json`). Usage statistics are tracked in a separate `usage.json` store. The global shortcut is registered at startup from stored settings and re-registered on save. The Azure Speech SDK runs in the WebView, connecting via WebSocket to Azure for real-time transcription.
 
 ## Theming
 

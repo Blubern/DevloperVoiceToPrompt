@@ -8,6 +8,7 @@
     saveSettings,
   } from "../lib/settingsStore";
   import { enumerateAudioDevices, checkMicrophonePermission, testAzureConnection, type AudioDevice } from "../lib/speechService";
+  import { getUsageStats, resetUsage, pruneOldEntries, formatDuration, type UsageStats } from "../lib/usageStore";
   import ShortcutRecorder from "./ShortcutRecorder.svelte";
   import { onMount } from "svelte";
 
@@ -33,6 +34,16 @@
   let micWarning = $state("");
   let apiStatus = $state<"idle" | "checking" | "ok" | "error">("idle");
   let apiError = $state("");
+  let phraseList = $state<string[]>([]);
+  let newPhrase = $state("");
+  let alwaysOnTop = $state(DEFAULT_SETTINGS.always_on_top);
+  let autoPunctuation = $state(DEFAULT_SETTINGS.auto_punctuation);
+  let silenceTimeoutEnabled = $state(true);
+  let silenceTimeoutSeconds = $state(DEFAULT_SETTINGS.silence_timeout_seconds);
+
+  // Usage statistics
+  let usageStats = $state<UsageStats | null>(null);
+  let showResetConfirm = $state(false);
 
   async function checkConnection() {
     if (!key || !region) {
@@ -60,6 +71,12 @@
       languages = initialSettings.languages ?? [...DEFAULT_SETTINGS.languages];
       shortcut = initialSettings.shortcut ?? DEFAULT_SETTINGS.shortcut;
       microphoneDeviceId = initialSettings.microphone_device_id ?? "";
+      phraseList = initialSettings.phrase_list ? [...initialSettings.phrase_list] : [];
+      alwaysOnTop = initialSettings.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
+      autoPunctuation = initialSettings.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
+      const savedTimeout = initialSettings.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
+      silenceTimeoutEnabled = savedTimeout > 0;
+      silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
       const savedTheme = initialSettings.theme ?? DEFAULT_SETTINGS.theme;
       theme = savedTheme;
       document.documentElement.dataset.theme = savedTheme;
@@ -70,6 +87,9 @@
     const result = await enumerateAudioDevices();
     audioDevices = result.devices;
     micWarning = result.error ?? "";
+    // Load usage stats and prune old entries
+    await pruneOldEntries();
+    usageStats = await getUsageStats();
   });
 
   let filteredLanguages = $derived(
@@ -97,6 +117,18 @@
     document.documentElement.dataset.theme = theme;
   }
 
+  function addPhrase() {
+    const trimmed = newPhrase.trim();
+    if (trimmed && !phraseList.includes(trimmed)) {
+      phraseList = [...phraseList, trimmed];
+    }
+    newPhrase = "";
+  }
+
+  function removePhrase(phrase: string) {
+    phraseList = phraseList.filter((p) => p !== phrase);
+  }
+
   async function handleSave() {
     saving = true;
     error = "";
@@ -110,6 +142,10 @@
         shortcut,
         microphone_device_id: microphoneDeviceId,
         theme,
+        phrase_list: phraseList,
+        always_on_top: alwaysOnTop,
+        auto_punctuation: autoPunctuation,
+        silence_timeout_seconds: silenceTimeoutEnabled ? silenceTimeoutSeconds : 0,
       });
       success = true;
       onSaved?.();
@@ -237,10 +273,34 @@
           <span class="hint">Select the microphone to use for dictation.</span>
         {/if}
       </label>
+
+      <div class="field">
+        <span class="label">Phrase List ({phraseList.length} phrases)</span>
+        <div class="input-row">
+          <input
+            type="text"
+            bind:value={newPhrase}
+            placeholder="Add a word or phrase..."
+            onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPhrase(); } }}
+          />
+          <button type="button" class="toggle-btn" onclick={addPhrase}>Add</button>
+        </div>
+        {#if phraseList.length > 0}
+          <div class="phrase-tags">
+            {#each phraseList as phrase}
+              <span class="phrase-tag">
+                {phrase}
+                <button type="button" class="phrase-remove" onclick={() => removePhrase(phrase)}>✕</button>
+              </span>
+            {/each}
+          </div>
+        {/if}
+        <span class="hint">Add words or phrases to improve recognition accuracy (e.g. technical terms, names).</span>
+      </div>
     </div>
 
     <div class="section">
-      <h2>Shortcut</h2>
+      <h2>Behavior</h2>
 
       <div class="field">
         <span class="label">Global Shortcut</span>
@@ -253,6 +313,83 @@
           {/if}
         </span>
       </div>
+
+      <label class="field toggle-field">
+        <span class="label">Always on Top</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={alwaysOnTop} class="toggle-checkbox" />
+          <span class="toggle-label">{alwaysOnTop ? 'On' : 'Off'}</span>
+        </div>
+        <span class="hint">Keep the dictation popup above other windows.</span>
+      </label>
+
+      <label class="field toggle-field">
+        <span class="label">Auto Punctuation</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={autoPunctuation} class="toggle-checkbox" />
+          <span class="toggle-label">{autoPunctuation ? 'On' : 'Off'}</span>
+        </div>
+        <span class="hint">Automatically add punctuation and capitalization to dictated text.</span>
+      </label>
+
+      <div class="field">
+        <label class="toggle-field">
+          <span class="label">Silence Auto-Stop</span>
+          <div class="toggle-row">
+            <input type="checkbox" bind:checked={silenceTimeoutEnabled} class="toggle-checkbox" />
+            <span class="toggle-label">{silenceTimeoutEnabled ? 'On' : 'Off'}</span>
+          </div>
+        </label>
+        {#if silenceTimeoutEnabled}
+          <div class="input-row" style="margin-top: 6px;">
+            <input
+              type="number"
+              min="10"
+              max="300"
+              bind:value={silenceTimeoutSeconds}
+              style="width: 80px;"
+            />
+            <span class="timeout-unit">seconds</span>
+          </div>
+        {/if}
+        <span class="hint">Automatically stop recording after this many seconds of silence to save costs. Set 10–300 seconds, or disable.</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Usage Statistics</h2>
+      {#if usageStats}
+        <div class="usage-grid">
+          <div class="usage-card">
+            <span class="usage-label">Today</span>
+            <span class="usage-value">{formatDuration(usageStats.today)}</span>
+          </div>
+          <div class="usage-card">
+            <span class="usage-label">This Week</span>
+            <span class="usage-value">{formatDuration(usageStats.thisWeek)}</span>
+          </div>
+          <div class="usage-card">
+            <span class="usage-label">Calendar Month</span>
+            <span class="usage-value">{formatDuration(usageStats.calendarMonth)}</span>
+          </div>
+          <div class="usage-card">
+            <span class="usage-label">Last 30 Days</span>
+            <span class="usage-value">{formatDuration(usageStats.last30Days)}</span>
+          </div>
+        </div>
+        <div class="usage-actions">
+          {#if showResetConfirm}
+            <span class="reset-confirm-text">Reset all usage data?</span>
+            <button type="button" class="toggle-btn reset-yes" onclick={async () => { await resetUsage(); usageStats = await getUsageStats(); showResetConfirm = false; }}>Yes, reset</button>
+            <button type="button" class="toggle-btn" onclick={() => (showResetConfirm = false)}>Cancel</button>
+          {:else}
+            <button type="button" class="toggle-btn" onclick={() => (showResetConfirm = true)}>Reset Statistics</button>
+            <button type="button" class="toggle-btn" onclick={async () => { usageStats = await getUsageStats(); }}>Refresh</button>
+          {/if}
+        </div>
+      {:else}
+        <p class="hint">Loading usage data...</p>
+      {/if}
     </div>
 
     {#if error}
@@ -567,5 +704,117 @@
     font-size: 11px;
     color: var(--text-muted);
     font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  }
+
+  .phrase-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .phrase-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--lang-tag-bg);
+    color: var(--accent);
+    border: 1px solid var(--lang-tag-border);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  }
+
+  .phrase-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+  }
+
+  .phrase-remove:hover {
+    color: var(--error);
+  }
+
+  .toggle-field {
+    cursor: pointer;
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toggle-checkbox {
+    width: auto;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .toggle-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .timeout-unit {
+    font-size: 13px;
+    color: var(--text-secondary);
+    align-self: center;
+  }
+
+  .usage-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .usage-card {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .usage-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .usage-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  }
+
+  .usage-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .reset-confirm-text {
+    font-size: 12px;
+    color: var(--error);
+  }
+
+  .reset-yes {
+    color: var(--error);
+    border-color: var(--error);
+  }
+
+  .reset-yes:hover {
+    background: var(--error-bg);
   }
 </style>

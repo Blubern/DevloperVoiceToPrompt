@@ -7,6 +7,10 @@ export interface AppSettings {
   shortcut: string;
   microphone_device_id: string;
   theme: string;
+  phrase_list: string[];
+  always_on_top: boolean;
+  auto_punctuation: boolean;
+  silence_timeout_seconds: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -16,6 +20,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   shortcut: "CommandOrControl+Shift+Space",
   microphone_device_id: "",
   theme: "dark",
+  phrase_list: [],
+  always_on_top: true,
+  auto_punctuation: true,
+  silence_timeout_seconds: 30,
 };
 
 export const AZURE_REGIONS = [
