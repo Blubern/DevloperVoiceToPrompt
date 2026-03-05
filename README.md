@@ -141,6 +141,21 @@ Uses [Catppuccin](https://catppuccin.com/) color palettes:
 
 Toggle via the sun/moon icon button in the Settings header.
 
+## Keyboard Shortcuts
+
+All shortcuts are customizable in Settings → General (or Copilot tab for Enhance Prompt).
+
+| Action | Windows | macOS | Scope |
+| --- | --- | --- | --- |
+| **Show / Hide Popup** | `Ctrl+Alt+V` | `Cmd+Alt+V` | Global (works from any app) |
+| **Start / Stop Voice** | `Ctrl+Shift+M` | `Cmd+Shift+M` | In popup |
+| **Copy & Close** | `Ctrl+Enter` | `Cmd+Enter` | In popup |
+| **Switch Speech Provider** | `Ctrl+Shift+P` | `Cmd+Shift+P` | In popup |
+| **Enhance Prompt (AI)** | `Ctrl+Shift+E` | `Cmd+Shift+E` | In popup (requires Copilot) |
+| **Dismiss** | `Esc` | `Esc` | In popup |
+
+Press **?** in the popup to see active shortcuts at any time.
+
 ## License
 
 MIT

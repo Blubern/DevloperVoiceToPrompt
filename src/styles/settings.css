@@ -118,7 +118,7 @@
 }
 
 /* Settings form inputs */
-.settings-container input,
+.settings-container input:not([type="checkbox"]),
 .settings-container select {
   width: 100%;
   padding: 8px 10px;
@@ -131,7 +131,7 @@
   outline: none;
 }
 
-.settings-container input:focus,
+.settings-container input:not([type="checkbox"]):focus,
 .settings-container select:focus {
   border-color: var(--accent);
 }

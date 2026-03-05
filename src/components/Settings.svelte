@@ -52,6 +52,10 @@
   let whisperModel = $state(DEFAULT_SETTINGS.whisper_model);
   let whisperLanguage = $state(DEFAULT_SETTINGS.whisper_language);
   let whisperChunkSeconds = $state(DEFAULT_SETTINGS.whisper_chunk_seconds);
+  let copilotEnabled = $state(DEFAULT_SETTINGS.copilot_enabled);
+  let copilotSelectedModel = $state(DEFAULT_SETTINGS.copilot_selected_model);
+  let copilotSelectedEnhancer = $state(DEFAULT_SETTINGS.copilot_selected_enhancer);
+  let promptEnhancerShortcut = $state(DEFAULT_SETTINGS.prompt_enhancer_shortcut);
 
   // Shell-only state
   let saving = $state(false);
@@ -92,6 +96,10 @@
     whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
     whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
     whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
+    copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
+    copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
+    copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
+    promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -126,6 +134,10 @@
       max_recording_enabled: maxRecordingEnabled,
       max_recording_seconds: maxRecordingSeconds,
       autostart_enabled: autostartEnabled,
+      copilot_enabled: copilotEnabled,
+      copilot_selected_model: copilotSelectedModel,
+      copilot_selected_enhancer: copilotSelectedEnhancer,
+      prompt_enhancer_shortcut: promptEnhancerShortcut,
     };
   }
 
@@ -166,6 +178,10 @@
     whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
     whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
     whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
+    copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
+    copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
+    copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
+    promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -246,7 +262,7 @@
       {:else if activeTab === 'usage'}
         <UsageTab />
       {:else if activeTab === 'copilot'}
-        <CopilotTab />
+        <CopilotTab bind:copilotEnabled bind:copilotSelectedModel bind:copilotSelectedEnhancer bind:promptEnhancerShortcut />
       {/if}
     </div>
 

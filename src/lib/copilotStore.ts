@@ -29,3 +29,15 @@ export async function copilotListModels(): Promise<CopilotModel[]> {
 export async function copilotStop(): Promise<void> {
   return invoke<void>("copilot_stop");
 }
+
+export async function copilotEnhance(
+  modelId: string,
+  systemPrompt: string,
+  userText: string
+): Promise<string> {
+  return invoke<string>("copilot_enhance", {
+    modelId,
+    systemPrompt,
+    userText,
+  });
+}

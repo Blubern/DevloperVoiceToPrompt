@@ -25,6 +25,7 @@ export function providerLabel(p: SpeechProviderType): string {
 // Tauri custom event names
 export const EVENT_SETTINGS_UPDATED = "settings-updated" as const;
 export const EVENT_TEMPLATES_UPDATED = "templates-updated" as const;
+export const EVENT_ENHANCER_TEMPLATES_UPDATED = "enhancer-templates-updated" as const;
 export const EVENT_CHECK_FIRST_RUN = "check-first-run" as const;
 export const EVENT_WHISPER_DOWNLOAD_PROGRESS = "whisper-download-progress" as const;
 

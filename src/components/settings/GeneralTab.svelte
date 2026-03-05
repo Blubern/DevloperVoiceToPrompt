@@ -1,5 +1,6 @@
 <script lang="ts">
   import ShortcutRecorder from "../ShortcutRecorder.svelte";
+  import { DEFAULT_SETTINGS } from "../../lib/settingsStore";
 
   let {
     theme = $bindable(),
@@ -32,6 +33,13 @@
   function toggleTheme() {
     theme = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = theme;
+  }
+
+  function resetShortcutsToDefault() {
+    shortcut = DEFAULT_SETTINGS.shortcut;
+    popupCopyShortcut = DEFAULT_SETTINGS.popup_copy_shortcut;
+    popupVoiceShortcut = DEFAULT_SETTINGS.popup_voice_shortcut;
+    providerSwitchShortcut = DEFAULT_SETTINGS.provider_switch_shortcut;
   }
 </script>
 
@@ -112,6 +120,11 @@
           No shortcut set. Click "Record" to assign one.
         {/if}
       </span>
+    </div>
+
+    <div class="field">
+      <button type="button" class="toggle-btn" onclick={resetShortcutsToDefault}>Reset All Shortcuts to Default</button>
+      <span class="hint">Restore all keyboard shortcuts on this page to their default values.</span>
     </div>
 
     <label class="field toggle-field">

@@ -12,7 +12,7 @@
   "app": {
     "withGlobalTauri": true,
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://*.speech.microsoft.com https://*.api.cognitive.microsoft.com wss://*.speech.microsoft.com wss://*.stt.speech.microsoft.com https://github.com https://api.github.com; img-src 'self' https://github.com https://avatars.githubusercontent.com; media-src 'self'; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' https://*.speech.microsoft.com https://*.api.cognitive.microsoft.com wss://*.speech.microsoft.com wss://*.stt.speech.microsoft.com https://github.com https://api.github.com; img-src 'self' https://github.com https://avatars.githubusercontent.com; media-src 'self' mediastream:; script-src 'self' blob:"
     },
     "windows": [
       {
@@ -45,7 +45,8 @@
       }
     },
     "macOS": {
-      "entitlements": null
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "10.15"
     }
   },
   "plugins": {}

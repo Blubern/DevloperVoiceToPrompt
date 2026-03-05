@@ -52,6 +52,22 @@ async function handleRequest(req) {
       return { ok: true };
     }
 
+    case "enhance": {
+      if (!client) throw new Error("Client not initialized");
+      const { model, system_prompt, user_text } = req.params ?? {};
+      if (!model || !system_prompt || !user_text) {
+        throw new Error("Missing required params: model, system_prompt, user_text");
+      }
+      const response = await client.chat({
+        model,
+        messages: [
+          { role: "system", content: system_prompt },
+          { role: "user", content: user_text },
+        ],
+      });
+      return response?.message?.content ?? "";
+    }
+
     default:
       throw new Error(`Unknown method: ${req.method}`);
   }

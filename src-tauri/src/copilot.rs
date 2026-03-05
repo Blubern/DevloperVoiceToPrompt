@@ -57,10 +57,23 @@ async fn bridge_call(
     bridge: &mut BridgeProcess,
     method: &str,
 ) -> Result<serde_json::Value, String> {
+    bridge_call_with_params(bridge, method, None).await
+}
+
+/// Send a JSON request with optional params to the bridge and read the JSON response line.
+/// Times out after 30 seconds to prevent hangs if the bridge freezes.
+async fn bridge_call_with_params(
+    bridge: &mut BridgeProcess,
+    method: &str,
+    params: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     use tokio::time::{timeout, Duration};
 
     let id = bridge.next_id.fetch_add(1, Ordering::Relaxed);
-    let req = serde_json::json!({ "id": id, "method": method });
+    let mut req = serde_json::json!({ "id": id, "method": method });
+    if let Some(p) = params {
+        req["params"] = p;
+    }
     let mut line = serde_json::to_string(&req).unwrap();
     line.push('\n');
 
@@ -279,4 +292,30 @@ pub async fn copilot_stop(state: tauri::State<'_, CopilotState>) -> Result<(), S
         let _ = bridge._child.kill().await;
     }
     Ok(())
+}
+
+/// Enhance a prompt using the Copilot chat API.
+#[tauri::command]
+pub async fn copilot_enhance(
+    state: tauri::State<'_, CopilotState>,
+    model_id: String,
+    system_prompt: String,
+    user_text: String,
+) -> Result<String, String> {
+    let mut guard = state.bridge.lock().await;
+    let bridge = guard
+        .as_mut()
+        .ok_or("Copilot not connected.")?;
+
+    let params = serde_json::json!({
+        "model": model_id,
+        "system_prompt": system_prompt,
+        "user_text": user_text,
+    });
+
+    let val = bridge_call_with_params(bridge, "enhance", Some(params)).await?;
+
+    val.as_str()
+        .map(String::from)
+        .ok_or_else(|| "Unexpected response format from enhance".to_string())
 }

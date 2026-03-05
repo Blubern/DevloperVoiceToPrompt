@@ -118,7 +118,7 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
                 .get("shortcut")
                 .and_then(|v: serde_json::Value| v.as_str().map(String::from))
         })
-        .unwrap_or_else(|| "CommandOrControl+Shift+Space".into());
+        .unwrap_or_else(|| "CommandOrControl+Alt+V".into());
 
     let app_handle = app.clone();
     if shortcut_str.is_empty() {
@@ -159,6 +159,7 @@ pub fn run() {
             copilot::copilot_auth_status,
             copilot::copilot_list_models,
             copilot::copilot_stop,
+            copilot::copilot_enhance,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app

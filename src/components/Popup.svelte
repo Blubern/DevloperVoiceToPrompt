@@ -33,10 +33,13 @@
     providerLabel,
     EVENT_SETTINGS_UPDATED,
     EVENT_TEMPLATES_UPDATED,
+    EVENT_ENHANCER_TEMPLATES_UPDATED,
     type RecordingStatus,
   } from "../lib/constants";
   import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
   import { AudioLevelMeter } from "../lib/audioLevelMeter";
+  import { copilotInit, copilotAuthStatus, copilotListModels, copilotStop, copilotEnhance, type CopilotAuthStatus, type CopilotModel } from "../lib/copilotStore";
+  import { getEnhancerTemplates, type EnhancerTemplate } from "../lib/enhancerTemplateStore";
 
   interface Props {
     settings: AppSettings;
@@ -97,6 +100,18 @@
   let undoSnapshot: { segments: string[]; text: string; wasEdited: boolean; syncCount: number } | null = $state(null);
   let showUndoToast = $state(false);
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Copilot state
+  let copilotStatus = $state<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  let copilotAuth = $state<CopilotAuthStatus | null>(null);
+  let copilotModels = $state<CopilotModel[]>([]);
+  let copilotError = $state("");
+  let copilotSelectedModel = $state("");
+  let enhancerTemplates = $state<EnhancerTemplate[]>([]);
+  let selectedEnhancerId = $state("");
+  let enhancing = $state(false);
+
+  let sortedCopilotModels = $derived([...copilotModels].sort((a, b) => a.name.localeCompare(b.name)));
 
   // Elapsed time display
   let elapsedSeconds = $state(0);
@@ -545,6 +560,9 @@
       if (status !== "listening") {
         settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
       }
+    } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
+      e.preventDefault();
+      executeEnhance();
     }
   }
 
@@ -660,6 +678,104 @@
     }).then((fn) => { unlistenFn = fn; });
     return () => { unlistenFn?.(); };
   });
+
+  // Listen to enhancer-templates-updated from Settings
+  $effect(() => {
+    let unlistenFn: (() => void) | null = null;
+    listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
+      enhancerTemplates = await getEnhancerTemplates();
+    }).then((fn) => { unlistenFn = fn; });
+    return () => { unlistenFn?.(); };
+  });
+
+  // Auto-connect to Copilot when enabled
+  $effect(() => {
+    const enabled = settings.copilot_enabled;
+    if (enabled && copilotStatus === 'disconnected') {
+      copilotStatus = 'connecting';
+      copilotError = '';
+      (async () => {
+        try {
+          await copilotInit();
+          const auth = await copilotAuthStatus();
+          copilotAuth = auth;
+          if (auth?.authenticated) {
+            copilotModels = await copilotListModels();
+            copilotStatus = 'connected';
+            // Restore saved model selection
+            if (settings.copilot_selected_model && copilotModels.some(m => m.id === settings.copilot_selected_model)) {
+              copilotSelectedModel = settings.copilot_selected_model;
+            }
+          } else {
+            copilotStatus = 'error';
+            copilotError = 'Not signed in to GitHub Copilot';
+          }
+        } catch (e: any) {
+          copilotStatus = 'error';
+          copilotError = String(e);
+        }
+        // Load enhancer templates regardless of connection status
+        enhancerTemplates = await getEnhancerTemplates();
+        // Restore saved enhancer selection (or use default from settings)
+        const savedEnhancer = settings.copilot_selected_enhancer;
+        if (savedEnhancer && enhancerTemplates.some(t => t.id === savedEnhancer)) {
+          selectedEnhancerId = savedEnhancer;
+        }
+      })();
+    } else if (!enabled && copilotStatus !== 'disconnected') {
+      copilotStop().catch(() => {});
+      copilotStatus = 'disconnected';
+      copilotAuth = null;
+      copilotModels = [];
+      copilotError = '';
+    }
+  });
+
+  // Persist selected model change
+  async function handleModelChange(modelId: string) {
+    copilotSelectedModel = modelId;
+    settings = { ...settings, copilot_selected_model: modelId };
+    // Blur select so it doesn't capture keyboard shortcuts
+    (document.activeElement as HTMLElement)?.blur();
+    try {
+      await saveSettings(settings);
+      await emit(EVENT_SETTINGS_UPDATED);
+    } catch (e) {
+      console.error("Failed to persist model selection:", e);
+    }
+  }
+
+  // Persist selected enhancer change
+  async function handleEnhancerChange(enhancerId: string) {
+    selectedEnhancerId = enhancerId;
+    settings = { ...settings, copilot_selected_enhancer: enhancerId };
+    // Blur select so it doesn't capture keyboard shortcuts
+    (document.activeElement as HTMLElement)?.blur();
+    try {
+      await saveSettings(settings);
+      await emit(EVENT_SETTINGS_UPDATED);
+    } catch (e) {
+      console.error("Failed to persist enhancer selection:", e);
+    }
+  }
+
+  // Execute prompt enhancement
+  async function executeEnhance() {
+    const text = editedText.trim();
+    if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected') return;
+    const template = enhancerTemplates.find(t => t.id === selectedEnhancerId);
+    if (!template) return;
+    enhancing = true;
+    try {
+      const result = await copilotEnhance(copilotSelectedModel, template.text, text);
+      editedText = result;
+      userHasEdited = true;
+    } catch (e: any) {
+      copilotError = String(e);
+    } finally {
+      enhancing = false;
+    }
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} onclick={() => { langDropdownOpen = false; micDropdownOpen = false; }} />
@@ -748,6 +864,8 @@
     </div>
     <div class="titlebar-buttons">
       <!-- Microphone selector -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="mic-selector-wrapper" onclick={(e) => e.stopPropagation()}>
         <button
           class="mic-selector-btn"
@@ -809,6 +927,9 @@
       <button class="titlebar-btn" onclick={() => helpOpen = !helpOpen} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </button>
+      {#if settings.copilot_enabled && copilotStatus === 'connected' && copilotAuth?.login}
+        <img class="copilot-titlebar-avatar" src="https://github.com/{copilotAuth.login}.png?size=40" alt={copilotAuth.login} title={`Signed in as ${copilotAuth.login}`} />
+      {/if}
       <button class="titlebar-btn" onclick={() => invoke('show_settings')} aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -916,6 +1037,37 @@
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             </button>
           {/if}
+        {/if}
+
+        <!-- Copilot enhancer (inline, after action buttons) -->
+        {#if settings.copilot_enabled && copilotStatus === 'connected' && enhancerTemplates.length > 0}
+          <div class="copilot-inline">
+            <select class="copilot-select" value={copilotSelectedModel} onchange={(e) => handleModelChange((e.target as HTMLSelectElement).value)} title="Select Copilot model">
+              <option value="">Model...</option>
+              {#each sortedCopilotModels as model}
+                <option value={model.id}>{model.name}{model.is_premium ? ` (${model.multiplier}x)` : ' (Included)'}</option>
+              {/each}
+            </select>
+            <select class="copilot-select" value={selectedEnhancerId} onchange={(e) => handleEnhancerChange((e.target as HTMLSelectElement).value)} title="Select prompt enhancer template">
+              <option value="">Enhancer...</option>
+              {#each enhancerTemplates as t}
+                <option value={t.id}>{t.name}</option>
+              {/each}
+            </select>
+            <button
+              class="copilot-enhance-btn"
+              onclick={executeEnhance}
+              disabled={enhancing || !editedText.trim() || !copilotSelectedModel || !selectedEnhancerId}
+              title={enhancing ? 'Enhancing...' : 'Enhance prompt with AI'}
+            >
+              {#if enhancing}
+                <svg class="spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+              {:else}
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2L19 5"/><path d="M11 6.2L9.8 5"/><path d="M6.87 20.13l-2-2"/><path d="M12.07 14.93l-6.6 6.6"/><path d="M5.47 19.53l2-2"/></svg>
+              {/if}
+              <span class="copilot-enhance-label">{enhancing ? 'Enhancing...' : 'Enhance'}</span>
+            </button>
+          </div>
         {/if}
       </div>
 
@@ -1242,7 +1394,7 @@
     padding: 5px 10px;
     border-radius: 6px;
     background: var(--recording-glow);
-    border: 1px solid rgba(243, 139, 168, 0.2);
+    border: 1px solid color-mix(in srgb, var(--recording) 20%, transparent);
     animation: fadeIn 0.15s ease-out;
   }
 
@@ -1269,7 +1421,7 @@
   .level-meter {
     flex: 1;
     height: 6px;
-    background: rgba(243, 139, 168, 0.1);
+    background: color-mix(in srgb, var(--recording) 10%, transparent);
     border-radius: 3px;
     overflow: hidden;
     min-width: 40px;
@@ -1371,13 +1523,13 @@
 
   textarea.recording {
     border-color: var(--recording);
-    box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px rgba(243, 139, 168, 0.08);
+    box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 8%, transparent);
     animation: recordingGlow 2s ease-in-out infinite;
   }
 
   @keyframes recordingGlow {
-    0%, 100% { box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px rgba(243, 139, 168, 0.08); }
-    50% { box-shadow: 0 0 0 4px var(--recording-glow), inset 0 0 0 1px rgba(243, 139, 168, 0.15); }
+    0%, 100% { box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 8%, transparent); }
+    50% { box-shadow: 0 0 0 4px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 15%, transparent); }
   }
 
   textarea.hidden-textarea {
@@ -1709,5 +1861,70 @@
     margin-left: auto;
     color: var(--text-muted);
     font-size: 10px;
+  }
+
+  /* ---- Copilot Inline (inside actions) ---- */
+  .copilot-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 64px;
+    flex-wrap: wrap;
+  }
+
+  .copilot-titlebar-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin: 0 -1px;
+  }
+
+  .copilot-select {
+    padding: 3px 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    cursor: pointer;
+    outline: none;
+    field-sizing: content;
+  }
+  .copilot-select:focus { border-color: var(--accent); }
+  .copilot-select option { background: var(--input-bg); color: var(--text-primary); }
+
+  .copilot-enhance-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    cursor: pointer;
+    padding: 3px 10px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .copilot-enhance-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .copilot-enhance-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .copilot-enhance-label {
+    line-height: 1;
+  }
+
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 </style>

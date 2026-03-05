@@ -27,6 +27,10 @@ export interface AppSettings {
   max_recording_enabled: boolean;
   max_recording_seconds: number;
   autostart_enabled: boolean;
+  copilot_enabled: boolean;
+  copilot_selected_model: string;
+  copilot_selected_enhancer: string;
+  prompt_enhancer_shortcut: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -40,7 +44,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   whisper_language: "en-US",
   whisper_chunk_seconds: 5,
   languages: ["en-US"],
-  shortcut: "CommandOrControl+Shift+Space",
+  shortcut: "CommandOrControl+Alt+V",
   microphone_device_id: "",
   theme: "dark",
   phrase_list: [],
@@ -51,11 +55,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   history_enabled: true,
   history_max_entries: 50,
   popup_copy_shortcut: "CommandOrControl+Enter",
-  popup_voice_shortcut: "CommandOrControl+Shift+R",
-  provider_switch_shortcut: "",
+  popup_voice_shortcut: "CommandOrControl+Shift+M",
+  provider_switch_shortcut: "CommandOrControl+Shift+P",
   max_recording_enabled: true,
   max_recording_seconds: 180,
   autostart_enabled: false,
+  copilot_enabled: false,
+  copilot_selected_model: "",
+  copilot_selected_enhancer: "",
+  prompt_enhancer_shortcut: "CommandOrControl+Shift+E",
 };
 
 export const AZURE_REGIONS = [

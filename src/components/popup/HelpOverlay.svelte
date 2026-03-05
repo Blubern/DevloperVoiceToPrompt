@@ -24,6 +24,14 @@
       <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd>
       <span class="help-action">Copy & Close</span>
       <kbd>{formatShortcutLabel(settings.popup_copy_shortcut)}</kbd>
+      {#if settings.provider_switch_shortcut}
+        <span class="help-action">Switch Provider</span>
+        <kbd>{formatShortcutLabel(settings.provider_switch_shortcut)}</kbd>
+      {/if}
+      {#if settings.prompt_enhancer_shortcut}
+        <span class="help-action">Enhance Prompt</span>
+        <kbd>{formatShortcutLabel(settings.prompt_enhancer_shortcut)}</kbd>
+      {/if}
       <span class="help-action">Dismiss</span>
       <kbd>Esc</kbd>
     </div>

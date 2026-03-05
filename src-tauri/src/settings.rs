@@ -34,6 +34,10 @@ pub struct AppSettings {
     pub max_recording_enabled: bool,
     pub max_recording_seconds: u32,
     pub autostart_enabled: bool,
+    pub copilot_enabled: bool,
+    pub copilot_selected_model: String,
+    pub copilot_selected_enhancer: String,
+    pub prompt_enhancer_shortcut: String,
 }
 
 impl Default for AppSettings {
@@ -46,7 +50,7 @@ impl Default for AppSettings {
             azure_speech_key: String::new(),
             azure_region: "eastus".into(),
             languages: vec!["en-US".into()],
-            shortcut: "CommandOrControl+Shift+Space".into(),
+            shortcut: "CommandOrControl+Alt+V".into(),
             microphone_device_id: String::new(),
             theme: "dark".into(),
             phrase_list: vec![],
@@ -57,14 +61,18 @@ impl Default for AppSettings {
             history_enabled: true,
             history_max_entries: 50,
             popup_copy_shortcut: "CommandOrControl+Enter".into(),
-            popup_voice_shortcut: "CommandOrControl+Shift+R".into(),
-            provider_switch_shortcut: String::new(),
+            popup_voice_shortcut: "CommandOrControl+Shift+M".into(),
+            provider_switch_shortcut: "CommandOrControl+Shift+P".into(),
             whisper_model: "base".into(),
             whisper_language: "en-US".into(),
             whisper_chunk_seconds: 5,
             max_recording_enabled: true,
             max_recording_seconds: 180,
             autostart_enabled: false,
+            copilot_enabled: false,
+            copilot_selected_model: String::new(),
+            copilot_selected_enhancer: String::new(),
+            prompt_enhancer_shortcut: "CommandOrControl+Shift+E".into(),
         }
     }
 }
@@ -187,6 +195,10 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         max_recording_enabled: get_bool("max_recording_enabled", defaults.max_recording_enabled),
         max_recording_seconds: get_u32("max_recording_seconds", defaults.max_recording_seconds),
         autostart_enabled: get_bool("autostart_enabled", defaults.autostart_enabled),
+        copilot_enabled: get_bool("copilot_enabled", defaults.copilot_enabled),
+        copilot_selected_model: get_str("copilot_selected_model", &defaults.copilot_selected_model),
+        copilot_selected_enhancer: get_str("copilot_selected_enhancer", &defaults.copilot_selected_enhancer),
+        prompt_enhancer_shortcut: get_str("prompt_enhancer_shortcut", &defaults.prompt_enhancer_shortcut),
     }
 }
 
