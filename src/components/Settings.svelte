@@ -7,7 +7,7 @@
     AZURE_REGIONS,
     saveSettings,
   } from "../lib/settingsStore";
-  import { enumerateAudioDevices, checkMicrophonePermission, testAzureConnection, type AudioDevice } from "../lib/speechService";
+  import { enumerateAudioDevices, checkMicrophonePermission, testAzureConnection, webSpeechAvailable, type AudioDevice } from "../lib/speechService";
   import { getUsageStats, resetUsage, pruneOldEntries, formatDuration, type UsageStats } from "../lib/usageStore";
   import { clearHistory, pruneHistory } from "../lib/historyStore";
   import ShortcutRecorder from "./ShortcutRecorder.svelte";
@@ -26,6 +26,10 @@
   let shortcut = $state(DEFAULT_SETTINGS.shortcut);
   let microphoneDeviceId = $state("");
   let theme = $state(DEFAULT_SETTINGS.theme);
+  let speechProvider = $state<"os" | "azure">(DEFAULT_SETTINGS.speech_provider);
+  let osLanguage = $state(DEFAULT_SETTINGS.os_language);
+  let osAutoRestart = $state(DEFAULT_SETTINGS.os_auto_restart);
+  let osMaxRestarts = $state(DEFAULT_SETTINGS.os_max_restarts);
   let saving = $state(false);
   let error = $state("");
   let success = $state(false);
@@ -45,6 +49,20 @@
   let historyMaxEntries = $state(DEFAULT_SETTINGS.history_max_entries);
   let popupCopyShortcut = $state(DEFAULT_SETTINGS.popup_copy_shortcut);
   let popupVoiceShortcut = $state(DEFAULT_SETTINGS.popup_voice_shortcut);
+  let providerSwitchShortcut = $state(DEFAULT_SETTINGS.provider_switch_shortcut);
+
+  // Sub-tab navigation within Speech tab (separate from savedProvider)
+  let speechSubTab = $state<"os" | "azure">(DEFAULT_SETTINGS.speech_provider);
+
+  // Detect browser engine
+  let browserEngine = $derived.by(() => {
+    const ua = navigator.userAgent;
+    if (ua.includes('Edg/')) return 'Microsoft Edge (Chromium)';
+    if (ua.includes('Chrome/')) return 'Chromium-based (WebView2)';
+    if (ua.includes('Safari/') && !ua.includes('Chrome')) return 'WebKit (Safari/WKWebView)';
+    if (ua.includes('Firefox/')) return 'Firefox';
+    return 'Unknown';
+  });
 
   // Tab navigation
   let activeTab = $state<"general" | "speech" | "phrases" | "history" | "usage">("general");
@@ -75,6 +93,11 @@
   // Sync local state when initialSettings loads (async prop)
   $effect(() => {
     if (initialSettings) {
+      speechProvider = initialSettings.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
+      speechSubTab = initialSettings.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
+      osLanguage = initialSettings.os_language ?? DEFAULT_SETTINGS.os_language;
+      osAutoRestart = initialSettings.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
+      osMaxRestarts = initialSettings.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
       key = initialSettings.azure_speech_key ?? "";
       region = initialSettings.azure_region ?? DEFAULT_SETTINGS.azure_region;
       languages = initialSettings.languages ?? [...DEFAULT_SETTINGS.languages];
@@ -90,6 +113,7 @@
       historyMaxEntries = initialSettings.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
       popupCopyShortcut = initialSettings.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
       popupVoiceShortcut = initialSettings.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
+      providerSwitchShortcut = initialSettings.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut;
       const savedTheme = initialSettings.theme ?? DEFAULT_SETTINGS.theme;
       theme = savedTheme;
       document.documentElement.dataset.theme = savedTheme;
@@ -100,6 +124,10 @@
   let isDirty = $derived.by(() => {
     if (!initialSettings) return false;
     const saved = initialSettings;
+    if (speechProvider !== (saved.speech_provider ?? DEFAULT_SETTINGS.speech_provider)) return true;
+    if (osLanguage !== (saved.os_language ?? DEFAULT_SETTINGS.os_language)) return true;
+    if (osAutoRestart !== (saved.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart)) return true;
+    if (osMaxRestarts !== (saved.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts)) return true;
     if (key !== (saved.azure_speech_key ?? "")) return true;
     if (region !== (saved.azure_region ?? DEFAULT_SETTINGS.azure_region)) return true;
     if (JSON.stringify(languages) !== JSON.stringify(saved.languages ?? DEFAULT_SETTINGS.languages)) return true;
@@ -116,12 +144,18 @@
     if (historyMaxEntries !== (saved.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries)) return true;
     if (popupCopyShortcut !== (saved.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut)) return true;
     if (popupVoiceShortcut !== (saved.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut)) return true;
+    if (providerSwitchShortcut !== (saved.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut)) return true;
     return false;
   });
 
   function revertChanges() {
     if (!initialSettings) return;
     const s = initialSettings;
+    speechProvider = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
+    speechSubTab = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
+    osLanguage = s.os_language ?? DEFAULT_SETTINGS.os_language;
+    osAutoRestart = s.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
+    osMaxRestarts = s.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
     key = s.azure_speech_key ?? "";
     region = s.azure_region ?? DEFAULT_SETTINGS.azure_region;
     languages = s.languages ? [...s.languages] : [...DEFAULT_SETTINGS.languages];
@@ -137,6 +171,7 @@
     historyMaxEntries = s.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
     popupCopyShortcut = s.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
     popupVoiceShortcut = s.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
+    providerSwitchShortcut = s.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -197,6 +232,10 @@
 
     try {
       await saveSettings({
+        speech_provider: speechProvider,
+        os_language: osLanguage,
+        os_auto_restart: osAutoRestart,
+        os_max_restarts: osMaxRestarts,
         azure_speech_key: key,
         azure_region: region,
         languages,
@@ -211,6 +250,7 @@
         history_max_entries: historyMaxEntries,
         popup_copy_shortcut: popupCopyShortcut,
         popup_voice_shortcut: popupVoiceShortcut,
+        provider_switch_shortcut: providerSwitchShortcut,
       });
       success = true;
       onSaved?.();
@@ -256,6 +296,116 @@
     <div class="settings-body">
 
     {#if activeTab === 'speech'}
+    <div class="section">
+      <h2>Speech Provider</h2>
+      <label class="field">
+        <span class="label">Default Provider</span>
+        <select bind:value={speechProvider}>
+          <option value="os">Web Speech</option>
+          <option value="azure">Azure Speech</option>
+        </select>
+        <span class="hint">Choose which speech engine is used by default when recording.</span>
+      </label>
+    </div>
+
+    <div class="speech-sub-tabs">
+      <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'os'} onclick={() => speechSubTab = 'os'}>
+        Web Speech
+        {#if !webSpeechAvailable}<span class="sub-tab-warn">!</span>{/if}
+      </button>
+      <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'azure'} onclick={() => speechSubTab = 'azure'}>
+        Azure Speech
+      </button>
+    </div>
+
+    {#if speechSubTab === 'os'}
+    <div class="section">
+      <h2>Web Speech Settings</h2>
+      {#if !webSpeechAvailable}
+        <div class="provider-warn-banner">Web Speech API is not available in this browser environment.</div>
+      {/if}
+
+      <div class="speech-notice">
+        <div class="notice-icon" title="Info">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+        </div>
+        <div class="notice-content">
+          <strong>Speech Recognition Notice</strong>
+          <p>
+            Web Speech uses your browser's built-in speech recognition engine.
+            Depending on the browser, audio may be sent to a cloud service for processing.
+          </p>
+          <p class="browser-info">
+            <span class="browser-badge">{browserEngine}</span>
+          </p>
+          <p>
+            For details, see the
+            <!-- svelte-ignore a11y_missing_attribute -->
+            <a
+              href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="notice-link"
+            >MDN Web Speech API documentation</a>.
+          </p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span class="label">Language</span>
+        <select bind:value={osLanguage}>
+          {#each SUPPORTED_LANGUAGES as lang}
+            <option value={lang.code}>{lang.label} ({lang.code})</option>
+          {/each}
+        </select>
+        <span class="hint">Language for OS speech recognition.</span>
+      </label>
+
+      <label class="field toggle-field">
+        <span class="label">Auto Restart</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={osAutoRestart} class="toggle-checkbox" />
+          <span class="toggle-label">{osAutoRestart ? 'On' : 'Off'}</span>
+        </div>
+        <span class="hint">Automatically restart recognition when the browser stops it (Web Speech API has session limits).</span>
+      </label>
+
+      {#if osAutoRestart}
+      <label class="field">
+        <span class="label">Max Restarts</span>
+        <input
+          type="number"
+          min="1"
+          max="20"
+          bind:value={osMaxRestarts}
+          style="width: 80px;"
+        />
+        <span class="hint">Maximum consecutive auto-restarts before giving up (1–20).</span>
+      </label>
+      {/if}
+
+      <label class="field">
+        <span class="label">Microphone</span>
+        <select bind:value={microphoneDeviceId}>
+          <option value="">System Default</option>
+          {#each audioDevices as device}
+            <option value={device.deviceId}>{device.label}</option>
+          {/each}
+        </select>
+        {#if micWarning}
+          <span class="hint mic-warning">{micWarning}</span>
+        {:else}
+          <span class="hint">Select the microphone to use for dictation.</span>
+        {/if}
+      </label>
+    </div>
+    {/if}
+
+    {#if speechSubTab === 'azure'}
     <div class="section">
       <h2>Azure Speech Service</h2>
 
@@ -354,10 +504,12 @@
 
     </div>
     {/if}
+    {/if}
 
     {#if activeTab === 'phrases'}
     <div class="section">
       <h2>Phrase List</h2>
+      <p class="section-note">Phrase lists improve recognition accuracy for the <strong>Azure Speech</strong> provider. They are not used with Web Speech.</p>
 
       <div class="field">
         <span class="label">Custom Phrases ({phraseList.length})</span>
@@ -442,6 +594,18 @@
         <span class="hint">
           {#if popupVoiceShortcut}
             Keyboard shortcut to start/stop voice recording in the popup.
+          {:else}
+            No shortcut set. Click "Record" to assign one.
+          {/if}
+        </span>
+      </div>
+
+      <div class="field">
+        <span class="label">Provider Switch Shortcut</span>
+        <ShortcutRecorder bind:value={providerSwitchShortcut} />
+        <span class="hint">
+          {#if providerSwitchShortcut}
+            Keyboard shortcut to toggle between Web Speech and Azure providers.
           {:else}
             No shortcut set. Click "Record" to assign one.
           {/if}
@@ -540,24 +704,60 @@
     <div class="section">
       <h2>Usage Statistics</h2>
       {#if usageStats}
-        <div class="usage-grid">
-          <div class="usage-card">
-            <span class="usage-label">Today</span>
-            <span class="usage-value">{formatDuration(usageStats.today)}</span>
-          </div>
-          <div class="usage-card">
-            <span class="usage-label">This Week</span>
-            <span class="usage-value">{formatDuration(usageStats.thisWeek)}</span>
-          </div>
-          <div class="usage-card">
-            <span class="usage-label">Calendar Month</span>
-            <span class="usage-value">{formatDuration(usageStats.calendarMonth)}</span>
-          </div>
-          <div class="usage-card">
-            <span class="usage-label">Last 30 Days</span>
-            <span class="usage-value">{formatDuration(usageStats.last30Days)}</span>
+        <div class="usage-provider-group">
+          <h3 class="usage-provider-title">Total</h3>
+          <div class="usage-grid">
+            <div class="usage-card">
+              <span class="usage-label">Today</span>
+              <span class="usage-value">{formatDuration(usageStats.total.today)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">This Week</span>
+              <span class="usage-value">{formatDuration(usageStats.total.thisWeek)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">Last 30 Days</span>
+              <span class="usage-value">{formatDuration(usageStats.total.last30Days)}</span>
+            </div>
           </div>
         </div>
+
+        <div class="usage-provider-group">
+          <h3 class="usage-provider-title">Web Speech</h3>
+          <div class="usage-grid">
+            <div class="usage-card">
+              <span class="usage-label">Today</span>
+              <span class="usage-value">{formatDuration(usageStats.web.today)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">This Week</span>
+              <span class="usage-value">{formatDuration(usageStats.web.thisWeek)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">Last 30 Days</span>
+              <span class="usage-value">{formatDuration(usageStats.web.last30Days)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="usage-provider-group">
+          <h3 class="usage-provider-title">Azure Speech</h3>
+          <div class="usage-grid">
+            <div class="usage-card">
+              <span class="usage-label">Today</span>
+              <span class="usage-value">{formatDuration(usageStats.azure.today)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">This Week</span>
+              <span class="usage-value">{formatDuration(usageStats.azure.thisWeek)}</span>
+            </div>
+            <div class="usage-card">
+              <span class="usage-label">Last 30 Days</span>
+              <span class="usage-value">{formatDuration(usageStats.azure.last30Days)}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="usage-actions">
           {#if showResetConfirm}
             <span class="reset-confirm-text">Reset all usage data?</span>
@@ -682,6 +882,12 @@
     letter-spacing: 0.5px;
   }
 
+  .section-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: -4px 0 12px 0;
+  }
+
   .theme-toggle {
     background: none;
     border: 1px solid var(--border);
@@ -699,6 +905,123 @@
     background: var(--surface-hover);
     color: var(--accent);
     border-color: var(--accent);
+  }
+
+  .speech-sub-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .speech-sub-tab {
+    flex: 1;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .speech-sub-tab:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
+  .speech-sub-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .sub-tab-warn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--error);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .provider-warn-banner {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--error) 12%, transparent);
+    color: var(--error);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .speech-notice {
+    display: flex;
+    gap: 12px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--primary) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+    border-left: 3px solid var(--primary);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  .notice-icon {
+    flex-shrink: 0;
+    color: var(--primary);
+    margin-top: 1px;
+    opacity: 0.85;
+  }
+
+  .notice-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .notice-content strong {
+    color: var(--text);
+    font-size: 12px;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .notice-content p {
+    margin: 4px 0 0;
+  }
+
+  .browser-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .notice-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px dashed color-mix(in srgb, var(--primary) 50%, transparent);
+    transition: border-color 0.15s;
+  }
+
+  .notice-link:hover {
+    border-bottom-style: solid;
+    border-bottom-color: var(--primary);
   }
 
   .theme-toggle-inline {
@@ -1062,11 +1385,26 @@
     align-self: center;
   }
 
+  .usage-provider-group {
+    margin-bottom: 14px;
+  }
+
+  .usage-provider-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin: 0 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
   .usage-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
 
   .usage-card {

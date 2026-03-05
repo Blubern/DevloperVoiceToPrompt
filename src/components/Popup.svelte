@@ -8,12 +8,11 @@
     SUPPORTED_LANGUAGES,
   } from "../lib/settingsStore";
   import {
-    createRecognizer,
-    startContinuousRecognition,
-    stopContinuousRecognition,
-    disposeRecognizer,
+    createSpeechProvider,
     checkMicrophonePermission,
+    webSpeechAvailable,
     type SpeechCallbacks,
+    type SpeechProvider,
   } from "../lib/speechService";
   import { recordUsage } from "../lib/usageStore";
   import { addHistoryEntry, getHistory, deleteHistoryEntry, formatRelativeTime, type HistoryEntry } from "../lib/historyStore";
@@ -38,6 +37,7 @@
 
   // Usage tracking: record start time of current recognition session
   let sessionStartTime: number | null = null;
+  let activeProvider: SpeechProvider | null = null;
 
   // Silence auto-stop timer
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,21 +110,19 @@
       .replace(/\+/g, "+");
   }
 
-  // Language labels for display (short human-readable names)
-  let languageLabels = $derived(
+  // Language labels for display: "Name (code)" format
+  let languageDisplayLabels = $derived(
     settings.languages.map((code) => {
       const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
-      return lang ? lang.label.split(" ")[0] : code;
+      return lang ? `${lang.label.split(" ")[0]} (${code})` : code;
     })
   );
 
-  // Full language labels for tooltip
-  let languageFullLabels = $derived(
-    settings.languages.map((code) => {
-      const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
-      return lang ? lang.label : code;
-    })
-  );
+  // OS language display label
+  let osLanguageDisplayLabel = $derived(() => {
+    const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.os_language);
+    return lang ? `${lang.label.split(" ")[0]} (${settings.os_language})` : settings.os_language;
+  });
 
   // Context-aware button label
   let primaryButtonLabel = $derived.by(() => {
@@ -277,13 +275,17 @@
   }
 
   async function stopAndRecordUsage() {
-    await stopContinuousRecognition();
+    if (activeProvider) {
+      await activeProvider.stop();
+      activeProvider.dispose();
+      activeProvider = null;
+    }
     status = "idle";
     clearSilenceTimer();
     if (sessionStartTime !== null) {
       const elapsed = (Date.now() - sessionStartTime) / 1000;
       sessionStartTime = null;
-      await recordUsage(elapsed);
+      await recordUsage(elapsed, settings.speech_provider as "os" | "azure");
     }
   }
 
@@ -293,8 +295,13 @@
       return;
     }
 
-    if (!settings.azure_speech_key || !settings.azure_region) {
-      errorMessage = "Azure Speech key not configured.";
+    if (settings.speech_provider === "azure" && (!settings.azure_speech_key || !settings.azure_region)) {
+      errorMessage = "Azure Speech key not configured. Go to Settings → Speech.";
+      return;
+    }
+
+    if (settings.speech_provider === "os" && !webSpeechAvailable) {
+      errorMessage = "Web Speech API is not available in this browser.";
       return;
     }
 
@@ -310,14 +317,7 @@
     lastSyncedSegmentCount = finalSegments.length;
     userScrolledUp = false;
 
-    const rec = createRecognizer(
-      settings.azure_speech_key,
-      settings.azure_region,
-      settings.languages,
-      settings.microphone_device_id || undefined,
-      settings.phrase_list,
-      settings.auto_punctuation
-    );
+    const provider = createSpeechProvider(settings);
 
     const callbacks: SpeechCallbacks = {
       onInterim: (text) => {
@@ -343,7 +343,8 @@
       },
     };
 
-    startContinuousRecognition(rec, callbacks);
+    activeProvider = provider;
+    provider.start(callbacks);
   }
 
   function clearText() {
@@ -409,7 +410,7 @@
     errorMessage = "";
     silenceMessage = "";
     status = "idle";
-    disposeRecognizer();
+    if (activeProvider) { activeProvider.dispose(); activeProvider = null; }
     await invoke("hide_popup");
   }
 
@@ -421,7 +422,7 @@
     errorMessage = "";
     silenceMessage = "";
     status = "idle";
-    disposeRecognizer();
+    if (activeProvider) { activeProvider.dispose(); activeProvider = null; }
     await invoke("hide_popup");
   }
 
@@ -439,6 +440,11 @@
     } else if (matchesShortcut(e, settings.popup_voice_shortcut)) {
       e.preventDefault();
       toggleMic();
+    } else if (matchesShortcut(e, settings.provider_switch_shortcut)) {
+      e.preventDefault();
+      if (status !== "listening") {
+        settings = { ...settings, speech_provider: settings.speech_provider === "os" ? "azure" : "os" };
+      }
     }
   }
 
@@ -475,8 +481,22 @@
   <div class="titlebar" data-tauri-drag-region>
     <div class="titlebar-left" data-tauri-drag-region>
       <span class="title" data-tauri-drag-region>Developer Voice to Prompt</span>
-      {#if settings.languages.length > 0}
-        <span class="lang-indicator" title={languageFullLabels.join(', ')}>{languageLabels.join(' · ')}</span>
+      <button
+        class="provider-toggle"
+        onclick={() => {
+          if (status !== "listening") {
+            settings = { ...settings, speech_provider: settings.speech_provider === "os" ? "azure" : "os" };
+          }
+        }}
+        disabled={status === "listening"}
+        title={settings.speech_provider === "os" ? "Using Web Speech — click to switch to Azure" : "Using Azure — click to switch to Web Speech"}
+      >
+        {settings.speech_provider === "os" ? "Web" : "Azure"}
+      </button>
+      {#if settings.speech_provider === "azure" && settings.languages.length > 0}
+        <span class="lang-indicator" title={languageDisplayLabels.join(', ')}>{languageDisplayLabels.join(' · ')}</span>
+      {:else if settings.speech_provider === "os"}
+        <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel()}</span>
       {/if}
     </div>
     <div class="titlebar-buttons">
@@ -553,8 +573,10 @@
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
-            {#if !settings.azure_speech_key}
+            {#if settings.speech_provider === "azure" && !settings.azure_speech_key}
               <span class="empty-state-text">Configure your Azure Speech key in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
+            {:else if settings.speech_provider === "os" && !webSpeechAvailable}
+              <span class="empty-state-text">Web Speech API is not available. Switch to Azure in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button></span>
             {:else}
               <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
             {/if}
@@ -710,19 +732,21 @@
   .titlebar-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    min-height: 0;
   }
 
   .title {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
+    line-height: 1;
   }
 
   .lang-indicator {
     font-size: 10px;
     color: var(--text-muted);
-    padding: 1px 6px;
+    padding: 2px 6px;
     border-radius: 4px;
     background: var(--lang-tag-bg);
     border: 1px solid var(--lang-tag-border);
@@ -730,6 +754,34 @@
     display: inline-flex;
     align-items: center;
     line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .provider-toggle {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    cursor: pointer;
+    line-height: 1;
+    vertical-align: middle;
+    transition: all 0.15s;
+  }
+
+  .provider-toggle:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+
+  .provider-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .titlebar-buttons {

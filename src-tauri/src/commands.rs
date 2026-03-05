@@ -5,6 +5,10 @@ use tauri_plugin_store::StoreExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
+    pub speech_provider: String,
+    pub os_language: String,
+    pub os_auto_restart: bool,
+    pub os_max_restarts: u32,
     pub azure_speech_key: String,
     pub azure_region: String,
     pub languages: Vec<String>,
@@ -19,11 +23,16 @@ pub struct AppSettings {
     pub history_max_entries: u32,
     pub popup_copy_shortcut: String,
     pub popup_voice_shortcut: String,
+    pub provider_switch_shortcut: String,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            speech_provider: "os".into(),
+            os_language: "en-US".into(),
+            os_auto_restart: true,
+            os_max_restarts: 3,
             azure_speech_key: String::new(),
             azure_region: "eastus".into(),
             languages: vec!["en-US".into()],
@@ -38,6 +47,7 @@ impl Default for AppSettings {
             history_max_entries: 50,
             popup_copy_shortcut: "CommandOrControl+Enter".into(),
             popup_voice_shortcut: "CommandOrControl+Shift+R".into(),
+            provider_switch_shortcut: String::new(),
         }
     }
 }
@@ -63,6 +73,10 @@ pub fn show_settings(app: tauri::AppHandle) {
 pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
     let stores = app.store("settings.json");
     if let Ok(store) = stores {
+        let speech_provider = store.get("speech_provider").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "os".into());
+        let os_language = store.get("os_language").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "en-US".into());
+        let os_auto_restart = store.get("os_auto_restart").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
+        let os_max_restarts = store.get("os_max_restarts").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(3) as u32;
         let key = store.get("azure_speech_key").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_default();
         let region = store.get("azure_region").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "eastus".into());
         let languages = store.get("languages").and_then(|v: serde_json::Value| {
@@ -81,7 +95,12 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
         let history_max_entries = store.get("history_max_entries").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(50) as u32;
         let popup_copy_shortcut = store.get("popup_copy_shortcut").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "CommandOrControl+Enter".into());
         let popup_voice_shortcut = store.get("popup_voice_shortcut").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_else(|| "CommandOrControl+Shift+R".into());
+        let provider_switch_shortcut = store.get("provider_switch_shortcut").and_then(|v: serde_json::Value| v.as_str().map(String::from)).unwrap_or_default();
         AppSettings {
+            speech_provider,
+            os_language,
+            os_auto_restart,
+            os_max_restarts,
             azure_speech_key: key,
             azure_region: region,
             languages,
@@ -96,6 +115,7 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
             history_max_entries,
             popup_copy_shortcut,
             popup_voice_shortcut,
+            provider_switch_shortcut,
         }
     } else {
         AppSettings::default()
@@ -106,6 +126,10 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
     let store = app.store("settings.json").map_err(|e: tauri_plugin_store::Error| e.to_string())?;
 
+    store.set("speech_provider", serde_json::json!(settings.speech_provider));
+    store.set("os_language", serde_json::json!(settings.os_language));
+    store.set("os_auto_restart", serde_json::json!(settings.os_auto_restart));
+    store.set("os_max_restarts", serde_json::json!(settings.os_max_restarts));
     store.set("azure_speech_key", serde_json::json!(settings.azure_speech_key));
     store.set("azure_region", serde_json::json!(settings.azure_region));
     store.set("languages", serde_json::json!(settings.languages));
@@ -120,6 +144,7 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     store.set("history_max_entries", serde_json::json!(settings.history_max_entries));
     store.set("popup_copy_shortcut", serde_json::json!(settings.popup_copy_shortcut));
     store.set("popup_voice_shortcut", serde_json::json!(settings.popup_voice_shortcut));
+    store.set("provider_switch_shortcut", serde_json::json!(settings.provider_switch_shortcut));
 
     // Flush to disk immediately so settings survive dev restarts
     store.save().map_err(|e| format!("Failed to save settings to disk: {}", e))?;

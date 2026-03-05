@@ -1,6 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export interface AppSettings {
+  speech_provider: "os" | "azure";
+  os_language: string;
+  os_auto_restart: boolean;
+  os_max_restarts: number;
   azure_speech_key: string;
   azure_region: string;
   languages: string[];
@@ -15,9 +19,14 @@ export interface AppSettings {
   history_max_entries: number;
   popup_copy_shortcut: string;
   popup_voice_shortcut: string;
+  provider_switch_shortcut: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  speech_provider: "os",
+  os_language: "en-US",
+  os_auto_restart: true,
+  os_max_restarts: 3,
   azure_speech_key: "",
   azure_region: "eastus",
   languages: ["en-US"],
@@ -32,6 +41,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   history_max_entries: 50,
   popup_copy_shortcut: "CommandOrControl+Enter",
   popup_voice_shortcut: "CommandOrControl+Shift+R",
+  provider_switch_shortcut: "",
 };
 
 export const AZURE_REGIONS = [

@@ -32,9 +32,9 @@
       console.error("Failed to load settings:", e);
     }
 
-    // Listen for first-run check: if no key is set, show settings
+    // Listen for first-run check: if using Azure with no key, show settings
     listen("check-first-run", async () => {
-      if (!settings?.azure_speech_key) {
+      if (settings?.speech_provider === "azure" && !settings?.azure_speech_key) {
         const mainWin = getCurrentWindow();
         if (mainWin.label === "main") {
           await mainWin.show();
