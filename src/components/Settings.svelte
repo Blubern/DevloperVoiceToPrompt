@@ -96,6 +96,54 @@
     }
   });
 
+  // Detect unsaved changes by comparing current form state to saved settings
+  let isDirty = $derived.by(() => {
+    if (!initialSettings) return false;
+    const saved = initialSettings;
+    if (key !== (saved.azure_speech_key ?? "")) return true;
+    if (region !== (saved.azure_region ?? DEFAULT_SETTINGS.azure_region)) return true;
+    if (JSON.stringify(languages) !== JSON.stringify(saved.languages ?? DEFAULT_SETTINGS.languages)) return true;
+    if (shortcut !== (saved.shortcut ?? DEFAULT_SETTINGS.shortcut)) return true;
+    if (microphoneDeviceId !== (saved.microphone_device_id ?? "")) return true;
+    if (theme !== (saved.theme ?? DEFAULT_SETTINGS.theme)) return true;
+    if (JSON.stringify(phraseList) !== JSON.stringify(saved.phrase_list ?? [])) return true;
+    if (alwaysOnTop !== (saved.always_on_top ?? DEFAULT_SETTINGS.always_on_top)) return true;
+    if (autoPunctuation !== (saved.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation)) return true;
+    const savedTimeout = saved.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
+    const currentTimeout = silenceTimeoutEnabled ? silenceTimeoutSeconds : 0;
+    if (currentTimeout !== savedTimeout) return true;
+    if (historyEnabled !== (saved.history_enabled ?? DEFAULT_SETTINGS.history_enabled)) return true;
+    if (historyMaxEntries !== (saved.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries)) return true;
+    if (popupCopyShortcut !== (saved.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut)) return true;
+    if (popupVoiceShortcut !== (saved.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut)) return true;
+    return false;
+  });
+
+  function revertChanges() {
+    if (!initialSettings) return;
+    const s = initialSettings;
+    key = s.azure_speech_key ?? "";
+    region = s.azure_region ?? DEFAULT_SETTINGS.azure_region;
+    languages = s.languages ? [...s.languages] : [...DEFAULT_SETTINGS.languages];
+    shortcut = s.shortcut ?? DEFAULT_SETTINGS.shortcut;
+    microphoneDeviceId = s.microphone_device_id ?? "";
+    phraseList = s.phrase_list ? [...s.phrase_list] : [];
+    alwaysOnTop = s.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
+    autoPunctuation = s.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
+    const savedTimeout = s.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
+    silenceTimeoutEnabled = savedTimeout > 0;
+    silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
+    historyEnabled = s.history_enabled ?? DEFAULT_SETTINGS.history_enabled;
+    historyMaxEntries = s.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
+    popupCopyShortcut = s.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
+    popupVoiceShortcut = s.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
+    const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
+    theme = savedTheme;
+    document.documentElement.dataset.theme = savedTheme;
+    error = "";
+    success = false;
+  }
+
   onMount(async () => {
     const result = await enumerateAudioDevices();
     audioDevices = result.devices;
@@ -178,23 +226,23 @@
 </script>
 
 <div class="settings-container">
-  <div class="header">
-    <h1>Settings</h1>
-    <button
-      type="button"
-      class="theme-toggle"
-      onclick={toggleTheme}
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-    >
-      {#if theme === 'dark'}
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-      {:else}
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-      {/if}
-    </button>
-  </div>
+  <div class="settings-header">
+    <div class="header">
+      <h1>Settings</h1>
+      <button
+        type="button"
+        class="theme-toggle"
+        onclick={toggleTheme}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {#if theme === 'dark'}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        {:else}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        {/if}
+      </button>
+    </div>
 
-  <form onsubmit={(e) => { e.preventDefault(); handleSave(); }}>
     <div class="tab-bar">
       <button type="button" class="tab" class:active={activeTab === 'general'} onclick={() => activeTab = 'general'}>General</button>
       <button type="button" class="tab" class:active={activeTab === 'speech'} onclick={() => activeTab = 'speech'}>Speech</button>
@@ -202,6 +250,10 @@
       <button type="button" class="tab" class:active={activeTab === 'history'} onclick={() => activeTab = 'history'}>History</button>
       <button type="button" class="tab" class:active={activeTab === 'usage'} onclick={() => activeTab = 'usage'}>Usage</button>
     </div>
+  </div>
+
+  <form onsubmit={(e) => { e.preventDefault(); handleSave(); }}>
+    <div class="settings-body">
 
     {#if activeTab === 'speech'}
     <div class="section">
@@ -522,6 +574,8 @@
     </div>
     {/if}
 
+    </div><!-- end .settings-body -->
+
     {#if error}
       <div class="message error">{error}</div>
     {/if}
@@ -529,7 +583,13 @@
       <div class="message success">Settings saved!</div>
     {/if}
 
-    <div class="footer">
+    <div class="footer" class:has-changes={isDirty}>
+      {#if isDirty}
+        <span class="unsaved-label">Unsaved changes</span>
+        <button type="button" class="btn btn-discard" onclick={revertChanges}>
+          Discard
+        </button>
+      {/if}
       <button type="submit" class="btn btn-primary" disabled={saving}>
         {saving ? "Saving..." : "Save Settings"}
       </button>
@@ -544,15 +604,33 @@
     height: 100vh;
     background: var(--bg-primary);
     color: var(--text-primary);
-    padding: 20px 24px;
+    overflow: hidden;
+  }
+
+  .settings-header {
+    flex-shrink: 0;
+    padding: 20px 24px 0;
+  }
+
+  form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 0 24px;
+  }
+
+  .settings-body {
+    flex: 1;
     overflow-y: auto;
+    padding: 16px 0 8px;
   }
 
   .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
 
   h1 {
@@ -564,7 +642,7 @@
   .tab-bar {
     display: flex;
     gap: 2px;
-    margin-bottom: 16px;
+    margin-bottom: 0;
     background: var(--bg-secondary);
     border-radius: 8px;
     padding: 3px;
@@ -822,8 +900,41 @@
   }
 
   .footer {
+    flex-shrink: 0;
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .footer.has-changes {
+    border-top-color: var(--warning);
+    padding: 10px 12px;
+    margin: 0 -12px;
+    border-radius: 0;
+    background: var(--warning-bg);
+  }
+
+  .unsaved-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--warning);
+    margin-right: auto;
+  }
+
+  .btn-discard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .btn-discard:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
   }
 
   .btn {

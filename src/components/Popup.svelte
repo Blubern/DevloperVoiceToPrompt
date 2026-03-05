@@ -42,6 +42,7 @@
   // Silence auto-stop timer
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
   let silenceMessage = $state("");
+  let silenceMessageFading = $state(false);
 
   // Window resize/move debounce
   let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -50,6 +51,31 @@
   let historyOpen = $state(false);
   let historyEntries = $state<HistoryEntry[]>([]);
   let historyCount = $state(0);
+  let historySearch = $state("");
+
+  let filteredHistoryEntries = $derived(
+    historySearch.trim()
+      ? historyEntries.filter(e => e.text.toLowerCase().includes(historySearch.trim().toLowerCase()))
+      : historyEntries
+  );
+
+  // Help overlay
+  let helpOpen = $state(false);
+
+  // Copied toast
+  let showCopiedToast = $state(false);
+
+  // Undo clear
+  let undoSnapshot: { segments: string[]; text: string; wasEdited: boolean; syncCount: number } | null = $state(null);
+  let showUndoToast = $state(false);
+  let undoTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Elapsed time display
+  let elapsedSeconds = $state(0);
+  let elapsedInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Auto-scroll tracking
+  let userScrolledUp = false;
 
   // Parse a Tauri-format shortcut string and match against a KeyboardEvent
   function matchesShortcut(e: KeyboardEvent, shortcutStr: string): boolean {
@@ -84,7 +110,7 @@
       .replace(/\+/g, "+");
   }
 
-  // Language labels for display
+  // Language labels for display (short human-readable names)
   let languageLabels = $derived(
     settings.languages.map((code) => {
       const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
@@ -92,24 +118,81 @@
     })
   );
 
+  // Full language labels for tooltip
+  let languageFullLabels = $derived(
+    settings.languages.map((code) => {
+      const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
+      return lang ? lang.label : code;
+    })
+  );
+
+  // Context-aware button label
+  let primaryButtonLabel = $derived.by(() => {
+    const hasText = editedText.trim().length > 0;
+    if (status === "listening" && hasText) return "Stop, Copy & Close";
+    if (status === "listening" && !hasText) return "Stop Recording";
+    if (hasText) return "Copy & Close";
+    return "Copy & Close";
+  });
+
+  // Format elapsed time as m:ss
+  function formatElapsed(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
   $effect(() => {
     const segmentCount = finalSegments.length;
     const currentInterim = interimText;
 
     if (!userHasEdited) {
-      // No user edits — just mirror speech output
       editedText =
         finalSegments.join(" ") +
         (currentInterim ? (segmentCount ? " " : "") + currentInterim : "");
       lastSyncedSegmentCount = segmentCount;
     } else if (segmentCount > lastSyncedSegmentCount) {
-      // User has edited — only append NEW segments
       const newSegments = finalSegments.slice(lastSyncedSegmentCount);
       if (newSegments.length > 0) {
         const addition = newSegments.join(" ");
         editedText = editedText.trimEnd() + " " + addition;
       }
       lastSyncedSegmentCount = segmentCount;
+    }
+  });
+
+  // Auto-scroll textarea to bottom on new text
+  $effect(() => {
+    // Track editedText changes
+    const _ = editedText;
+    if (textareaEl && !userScrolledUp) {
+      requestAnimationFrame(() => {
+        if (textareaEl) {
+          textareaEl.scrollTop = textareaEl.scrollHeight;
+        }
+      });
+    }
+  });
+
+  // Track if user scrolled up manually
+  function handleTextareaScroll() {
+    if (!textareaEl) return;
+    const { scrollTop, scrollHeight, clientHeight } = textareaEl;
+    userScrolledUp = scrollHeight - scrollTop - clientHeight > 30;
+  }
+
+  // Elapsed timer for recording state
+  $effect(() => {
+    if (status === "listening") {
+      elapsedSeconds = 0;
+      elapsedInterval = setInterval(() => {
+        elapsedSeconds += 1;
+      }, 1000);
+    } else {
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
+        elapsedInterval = null;
+      }
     }
   });
 
@@ -182,9 +265,13 @@
     const timeout = settings.silence_timeout_seconds;
     if (timeout > 0 && status === "listening") {
       silenceTimer = setTimeout(async () => {
-        silenceMessage = "Stopped — no speech detected";
+        silenceMessage = `Auto-paused after ${timeout}s of silence`;
+        silenceMessageFading = false;
         await stopAndRecordUsage();
-        setTimeout(() => (silenceMessage = ""), 4000);
+        setTimeout(() => {
+          silenceMessageFading = true;
+          setTimeout(() => { silenceMessage = ""; silenceMessageFading = false; }, 500);
+        }, 3500);
       }, timeout * 1000);
     }
   }
@@ -193,7 +280,6 @@
     await stopContinuousRecognition();
     status = "idle";
     clearSilenceTimer();
-    // Record usage
     if (sessionStartTime !== null) {
       const elapsed = (Date.now() - sessionStartTime) / 1000;
       sessionStartTime = null;
@@ -208,23 +294,21 @@
     }
 
     if (!settings.azure_speech_key || !settings.azure_region) {
-      errorMessage = "Please configure your Azure Speech key in Settings first.";
+      errorMessage = "Azure Speech key not configured.";
       return;
     }
 
     const micPermission = await checkMicrophonePermission();
     if (micPermission === "denied") {
-      errorMessage = "Microphone access was denied. Please allow microphone access in your system settings.";
+      errorMessage = "Microphone access denied. Check system privacy settings.";
       return;
     }
 
     errorMessage = "";
     silenceMessage = "";
-    // Feature 1: Do NOT clear text state — preserve existing text across stop/start
-    // Only clear interim text since old interim is stale
     interimText = "";
-    // Sync the segment count so the $effect doesn't re-process existing segments
     lastSyncedSegmentCount = finalSegments.length;
+    userScrolledUp = false;
 
     const rec = createRecognizer(
       settings.azure_speech_key,
@@ -263,28 +347,64 @@
   }
 
   function clearText() {
+    // Save snapshot for undo
+    if (editedText.trim()) {
+      undoSnapshot = {
+        segments: [...finalSegments],
+        text: editedText,
+        wasEdited: userHasEdited,
+        syncCount: lastSyncedSegmentCount,
+      };
+      showUndoToast = true;
+      if (undoTimer) clearTimeout(undoTimer);
+      undoTimer = setTimeout(() => {
+        showUndoToast = false;
+        undoSnapshot = null;
+      }, 4000);
+    }
     finalSegments = [];
     interimText = "";
     editedText = "";
     userHasEdited = false;
     lastSyncedSegmentCount = 0;
+    userScrolledUp = false;
+  }
+
+  function undoClear() {
+    if (!undoSnapshot) return;
+    finalSegments = undoSnapshot.segments;
+    editedText = undoSnapshot.text;
+    userHasEdited = true;
+    lastSyncedSegmentCount = undoSnapshot.syncCount;
+    undoSnapshot = null;
+    showUndoToast = false;
+    if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+  }
+
+  async function copyToClipboard() {
+    const text = editedText.trim();
+    if (!text) return;
+    await writeText(text);
+    showCopiedToast = true;
+    setTimeout(() => { showCopiedToast = false; }, 1800);
   }
 
   async function copyAndClose() {
     const text = editedText.trim();
     if (text) {
       await writeText(text);
-      // Record history if enabled
       if (settings.history_enabled) {
         await addHistoryEntry(text, settings.history_max_entries);
+        // Refresh history if panel is open
+        if (historyOpen) {
+          historyEntries = await getHistory();
+        }
         historyCount = Math.min(historyCount + 1, settings.history_max_entries);
       }
     }
-    // Stop recording if active
     if (status === "listening") {
       await stopAndRecordUsage();
     }
-    // Reset state
     clearText();
     errorMessage = "";
     silenceMessage = "";
@@ -307,7 +427,9 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      if (historyOpen) {
+      if (helpOpen) {
+        helpOpen = false;
+      } else if (historyOpen) {
         historyOpen = false;
       } else {
         dismiss();
@@ -324,6 +446,7 @@
     if (!historyOpen) {
       historyEntries = await getHistory();
       historyCount = historyEntries.length;
+      historySearch = "";
     }
     historyOpen = !historyOpen;
   }
@@ -348,12 +471,23 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="popup-container">
-  <!-- Custom title bar / drag area -->
+  <!-- Compact title bar -->
   <div class="titlebar" data-tauri-drag-region>
-    <span class="title">Developer Voice to Prompt</span>
+    <div class="titlebar-left" data-tauri-drag-region>
+      <span class="title" data-tauri-drag-region>Developer Voice to Prompt</span>
+      {#if settings.languages.length > 0}
+        <span class="lang-indicator" title={languageFullLabels.join(', ')}>{languageLabels.join(' · ')}</span>
+      {/if}
+    </div>
     <div class="titlebar-buttons">
       {#if settings.history_enabled}
-        <button class="history-toggle" onclick={toggleHistoryPanel} class:active={historyOpen}>
+        <button
+          class="history-toggle"
+          onclick={toggleHistoryPanel}
+          class:active={historyOpen}
+          aria-label="Toggle history"
+          aria-pressed={historyOpen}
+        >
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           History
           {#if historyCount > 0}
@@ -361,115 +495,182 @@
           {/if}
         </button>
       {/if}
-      <button class="titlebar-btn" onclick={() => invoke('show_settings')} title="Settings">
+      <button class="titlebar-btn" onclick={() => helpOpen = !helpOpen} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </button>
+      <button class="titlebar-btn" onclick={() => invoke('show_settings')} aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
-      <button class="titlebar-btn close-btn" onclick={dismiss} title="Close (Esc)">✕</button>
+      <button class="titlebar-btn close-btn" onclick={dismiss} aria-label="Close" title="Close (Esc)">✕</button>
     </div>
   </div>
 
-  <!-- Info bar: languages, phrases, shortcuts -->
-  <div class="info-bar">
-    <div class="info-row">
-      <span class="info-label">Languages:</span>
-      {#if settings.languages.length > 0}
-        <div class="language-tags">
-          {#each settings.languages as code}
-            <span class="lang-tag">{code}</span>
-          {/each}
-        </div>
-      {:else}
-        <span class="info-value-muted">None configured</span>
-      {/if}
+  <!-- Help overlay (keyboard shortcuts) -->
+  {#if helpOpen}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="help-backdrop" onclick={() => helpOpen = false}></div>
+    <div class="help-overlay">
+      <div class="help-title">Keyboard Shortcuts</div>
+      <div class="help-grid">
+        <span class="help-action">Show Popup</span>
+        <kbd>{formatShortcutLabel(settings.shortcut)}</kbd>
+        <span class="help-action">Start / Stop Voice</span>
+        <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd>
+        <span class="help-action">Copy & Close</span>
+        <kbd>{formatShortcutLabel(settings.popup_copy_shortcut)}</kbd>
+        <span class="help-action">Dismiss</span>
+        <kbd>Esc</kbd>
+      </div>
       {#if settings.phrase_list.length > 0}
-        <span class="info-separator">|</span>
-        <span class="info-label">Phrases:</span>
-        <span class="phrases-indicator" title={settings.phrase_list.join(', ')}>{settings.phrase_list.length} active</span>
+        <div class="help-extra">
+          <span class="help-extra-label">Custom phrases:</span> {settings.phrase_list.length} active
+        </div>
       {/if}
+      <div class="help-tip">Pro tip: Do everything via keyboard — no mouse needed.</div>
     </div>
-    <div class="info-row">
-      <span class="info-label">Shortcuts:</span>
-      <span class="shortcut-item"><span class="shortcut-action">Show Popup:</span> <kbd>{formatShortcutLabel(settings.shortcut)}</kbd></span>
-      <span class="info-separator">&middot;</span>
-      <span class="shortcut-item"><span class="shortcut-action">Start / Stop Voice:</span> <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd></span>
-      <span class="info-separator">&middot;</span>
-      <span class="shortcut-item"><span class="shortcut-action">Stop, Copy & Close:</span> <kbd>{formatShortcutLabel(settings.popup_copy_shortcut)}</kbd></span>
-      <span class="info-separator">&middot;</span>
-      <span class="shortcut-item"><span class="shortcut-action">Dismiss:</span> <kbd>Esc</kbd></span>
-    </div>
-  </div>
+  {/if}
 
   <div class="content">
     <div class="main-content">
-    <!-- Text area for live editing -->
-    <div class="text-area">
-      <div class="text-header">
-        {#if editedText}
-          <button class="clear-btn" onclick={clearText} title="Clear text">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            Clear
+      <!-- Recording status bar -->
+      {#if status === "listening"}
+        <div class="recording-bar">
+          <span class="rec-dot"></span>
+          <span class="rec-label">Listening...</span>
+          <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
+        </div>
+      {/if}
+
+      <!-- Text area for live editing -->
+      <div class="text-area">
+        {#if !editedText && status === "idle"}
+          <!-- Guided empty state -->
+          <div class="empty-state">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+            {#if !settings.azure_speech_key}
+              <span class="empty-state-text">Configure your Azure Speech key in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
+            {:else}
+              <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
+            {/if}
+          </div>
+        {/if}
+
+        <textarea
+          bind:this={textareaEl}
+          value={editedText}
+          oninput={handleTextInput}
+          onscroll={handleTextareaScroll}
+          class:recording={status === "listening"}
+          class:hidden-textarea={!editedText && status === "idle"}
+        ></textarea>
+
+        <!-- Floating mic button anchored to textarea -->
+        <div class="mic-float">
+          <MicButton {status} onToggle={toggleMic} />
+        </div>
+      </div>
+
+      <!-- Error message with action -->
+      {#if errorMessage}
+        <div class="error-bar">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span class="error-text">{errorMessage}</span>
+          {#if errorMessage.includes("key") || errorMessage.includes("configured")}
+            <button class="error-action" onclick={() => invoke('show_settings')}>Open Settings</button>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Silence auto-stop message -->
+      {#if silenceMessage}
+        <div class="silence-msg" class:fading={silenceMessageFading}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          {silenceMessage}
+        </div>
+      {/if}
+
+      <!-- Action buttons -->
+      <div class="actions">
+        {#if editedText.trim() || status === "listening"}
+          <button
+            class="btn btn-primary"
+            onclick={copyAndClose}
+            disabled={!editedText.trim() && status !== "listening"}
+          >
+            {primaryButtonLabel}
           </button>
+          {#if editedText.trim() && status !== "listening"}
+            <button class="btn btn-secondary" onclick={copyToClipboard} aria-label="Copy to clipboard" title="Copy to clipboard">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            <button class="btn btn-secondary" onclick={clearText} aria-label="Clear text" title="Clear text">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          {/if}
         {/if}
       </div>
-      <textarea
-        bind:this={textareaEl}
-        value={editedText}
-        oninput={handleTextInput}
-        placeholder={!settings.azure_speech_key
-          ? "Configure your Azure Speech key in Settings first..."
-          : "Your dictated text will appear here..."}
-        class:has-interim={interimText && !userHasEdited}
-      ></textarea>
+
+      <!-- Copied toast -->
+      {#if showCopiedToast}
+        <div class="copied-toast">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Copied!
+        </div>
+      {/if}
+
+      <!-- Undo clear toast -->
+      {#if showUndoToast}
+        <div class="undo-toast">
+          Text cleared
+          <button class="undo-btn" onclick={undoClear}>Undo</button>
+        </div>
+      {/if}
+
     </div>
 
-    <!-- Error message -->
-    {#if errorMessage}
-      <div class="error">{errorMessage}</div>
-    {/if}
-
-    <!-- Silence auto-stop message -->
-    {#if silenceMessage}
-      <div class="silence-msg">{silenceMessage}</div>
-    {/if}
-
-    <!-- Action buttons -->
-    <div class="actions">
-      <button
-        class="btn btn-primary"
-        onclick={copyAndClose}
-        disabled={!editedText.trim()}
-      >
-        Stop, Copy & Close
-      </button>
-    </div>
-    <!-- Floating mic button overlapping textarea -->
-    <div class="mic-float">
-      <MicButton {status} onToggle={toggleMic} />
-    </div>
-    </div>
-
-    <!-- History side panel (right side) -->
+    <!-- History side panel -->
     {#if historyOpen}
       <div class="history-panel">
         <div class="history-header">
           <span class="history-title">History</span>
-          <button class="titlebar-btn" onclick={() => historyOpen = false} title="Close history">✕</button>
+          <button class="titlebar-btn" onclick={() => historyOpen = false} aria-label="Close history" title="Close history">✕</button>
+        </div>
+        <div class="history-search">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            class="history-search-input"
+            type="text"
+            placeholder="Search history..."
+            bind:value={historySearch}
+          />
+          {#if historySearch}
+            <button class="history-search-clear" onclick={() => historySearch = ""} aria-label="Clear search">✕</button>
+          {/if}
         </div>
         <div class="history-list">
-          {#if historyEntries.length === 0}
-            <div class="history-empty">No history yet</div>
+          {#if filteredHistoryEntries.length === 0}
+            <div class="history-empty">{historyEntries.length === 0 ? 'No history yet' : 'No matches'}</div>
           {:else}
-            {#each historyEntries as entry}
+            {#each filteredHistoryEntries as entry}
               <div class="history-entry">
-                <button class="history-entry-body" onclick={() => insertHistoryEntry(entry.text)} title="Click to insert">
+                <button class="history-entry-body" onclick={() => insertHistoryEntry(entry.text)} title={entry.text}>
                   <span class="history-text">{entry.text.length > 80 ? entry.text.slice(0, 80) + '…' : entry.text}</span>
                   <span class="history-time">{formatRelativeTime(entry.timestamp)}</span>
                 </button>
                 <div class="history-entry-actions">
-                  <button class="history-action-btn" onclick={() => copyHistoryEntry(entry.text)} title="Copy">
+                  <button class="history-action-btn" onclick={() => insertHistoryEntry(entry.text)} aria-label="Insert" title="Insert into text">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                  </button>
+                  <button class="history-action-btn" onclick={() => copyHistoryEntry(entry.text)} aria-label="Copy" title="Copy to clipboard">
                     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>
-                  <button class="history-action-btn delete" onclick={() => handleHistoryDelete(entry.timestamp)} title="Delete">
+                  <button class="history-action-btn delete" onclick={() => handleHistoryDelete(entry.timestamp)} aria-label="Delete" title="Delete">
                     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                 </div>
@@ -479,7 +680,6 @@
         </div>
       </div>
     {/if}
-
   </div>
 </div>
 
@@ -495,6 +695,7 @@
     border: 1px solid var(--border);
   }
 
+  /* ---- Titlebar ---- */
   .titlebar {
     display: flex;
     align-items: center;
@@ -506,10 +707,29 @@
     cursor: grab;
   }
 
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .title {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
+  }
+
+  .lang-indicator {
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--lang-tag-bg);
+    border: 1px solid var(--lang-tag-border);
+    cursor: help;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
   }
 
   .titlebar-buttons {
@@ -535,6 +755,10 @@
   .titlebar-btn:hover {
     background: var(--surface-hover);
     color: var(--accent);
+  }
+
+  .close-btn:hover {
+    color: var(--error);
   }
 
   .history-toggle {
@@ -566,10 +790,106 @@
     border-color: var(--accent);
   }
 
-  .close-btn:hover {
-    color: var(--error);
+  .history-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
   }
 
+  .history-toggle.active .history-badge {
+    background: var(--bg-primary);
+    color: var(--accent);
+  }
+
+  /* ---- Help Overlay ---- */
+  .help-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+  }
+
+  .help-overlay {
+    position: absolute;
+    top: 44px;
+    right: 50px;
+    z-index: 100;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    animation: fadeIn 0.12s ease-out;
+    min-width: 240px;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .help-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  .help-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 16px;
+    align-items: center;
+  }
+
+  .help-action {
+    font-size: 12px;
+    color: var(--text-primary);
+  }
+
+  .help-grid kbd {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .help-extra {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .help-extra-label {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .help-tip {
+    margin-top: 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* ---- Content Layout ---- */
   .content {
     flex: 1;
     display: flex;
@@ -580,6 +900,333 @@
     position: relative;
   }
 
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    position: relative;
+  }
+
+  /* ---- Recording Status Bar ---- */
+  .recording-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: var(--recording-glow);
+    border: 1px solid rgba(243, 139, 168, 0.2);
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  .rec-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--recording);
+    animation: recPulse 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes recPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .rec-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--recording);
+  }
+
+  .rec-elapsed {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    margin-left: auto;
+  }
+
+  /* ---- Text Area ---- */
+  .text-area {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding-right: 28px;
+  }
+
+  /* Empty state CTA */
+  .empty-state {
+    position: absolute;
+    inset: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .empty-state-icon {
+    color: var(--text-muted);
+  }
+
+  .empty-state-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    pointer-events: auto;
+  }
+
+  .empty-state-text kbd {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    font-weight: 600;
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: inherit;
+    text-decoration: underline;
+    padding: 0;
+  }
+
+  .link-btn:hover {
+    color: var(--accent-hover);
+  }
+
+  textarea {
+    width: 100%;
+    height: 100%;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+    line-height: 1.5;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  textarea:focus {
+    border-color: var(--accent);
+  }
+
+  textarea.recording {
+    border-color: var(--recording);
+    box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px rgba(243, 139, 168, 0.08);
+    animation: recordingGlow 2s ease-in-out infinite;
+  }
+
+  @keyframes recordingGlow {
+    0%, 100% { box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px rgba(243, 139, 168, 0.08); }
+    50% { box-shadow: 0 0 0 4px var(--recording-glow), inset 0 0 0 1px rgba(243, 139, 168, 0.15); }
+  }
+
+  textarea.hidden-textarea {
+    color: transparent;
+  }
+
+  textarea::placeholder {
+    color: var(--text-muted);
+  }
+
+  /* ---- Error Bar ---- */
+  .error-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error);
+    font-size: 12px;
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  .error-text {
+    flex: 1;
+  }
+
+  .error-action {
+    background: none;
+    border: 1px solid var(--error-border);
+    color: var(--error);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+
+  .error-action:hover {
+    background: var(--error-border);
+  }
+
+  /* ---- Silence Message ---- */
+  .silence-msg {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--warning);
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: var(--warning-bg);
+    border: 1px solid rgba(249, 226, 175, 0.15);
+    transition: opacity 0.5s;
+  }
+
+  .silence-msg.fading {
+    opacity: 0;
+  }
+
+  /* ---- Actions ---- */
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 16px;
+  }
+
+  .btn {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg-primary);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .btn-secondary {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-secondary:hover {
+    background: var(--surface-hover);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* ---- Copied Toast ---- */
+  .copied-toast {
+    position: absolute;
+    bottom: 72px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--success);
+    color: var(--bg-primary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 14px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    z-index: 20;
+    animation: toastIn 0.2s ease-out;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  }
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+
+  .undo-toast {
+    position: absolute;
+    bottom: 72px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px 5px 14px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 20;
+    animation: toastIn 0.2s ease-out;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    border: 1px solid var(--border);
+  }
+
+  .undo-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .undo-btn:hover {
+    background: var(--lang-tag-bg);
+    text-decoration: underline;
+  }
+
+  /* ---- Floating Mic ---- */
+  .mic-float {
+    position: absolute;
+    right: 3px;
+    bottom: -21px;
+    z-index: 10;
+  }
+
+  .mic-float :global(.mic-button) {
+    width: 56px;
+    height: 56px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  }
+
+  .mic-float :global(.mic-button svg) {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* ---- History Panel ---- */
   .history-panel {
     width: 260px;
     min-width: 260px;
@@ -593,14 +1240,8 @@
   }
 
   @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateX(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
   }
 
   .history-header {
@@ -617,6 +1258,44 @@
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.3px;
+  }
+
+  .history-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  .history-search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: inherit;
+    padding: 0;
+  }
+
+  .history-search-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .history-search-clear {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0 2px;
+    line-height: 1;
+  }
+
+  .history-search-clear:hover {
+    color: var(--text-primary);
   }
 
   .history-list {
@@ -709,243 +1388,5 @@
 
   .history-action-btn.delete:hover {
     color: var(--error);
-  }
-
-  .main-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-    padding-right: 28px;
-    position: relative;
-  }
-
-  .info-bar {
-    display: flex;
-    flex-direction: column;
-    padding: 6px 12px;
-    margin: 4px 10px 0;
-    gap: 3px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-secondary);
-  }
-
-  .info-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .info-label {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-primary);
-    white-space: nowrap;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .info-value-muted {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .info-separator {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .shortcut-item {
-    font-size: 11px;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-  }
-
-  .shortcut-action {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .shortcut-item kbd {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
-    font-weight: 600;
-  }
-
-  .phrases-indicator {
-    font-size: 11px;
-    color: var(--accent);
-    cursor: help;
-    text-decoration: underline dotted;
-  }
-
-  .phrases-indicator:hover {
-    color: var(--accent-hover, var(--accent));
-  }
-
-  .history-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--bg-primary);
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  .history-toggle.active .history-badge {
-    background: var(--bg-primary);
-    color: var(--accent);
-  }
-
-  .language-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .lang-tag {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: var(--lang-tag-bg);
-    color: var(--accent);
-    border: 1px solid var(--lang-tag-border);
-    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
-    white-space: nowrap;
-  }
-
-  .text-area {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .text-header {
-    display: flex;
-    justify-content: flex-end;
-    min-height: 0;
-  }
-
-  .clear-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .clear-btn:hover {
-    background: var(--surface-hover);
-    color: var(--error);
-  }
-
-  .silence-msg {
-    font-size: 12px;
-    color: var(--warning);
-    padding: 4px 0;
-  }
-
-  textarea {
-    width: 100%;
-    height: 100%;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px;
-    font-size: 14px;
-    font-family: inherit;
-    resize: none;
-    outline: none;
-    line-height: 1.5;
-  }
-
-  textarea:focus {
-    border-color: var(--accent);
-  }
-
-  textarea.has-interim {
-    border-color: var(--warning);
-  }
-
-  textarea::placeholder {
-    color: var(--text-muted);
-  }
-
-  .error {
-    font-size: 12px;
-    color: var(--error);
-    padding: 4px 0;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .mic-float {
-    position: absolute;
-    right: 12px;
-    bottom: 12px;
-    z-index: 10;
-  }
-
-  .mic-float :global(.mic-button) {
-    width: 56px;
-    height: 56px;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
-  }
-
-  .mic-float :global(.mic-button svg) {
-    width: 26px;
-    height: 26px;
-  }
-
-  .btn {
-    padding: 6px 16px;
-    border: none;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--bg-primary);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
   }
 </style>

@@ -11,7 +11,9 @@
   class="mic-button"
   class:listening={status === "listening"}
   class:error={status === "error"}
+  class:idle={status === "idle"}
   onclick={onToggle}
+  aria-label={status === "listening" ? "Stop dictation" : "Start dictation"}
   title={status === "listening" ? "Click to stop" : "Click to start dictation"}
 >
   <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -47,6 +49,16 @@
   .mic-button:hover {
     border-color: var(--accent);
     color: var(--accent);
+  }
+
+  .mic-button.idle {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.1);
+  }
+
+  .mic-button.idle:hover {
+    box-shadow: 0 0 0 5px rgba(137, 180, 250, 0.15);
   }
 
   .mic-button.listening {
