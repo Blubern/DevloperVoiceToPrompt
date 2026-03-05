@@ -26,6 +26,7 @@ export interface AppSettings {
   provider_switch_shortcut: string;
   max_recording_enabled: boolean;
   max_recording_seconds: number;
+  autostart_enabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -54,6 +55,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   provider_switch_shortcut: "",
   max_recording_enabled: true,
   max_recording_seconds: 180,
+  autostart_enabled: false,
 };
 
 export const AZURE_REGIONS = [

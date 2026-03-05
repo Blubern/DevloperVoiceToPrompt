@@ -24,6 +24,7 @@
     "@tauri-apps/plugin-shell": "^2.2.0",
     "@tauri-apps/plugin-store": "^2.2.0",
     "@tauri-apps/plugin-updater": "^2.2.0",
+    "@tauri-apps/plugin-autostart": "^2.2.0",
     "@tsconfig/svelte": "^5.0.8",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",

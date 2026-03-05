@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_store::StoreExt;
 
@@ -32,6 +33,7 @@ pub struct AppSettings {
     pub whisper_chunk_seconds: u32,
     pub max_recording_enabled: bool,
     pub max_recording_seconds: u32,
+    pub autostart_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -62,6 +64,7 @@ impl Default for AppSettings {
             whisper_chunk_seconds: 5,
             max_recording_enabled: true,
             max_recording_seconds: 180,
+            autostart_enabled: false,
         }
     }
 }
@@ -116,6 +119,7 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
         let whisper_chunk_seconds = store.get("whisper_chunk_seconds").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(5) as u32;
         let max_recording_enabled = store.get("max_recording_enabled").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(true);
         let max_recording_seconds = store.get("max_recording_seconds").and_then(|v: serde_json::Value| v.as_u64()).unwrap_or(180) as u32;
+        let autostart_enabled = store.get("autostart_enabled").and_then(|v: serde_json::Value| v.as_bool()).unwrap_or(false);
         AppSettings {
             speech_provider,
             os_language,
@@ -142,6 +146,7 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
             whisper_chunk_seconds,
             max_recording_enabled,
             max_recording_seconds,
+            autostart_enabled,
         }
     } else {
         AppSettings::default()
@@ -177,9 +182,18 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     store.set("whisper_chunk_seconds", serde_json::json!(settings.whisper_chunk_seconds));
     store.set("max_recording_enabled", serde_json::json!(settings.max_recording_enabled));
     store.set("max_recording_seconds", serde_json::json!(settings.max_recording_seconds));
+    store.set("autostart_enabled", serde_json::json!(settings.autostart_enabled));
 
     // Flush to disk immediately so settings survive dev restarts
     store.save().map_err(|e| format!("Failed to save settings to disk: {}", e))?;
+
+    // Apply autostart setting
+    let autolaunch = app.autolaunch();
+    if settings.autostart_enabled {
+        let _ = autolaunch.enable();
+    } else {
+        let _ = autolaunch.disable();
+    }
 
     // Re-register the global shortcut with the new key combo
     let gs = app.global_shortcut();

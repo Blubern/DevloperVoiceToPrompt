@@ -139,6 +139,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .manage(whisper::WhisperState::default())
         .manage(copilot::CopilotState::default())
         .invoke_handler(tauri::generate_handler![

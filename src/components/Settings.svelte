@@ -48,6 +48,7 @@
   let alwaysOnTop = $state(DEFAULT_SETTINGS.always_on_top);
   let autoPunctuation = $state(DEFAULT_SETTINGS.auto_punctuation);
   let autoStartRecording = $state(DEFAULT_SETTINGS.auto_start_recording);
+  let autostartEnabled = $state(DEFAULT_SETTINGS.autostart_enabled);
   let silenceTimeoutEnabled = $state(true);
   let silenceTimeoutSeconds = $state(DEFAULT_SETTINGS.silence_timeout_seconds);
   let maxRecordingEnabled = $state(DEFAULT_SETTINGS.max_recording_enabled);
@@ -148,6 +149,7 @@
       alwaysOnTop = initialSettings.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
       autoPunctuation = initialSettings.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
       autoStartRecording = initialSettings.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording;
+      autostartEnabled = initialSettings.autostart_enabled ?? DEFAULT_SETTINGS.autostart_enabled;
       const savedTimeout = initialSettings.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
       silenceTimeoutEnabled = savedTimeout > 0;
       silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
@@ -185,6 +187,7 @@
     if (alwaysOnTop !== (saved.always_on_top ?? DEFAULT_SETTINGS.always_on_top)) return true;
     if (autoPunctuation !== (saved.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation)) return true;
     if (autoStartRecording !== (saved.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording)) return true;
+    if (autostartEnabled !== (saved.autostart_enabled ?? DEFAULT_SETTINGS.autostart_enabled)) return true;
     const savedTimeout = saved.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
     const currentTimeout = silenceTimeoutEnabled ? silenceTimeoutSeconds : 0;
     if (currentTimeout !== savedTimeout) return true;
@@ -217,6 +220,7 @@
     alwaysOnTop = s.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
     autoPunctuation = s.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
     autoStartRecording = s.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording;
+    autostartEnabled = s.autostart_enabled ?? DEFAULT_SETTINGS.autostart_enabled;
     const savedTimeout = s.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
     silenceTimeoutEnabled = savedTimeout > 0;
     silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
@@ -401,6 +405,7 @@
         provider_switch_shortcut: providerSwitchShortcut,
         max_recording_enabled: maxRecordingEnabled,
         max_recording_seconds: maxRecordingSeconds,
+        autostart_enabled: autostartEnabled,
       });
       success = true;
       onSaved?.();
@@ -826,6 +831,15 @@
 
     <div class="section">
       <h2>Behavior</h2>
+
+      <label class="field toggle-field">
+        <span class="label">Start on Login</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={autostartEnabled} class="toggle-checkbox" />
+          <span class="toggle-label">{autostartEnabled ? 'On' : 'Off'}</span>
+        </div>
+        <span class="hint">Automatically start the app when you log in to your computer.</span>
+      </label>
 
       <div class="field">
         <span class="label">Global Shortcut</span>

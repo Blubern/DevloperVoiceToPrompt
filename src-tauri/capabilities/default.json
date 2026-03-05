@@ -24,6 +24,9 @@
     "clipboard-manager:allow-read-text",
     "store:default",
     "process:default",
-    "shell:default"
+    "shell:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }
