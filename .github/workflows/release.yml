@@ -15,14 +15,12 @@ jobs:
             args: ''
             os: windows
             arch: x64
+            bundle-dir: target/release/bundle
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             os: macos
             arch: arm64
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-            os: macos
-            arch: x64
+            bundle-dir: target/aarch64-apple-darwin/release/bundle
 
     runs-on: ${{ matrix.platform }}
 
@@ -38,7 +36,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.os == 'macos' && 'aarch64-apple-darwin' || '' }}
 
       - name: Install LLVM (Windows)
         if: matrix.os == 'windows'
@@ -60,18 +58,12 @@ jobs:
         run: npm install
 
       - name: Build Tauri app
-        id: tauri-build
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          includeRelease: false
-          args: ${{ matrix.args }}
+        run: npx tauri build ${{ matrix.args }}
 
-      - name: Rename artifacts
+      - name: Collect and rename artifacts
         shell: bash
         env:
-          ARTIFACTS: ${{ steps.tauri-build.outputs.artifactPaths }}
+          BUNDLE_DIR: src-tauri/${{ matrix.bundle-dir }}
           APP_VERSION: ${{ github.ref_name }}
           OS: ${{ matrix.os }}
           ARCH: ${{ matrix.arch }}
@@ -79,48 +71,65 @@ jobs:
           set -euo pipefail
           mkdir -p renamed
 
-          # Strip leading "v" from tag (v0.1.0 -> 0.1.0)
           VERSION="${APP_VERSION#v}"
           PREFIX="developer-voice-to-prompt-${VERSION}-${OS}-${ARCH}"
 
-          echo "Artifact paths: $ARTIFACTS"
+          echo "== Bundle directory contents =="
+          find "$BUNDLE_DIR" -type f 2>/dev/null || echo "(empty or missing)"
+          echo "==============================="
 
-          # Fail early if the build produced no artifacts
-          if [ -z "$ARTIFACTS" ] || [ "$ARTIFACTS" = "[]" ]; then
-            echo "::error::No artifacts produced by tauri-build – the Rust/Tauri build likely failed."
-            exit 1
+          collect() {
+            local src="$1" dst="$2"
+            if [ -f "$src" ]; then
+              echo "  $src -> renamed/$dst"
+              cp "$src" "renamed/$dst"
+            fi
+          }
+
+          if [ "$OS" = "windows" ]; then
+            # NSIS installer
+            for f in "$BUNDLE_DIR"/nsis/*-setup.exe; do
+              collect "$f" "${PREFIX}.exe"
+            done
+            # NSIS update zip
+            for f in "$BUNDLE_DIR"/nsis/*-setup.nsis.zip; do
+              collect "$f" "${PREFIX}.nsis.zip"
+            done
+            for f in "$BUNDLE_DIR"/nsis/*-setup.nsis.zip.sig; do
+              collect "$f" "${PREFIX}.nsis.zip.sig"
+            done
+            # MSI installer
+            for f in "$BUNDLE_DIR"/msi/*_en-US.msi; do
+              collect "$f" "${PREFIX}-en-us.msi"
+            done
+            for f in "$BUNDLE_DIR"/msi/*_en-US.msi.zip; do
+              collect "$f" "${PREFIX}.msi.zip"
+            done
+            for f in "$BUNDLE_DIR"/msi/*_en-US.msi.zip.sig; do
+              collect "$f" "${PREFIX}.msi.zip.sig"
+            done
+          elif [ "$OS" = "macos" ]; then
+            # DMG
+            for f in "$BUNDLE_DIR"/dmg/*.dmg; do
+              collect "$f" "${PREFIX}.dmg"
+            done
+            # App tar.gz (for updater)
+            for f in "$BUNDLE_DIR"/macos/*.app.tar.gz; do
+              collect "$f" "${PREFIX}.tar.gz"
+            done
+            for f in "$BUNDLE_DIR"/macos/*.app.tar.gz.sig; do
+              collect "$f" "${PREFIX}.tar.gz.sig"
+            done
           fi
-
-          # Parse JSON array of paths
-          echo "$ARTIFACTS" | tr -d '[]"' | tr ',' '\n' | while read -r filepath; do
-            filepath="$(echo "$filepath" | xargs)"  # trim whitespace
-            [ -z "$filepath" ] && continue
-
-            filename="$(basename "$filepath")"
-            echo "Processing: $filename"
-
-            # Determine new filename based on extension patterns
-            case "$filename" in
-              *.app.tar.gz.sig) newname="${PREFIX}.tar.gz.sig" ;;
-              *.app.tar.gz)     newname="${PREFIX}.tar.gz" ;;
-              *-setup.nsis.zip.sig) newname="${PREFIX}.nsis.zip.sig" ;;
-              *-setup.nsis.zip) newname="${PREFIX}.nsis.zip" ;;
-              *-setup.exe)      newname="${PREFIX}.exe" ;;
-              *_en-US.msi)      newname="${PREFIX}-en-us.msi" ;;
-              *.dmg)            newname="${PREFIX}.dmg" ;;
-              *.sig)            newname="${PREFIX}.sig" ;;
-              *)
-                echo "  Skipping unknown artifact: $filename"
-                continue
-                ;;
-            esac
-
-            echo "  -> $newname"
-            cp "$filepath" "renamed/$newname"
-          done
 
           echo "Renamed artifacts:"
           ls -la renamed/
+
+          # Fail if nothing was collected
+          if [ -z "$(ls -A renamed/)" ]; then
+            echo "::error::No artifacts found in $BUNDLE_DIR"
+            exit 1
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
