@@ -122,6 +122,30 @@ Azure's multi-language recognition is especially useful when your domain termino
 
 ---
 
+## Requirements
+
+> **The app works out of the box with Web Speech** — no accounts, no subscriptions, no API keys.
+> Azure and Copilot are optional upgrades that unlock additional capabilities.
+
+### Speech Providers
+
+| Provider | What you need | What you get |
+| --- | --- | --- |
+| **Web Speech API** | Nothing — built into the WebView | Real-time dictation with zero setup |
+| **Azure Speech Services** | Subscription key + region — [create one here](https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices) (free tier available) | High accuracy, auto-punctuation, multi-language mixing |
+| **Whisper (local)** | Download a model from Settings → Speech | Fully offline, complete privacy |
+
+### AI Prompt Enhancement
+
+| Dependency | Details |
+| --- | --- |
+| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/managing-copilot/configure-personal-settings/installing-the-github-copilot-extension-for-your-environment) |
+| **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot) |
+
+Without Copilot, the app still provides full speech-to-text with templates and history. Copilot enables the **Enhance Prompt** feature that transforms raw dictation into structured, AI-optimized prompts.
+
+---
+
 # Documentation
 
 Everything below is technical reference for developers who want to understand, build, or contribute to the project.
@@ -246,12 +270,9 @@ Press **?** in the popup to see active shortcuts at any time.
 
 ---
 
-## Requirements
+## Development Setup
 
-> **The app works out of the box with Web Speech** — no accounts, no subscriptions, no API keys.
-> Azure and Copilot are optional upgrades that unlock additional capabilities.
-
-### Required (build & run)
+### Prerequisites
 
 | Dependency | Purpose |
 | --- | --- |
@@ -260,26 +281,7 @@ Press **?** in the popup to see active shortcuts at any time.
 | **LLVM** | Required by whisper-rs for bindgen — `winget install LLVM.LLVM` |
 | **Windows**: VS Build Tools 2022+ | "Desktop development with C++" workload |
 
-### Optional — Speech Providers
-
-| Provider | What you need | What you get |
-| --- | --- | --- |
-| **Web Speech API** | Nothing — built into the WebView | Real-time dictation with zero setup |
-| **Azure Speech Services** | Subscription key + region — [create one here](https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices) (free tier available) | High accuracy, auto-punctuation, multi-language mixing |
-| **Whisper (local)** | Download a model from Settings → Speech | Fully offline, complete privacy |
-
-### Optional — AI Prompt Enhancement
-
-| Dependency | Details |
-| --- | --- |
-| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/managing-copilot/configure-personal-settings/installing-the-github-copilot-extension-for-your-environment) |
-| **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot) |
-
-Without Copilot, the app still provides full speech-to-text with templates and history. Copilot enables the **Enhance Prompt** feature that transforms raw dictation into structured, AI-optimized prompts.
-
----
-
-## Getting Started
+### Getting Started
 
 1. **Clone the repository**
 
