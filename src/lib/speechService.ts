@@ -12,6 +12,8 @@ export interface SpeechCallbacks {
   onFinal: (text: string) => void;
   onError: (error: string) => void;
   onStatusChange: (status: "idle" | "listening" | "error") => void;
+  /** Called by the Whisper provider each time a new audio chunk starts processing. */
+  onChunkStart?: () => void;
 }
 
 export interface AudioDevice {
@@ -395,6 +397,9 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
     const samples = this.pcmBuffer;
     this.pcmBuffer = new Float32Array(0);
+
+    // Notify UI that a new chunk is starting so it can reset the chunk timer.
+    this.callbacks.onChunkStart?.();
 
     // Skip silent chunks — compute RMS energy and discard if below threshold.
     // This prevents Whisper from hallucinating phrase-list text on silence.

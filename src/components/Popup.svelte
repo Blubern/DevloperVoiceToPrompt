@@ -137,6 +137,10 @@
   let elapsedSeconds = $state(0);
   let elapsedInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Whisper chunk elapsed timer
+  let chunkElapsedMs = $state(0);
+  let chunkTickInterval: ReturnType<typeof setInterval> | null = null;
+
   // Language dropdown state
   let langDropdownOpen = $state(false);
   let langDropdownFilter = $state("");
@@ -549,8 +553,15 @@
           sessionStartTime = Date.now();
           resetSilenceTimer();
           startMaxRecordingTimer();
+          if (settings.speech_provider === PROVIDER_WHISPER) {
+            chunkElapsedMs = 0;
+            chunkTickInterval = setInterval(() => { chunkElapsedMs += 100; }, 100);
+          }
+        } else {
+          if (chunkTickInterval) { clearInterval(chunkTickInterval); chunkTickInterval = null; }
         }
       },
+      onChunkStart: () => { chunkElapsedMs = 0; },
     };
 
     activeProvider = provider;
@@ -1147,6 +1158,12 @@
           <div class="level-meter">
             <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
           </div>
+          {#if settings.speech_provider === PROVIDER_WHISPER}
+            <div class="chunk-timer" title="Chunk progress: {(chunkElapsedMs / 1000).toFixed(1)}s / {settings.whisper_chunk_seconds}s">
+              <div class="chunk-bar" style="width: {Math.min(100, (chunkElapsedMs / (settings.whisper_chunk_seconds * 1000)) * 100)}%"></div>
+            </div>
+            <span class="chunk-elapsed">{(chunkElapsedMs / 1000).toFixed(1)}s</span>
+          {/if}
           <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
         </div>
       {/if}
@@ -1680,6 +1697,29 @@
     color: var(--text-muted);
     font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
     margin-left: auto;
+  }
+
+  .chunk-timer {
+    width: 40px;
+    height: 6px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .chunk-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.1s linear;
+  }
+
+  .chunk-elapsed {
+    font-size: 11px;
+    color: var(--accent);
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    min-width: 30px;
   }
 
   /* ---- Text Area ---- */
