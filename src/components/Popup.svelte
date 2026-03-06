@@ -117,6 +117,9 @@
   let selectedEnhancerId = $state("");
   let enhancing = $state(false);
 
+  // Whisper model download check
+  let whisperModelMissing = $state(false);
+
   // Enhancement undo stack (multi-level, resets on copy/close and clear)
   let enhanceUndoStack = $state<string[]>([]);
   let showEnhanceToast = $state(false);
@@ -148,6 +151,7 @@
   // Microphone selector
   let micDropdownOpen = $state(false);
   let audioDevices = $state<AudioDevice[]>([]);
+  let micWarning = $state("");
   let selectedMicLabel = $derived(() => {
     if (!settings.microphone_device_id) return "Default Mic";
     const dev = audioDevices.find(d => d.deviceId === settings.microphone_device_id);
@@ -364,12 +368,26 @@
       const canStart =
         (settings.speech_provider === PROVIDER_AZURE && settings.azure_speech_key && settings.azure_region) ||
         (settings.speech_provider === PROVIDER_OS && webSpeechAvailable) ||
-        (settings.speech_provider === PROVIDER_WHISPER && settings.whisper_model);
+        (settings.speech_provider === PROVIDER_WHISPER && settings.whisper_model && !whisperModelMissing);
       if (canStart) {
         autoStartDone = true;
         // Slight delay to let the popup fully render
         setTimeout(() => toggleMic(), 150);
       }
+    }
+  });
+
+  // Check if selected Whisper model is downloaded
+  $effect(() => {
+    if (settings.speech_provider === PROVIDER_WHISPER && settings.whisper_model) {
+      invoke<{ name: string; downloaded: boolean }[]>("whisper_list_models").then((models) => {
+        const m = models.find((m) => m.name === settings.whisper_model);
+        whisperModelMissing = m ? !m.downloaded : true;
+      }).catch(() => {
+        whisperModelMissing = false;
+      });
+    } else {
+      whisperModelMissing = false;
     }
   });
 
@@ -476,6 +494,11 @@
 
     if (settings.speech_provider === PROVIDER_WHISPER && !settings.whisper_model) {
       errorMessage = "No Whisper model selected. Go to Settings → Speech → Whisper.";
+      return;
+    }
+
+    if (settings.speech_provider === PROVIDER_WHISPER && whisperModelMissing) {
+      errorMessage = "Selected Whisper model not downloaded. Go to Settings → Speech → Whisper to download it.";
       return;
     }
 
@@ -737,6 +760,7 @@
   $effect(() => {
     enumerateAudioDevices().then(result => {
       audioDevices = result.devices;
+      micWarning = result.error ?? "";
     });
   });
 
@@ -1059,6 +1083,15 @@
 
   <div class="content">
     <div class="main-content">
+      <!-- No microphone warning banner -->
+      {#if micWarning}
+        <div class="mic-warning-bar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span class="mic-warning-text">{micWarning}</span>
+          <button class="mic-warning-retry" onclick={() => enumerateAudioDevices().then(r => { audioDevices = r.devices; micWarning = r.error ?? ''; })}>Retry</button>
+        </div>
+      {/if}
+
       <!-- Recording status bar -->
       {#if status === "listening"}
         <div class="recording-bar">
@@ -1082,12 +1115,16 @@
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
-            {#if settings.speech_provider === PROVIDER_AZURE && !settings.azure_speech_key}
+            {#if micWarning}
+              <span class="empty-state-text">{micWarning}</span>
+            {:else if settings.speech_provider === PROVIDER_AZURE && !settings.azure_speech_key}
               <span class="empty-state-text">Configure your Azure Speech key in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
             {:else if settings.speech_provider === PROVIDER_OS && !webSpeechAvailable}
               <span class="empty-state-text">Web Speech API is not available. Switch to Azure or Whisper in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button></span>
             {:else if settings.speech_provider === PROVIDER_WHISPER && !settings.whisper_model}
               <span class="empty-state-text">Download a Whisper model in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
+            {:else if settings.speech_provider === PROVIDER_WHISPER && whisperModelMissing}
+              <span class="empty-state-text">Selected Whisper model is not downloaded. Download it in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
             {:else}
               <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
             {/if}
@@ -1122,7 +1159,7 @@
 
         <!-- Floating mic button anchored to textarea -->
         <div class="mic-float">
-          <MicButton {status} onToggle={toggleMic} disabled={enhancing} />
+          <MicButton {status} onToggle={toggleMic} disabled={enhancing || !!micWarning} />
         </div>
       </div>
 
@@ -1751,6 +1788,40 @@
 
   .error-action:hover {
     background: var(--error-border);
+  }
+
+  /* ---- Mic Warning Banner ---- */
+  .mic-warning-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--warning-bg);
+    border: 1px solid rgba(249, 226, 175, 0.15);
+    color: var(--warning);
+    font-size: 12px;
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  .mic-warning-text {
+    flex: 1;
+  }
+
+  .mic-warning-retry {
+    background: none;
+    border: 1px solid rgba(249, 226, 175, 0.25);
+    color: var(--warning);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+
+  .mic-warning-retry:hover {
+    background: rgba(249, 226, 175, 0.1);
   }
 
   /* ---- Silence Message ---- */

@@ -171,6 +171,16 @@
   <div class="section" style="margin-top: 12px;">
     <h2>Connection</h2>
 
+    <div class="speech-notice" style="margin-bottom: 12px;">
+      <div class="notice-icon">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </div>
+      <div class="notice-content">
+        <strong>GitHub Copilot CLI Required</strong>
+        <p>This feature requires the <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli" target="_blank" rel="noopener noreferrer" class="notice-link">GitHub Copilot CLI</a> to be installed and on your PATH and logged in. The preview version of <code>copilot-cli</code> is not supported — make sure you have the stable release.</p>
+      </div>
+    </div>
+
     {#if copilotError}
       <div class="message error" style="margin-bottom: 12px;">{copilotError}</div>
     {/if}

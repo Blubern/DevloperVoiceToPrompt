@@ -188,6 +188,12 @@ pub fn run() {
             setup_tray(app.handle())?;
             setup_global_shortcut(app.handle());
 
+            // Open popup on startup if enabled in settings
+            let user_settings = settings::load_settings(app.handle());
+            if user_settings.open_popup_on_start {
+                create_or_toggle_popup(app.handle());
+            }
+
             // On first run, if no settings exist, show the settings window
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {

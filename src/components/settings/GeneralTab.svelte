@@ -16,6 +16,7 @@
     maxRecordingEnabled = $bindable(),
     maxRecordingSeconds = $bindable(),
     popupFont = $bindable(),
+    openPopupOnStart = $bindable(),
   }: {
     theme: string;
     autostartEnabled: boolean;
@@ -30,6 +31,7 @@
     maxRecordingEnabled: boolean;
     maxRecordingSeconds: number;
     popupFont: string;
+    openPopupOnStart: boolean;
   } = $props();
 
   const FONT_OPTIONS = [
@@ -105,6 +107,15 @@
         <span class="toggle-label">{autostartEnabled ? 'On' : 'Off'}</span>
       </div>
       <span class="hint">Automatically start the app when you log in to your computer.</span>
+    </label>
+
+    <label class="field toggle-field">
+      <span class="label">Open Popup on Start</span>
+      <div class="toggle-row">
+        <input type="checkbox" bind:checked={openPopupOnStart} class="toggle-checkbox" />
+        <span class="toggle-label">{openPopupOnStart ? 'On' : 'Off'}</span>
+      </div>
+      <span class="hint">Automatically show the dictation popup when the application starts.</span>
     </label>
 
     <div class="field">

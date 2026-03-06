@@ -111,11 +111,11 @@ Choose the engine that fits your workflow:
 | Local (Offline) | :question:[^2] | ❌ | ✅ |
 
 [^1]: Because Whisper does not support true realtime transcription, some latency can occur. However, you can edit the text while speaking.
-[^2]: For Web Speech the execution local or not depends on the used browser and the implementation of it.
+[^2]: For Web Speech the execution local or not depends on the used browser and the implementation of it ([Web Speech API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)).
 
 Switch engines instantly with a keyboard shortcut — no restart needed.
 
-Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking ([Web Speech API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)).
+Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking.
 
 | Switch language |
 | :---: |
@@ -154,7 +154,7 @@ Azure's multi-language recognition is especially useful when your domain termino
 
 | Dependency | Details |
 | --- | --- |
-| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cliinstalling-the-github-copilot-extension-for-your-environment) |
+| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli) |
 | **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot/plans) |
 
 Without Copilot, the app still provides full speech-to-text with templates and history. Copilot enables the **Enhance Prompt** feature that transforms raw dictation into structured, AI-optimized prompts.
