@@ -6,7 +6,7 @@ Developers think faster than they type. Voice-to-text inside AI tools behaves di
 
 Developer Voice to Prompt is a lightweight tray application that lets you **speak naturally, edit live, structure your thoughts, and generate optimized prompts** for any AI tool.
 
-![Developer Voice to Prompt — Overview](images/OverviewHowItWorkInfo.png)
+![Developer Voice to Prompt — Overview](doc/images/OverviewHowItWorkInfo.png)
 
 
 ## The Problem
@@ -33,13 +33,13 @@ No more switching between voice tools. No more retyping the same context. No mor
 
 ### Speak and Edit Live
 
-<a href="images/MainWindow.png"><img src="images/MainWindow.png" alt="Dictation popup — idle state" width="600"></a>
+<a href="doc/images/MainWindow.png"><img src="doc/images/MainWindow.png" alt="Dictation popup — idle state" width="600"></a>
 
 Start speaking — the transcript appears in real time. Pause, edit the text, then continue speaking. The transcript picks up right where you left off.
 
 No need to stop the microphone. No need to restart. Your edits and new speech merge seamlessly.
 
-<a href="images/MainWindowRecording.png"><img src="images/MainWindowRecording.png" alt="Live dictation with real-time transcript" width="600"></a>
+<a href="doc/images/MainWindowRecording.png"><img src="doc/images/MainWindowRecording.png" alt="Live dictation with real-time transcript" width="600"></a>
 
 ---
 
@@ -49,7 +49,7 @@ Save reusable context blocks as templates and insert them with one click. Stop r
 
 Use templates for architecture reviews, bug analysis, refactoring instructions, agent workflows — anything you repeat.
 
-<a href="images/MainWindowTemplates.png"><img src="images/MainWindowTemplates.png" alt="Templates panel with searchable template list" width="600"></a>
+<a href="doc/images/MainWindowTemplates.png"><img src="doc/images/MainWindowTemplates.png" alt="Templates panel with searchable template list" width="600"></a>
 
 ---
 
@@ -61,7 +61,7 @@ Choose from available models (GPT-4o, Claude, and more). Select an enhancer temp
 
 Multi-level undo lets you step back through every enhancement.
 
-<a href="images/SettingsGithubCopilot.png"><img src="images/SettingsGithubCopilot.png" alt="GitHub Copilot integration — model selection and authentication" width="600"></a>
+<a href="doc/images/SettingsGithubCopilot.png"><img src="doc/images/SettingsGithubCopilot.png" alt="GitHub Copilot integration — model selection and authentication" width="600"></a>
 
 ---
 
@@ -69,7 +69,7 @@ Multi-level undo lets you step back through every enhancement.
 
 Every prompt is saved locally. Browse, search, reuse, or delete past transcriptions from a slide-out history panel — directly inside the dictation popup.
 
-<a href="images/MainWindowHistory.png"><img src="images/MainWindowHistory.png" alt="History panel with search and quick actions" width="600"></a>
+<a href="doc/images/MainWindowHistory.png"><img src="doc/images/MainWindowHistory.png" alt="History panel with search and quick actions" width="600"></a>
 
 ---
 
@@ -97,7 +97,7 @@ Azure's multi-language recognition is especially useful when your domain termino
 
 | Switch language |
 | :---: |
-| <a href="images/MainWindowEasyLanguageSwitch.png"><img src="images/MainWindowEasyLanguageSwitch.png" alt="Language switching — before" width="380"></a> <a href="images/MainWindowEasyLanguageSwitch1.png"><img src="images/MainWindowEasyLanguageSwitch1.png" alt="Language switching — after" width="380"></a> |
+| <a href="doc/images/MainWindowEasyLanguageSwitch.png"><img src="doc/images/MainWindowEasyLanguageSwitch.png" alt="Language switching — before" width="380"></a> <a href="doc/images/MainWindowEasyLanguageSwitch1.png"><img src="doc/images/MainWindowEasyLanguageSwitch1.png" alt="Language switching — after" width="380"></a> |
 
 ---
 
@@ -132,11 +132,11 @@ Everything below is technical reference for developers who want to understand, b
 
 | General | Speech | Phrases |
 | :---: | :---: | :---: |
-| <a href="images/SettingsGeneral.png"><img src="images/SettingsGeneral.png" alt="General settings" width="250"></a> | <a href="images/SettingsSpeech.png"><img src="images/SettingsSpeech.png" alt="Speech provider settings" width="250"></a> | <a href="images/SettingsPhrases.png"><img src="images/SettingsPhrases.png" alt="Custom phrases" width="250"></a> |
+| <a href="doc/images/SettingsGeneral.png"><img src="doc/images/SettingsGeneral.png" alt="General settings" width="250"></a> | <a href="doc/images/SettingsSpeech.png"><img src="doc/images/SettingsSpeech.png" alt="Speech provider settings" width="250"></a> | <a href="doc/images/SettingsPhrases.png"><img src="doc/images/SettingsPhrases.png" alt="Custom phrases" width="250"></a> |
 
 | Templates | History | Usage |
 | :---: | :---: | :---: |
-| <a href="images/SettingsTemplates.png"><img src="images/SettingsTemplates.png" alt="Template management" width="250"></a> | <a href="images/SettingsHistory.png"><img src="images/SettingsHistory.png" alt="History settings" width="250"></a> | <a href="images/SettingsUsage.png"><img src="images/SettingsUsage.png" alt="Usage statistics" width="250"></a> |
+| <a href="doc/images/SettingsTemplates.png"><img src="doc/images/SettingsTemplates.png" alt="Template management" width="250"></a> | <a href="doc/images/SettingsHistory.png"><img src="doc/images/SettingsHistory.png" alt="History settings" width="250"></a> | <a href="doc/images/SettingsUsage.png"><img src="doc/images/SettingsUsage.png" alt="Usage statistics" width="250"></a> |
 
 ---
 
