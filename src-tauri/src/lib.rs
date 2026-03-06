@@ -79,10 +79,15 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         .item(&quit_item)
         .build()?;
 
-    let _tray = TrayIconBuilder::new()
+    let tray_builder = TrayIconBuilder::new()
         .icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)
         .tooltip("Developer Voice to Prompt")
-        .menu(&menu)
+        .menu(&menu);
+
+    #[cfg(target_os = "macos")]
+    let tray_builder = tray_builder.icon_as_template(true);
+
+    let _tray = tray_builder
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => create_or_toggle_popup(app),
             "settings" => show_settings(app),
