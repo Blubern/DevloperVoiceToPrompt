@@ -97,3 +97,18 @@ export async function deleteEnhancerTemplate(id: string): Promise<void> {
   await s.set("templates", filtered);
   await s.save();
 }
+
+export async function resetEnhancerTemplates(): Promise<EnhancerTemplate[]> {
+  const s = await getStore();
+  const now = new Date().toISOString();
+  const defaults: EnhancerTemplate[] = DEFAULT_ENHANCER_TEMPLATES.map((t) => ({
+    id: crypto.randomUUID(),
+    name: t.name,
+    text: t.text,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  await s.set("templates", defaults);
+  await s.save();
+  return defaults;
+}

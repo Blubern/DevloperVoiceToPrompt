@@ -37,7 +37,7 @@ export const DEFAULT_MAX_RECORDING_SECONDS = 180;
 export const WHISPER_SILENCE_RMS_THRESHOLD = 0.01;
 
 // Prompt enhancer system prompt wrapper
-export const ENHANCE_SYSTEM_PROMPT_WRAPPER = `You are a prompt enhancer. The user will provide raw dictated text. Apply the following enhancement instructions, then output ONLY the final optimized prompt with no explanations or commentary.
+export const ENHANCE_SYSTEM_PROMPT_WRAPPER = `You are a text-only prompt enhancer. You have no access to files, tools, or external resources. Your sole task is to process the raw dictated text provided by the user. Apply the following enhancement instructions, then output ONLY the final enhanced text with no explanations, commentary, or markdown formatting.
 
 Enhancement instructions:
 `;

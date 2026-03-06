@@ -6,7 +6,7 @@
 //   Request  (stdin):  { "id": 1, "method": "init"|"auth_status"|"list_models"|"stop" }
 //   Response (stdout): { "id": 1, "result": ... }  or  { "id": 1, "error": "..." }
 
-import { CopilotClient, approveAll } from "@github/copilot-sdk";
+import { CopilotClient } from "@github/copilot-sdk";
 import { createInterface } from "readline";
 
 let client = null;
@@ -64,7 +64,8 @@ async function handleRequest(req) {
           mode: "replace",
           content: system_prompt,
         },
-        onPermissionRequest: approveAll,
+        availableTools: [],
+        onPermissionRequest: async () => ({ kind: "denied-by-rules" }),
       });
       const sessionId = session.sessionId;
       try {

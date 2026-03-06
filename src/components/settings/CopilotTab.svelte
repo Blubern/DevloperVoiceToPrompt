@@ -1,6 +1,6 @@
 <script lang="ts">
   import { copilotInit, copilotAuthStatus, copilotListModels, copilotStop, type CopilotAuthStatus, type CopilotModel } from "../../lib/copilotStore";
-  import { getEnhancerTemplates, addEnhancerTemplate, updateEnhancerTemplate, deleteEnhancerTemplate, type EnhancerTemplate } from "../../lib/enhancerTemplateStore";
+  import { getEnhancerTemplates, addEnhancerTemplate, updateEnhancerTemplate, deleteEnhancerTemplate, resetEnhancerTemplates, type EnhancerTemplate } from "../../lib/enhancerTemplateStore";
   import { EVENT_ENHANCER_TEMPLATES_UPDATED } from "../../lib/constants";
   import { emit } from "@tauri-apps/api/event";
   import ShortcutRecorder from "../ShortcutRecorder.svelte";
@@ -31,6 +31,7 @@
   // Enhancer template CRUD state
   let enhancerTemplates = $state<EnhancerTemplate[]>([]);
   let deleteConfirmId = $state<string | null>(null);
+  let resetConfirm = $state(false);
 
   // Modal state for add/edit
   let modalOpen = $state(false);
@@ -137,6 +138,13 @@
     await deleteEnhancerTemplate(id);
     enhancerTemplates = await getEnhancerTemplates();
     deleteConfirmId = null;
+    await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
+  }
+
+  async function handleResetTemplates() {
+    enhancerTemplates = await resetEnhancerTemplates();
+    copilotSelectedEnhancer = "";
+    resetConfirm = false;
     await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
   }
 </script>
@@ -246,9 +254,26 @@
       </div>
     {/if}
 
-    <button type="button" class="toggle-btn" onclick={openAddModal}>
-      + Add Template
-    </button>
+    <div style="display: flex; gap: 8px;">
+      <button type="button" class="toggle-btn" onclick={openAddModal}>
+        + Add Template
+      </button>
+      {#if resetConfirm}
+        <button type="button" class="toggle-btn danger" onclick={handleResetTemplates}>
+          Confirm Reset
+        </button>
+        <button type="button" class="toggle-btn" onclick={() => resetConfirm = false}>
+          Cancel
+        </button>
+      {:else}
+        <button type="button" class="toggle-btn" onclick={() => resetConfirm = true}>
+          Reset to Defaults
+        </button>
+      {/if}
+    </div>
+    {#if resetConfirm}
+      <p class="hint" style="color: var(--error); margin-top: 6px;">This will replace all your templates with the defaults. Custom templates will be lost.</p>
+    {/if}
 
     {#if enhancerTemplates.length > 0}
       <div class="field" style="margin-top: 12px;">
@@ -434,5 +459,13 @@
   .toggle-btn.primary:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .toggle-btn.danger {
+    color: var(--error);
+    border-color: var(--error);
+  }
+  .toggle-btn.danger:hover {
+    background: var(--error-bg);
   }
 </style>
