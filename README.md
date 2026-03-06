@@ -246,13 +246,36 @@ Press **?** in the popup to see active shortcuts at any time.
 
 ---
 
-## Prerequisites
+## Requirements
 
-- **Node.js** 18+
-- **Rust** toolchain (rustup, cargo)
-- **LLVM** — required by whisper-rs for bindgen (`winget install LLVM.LLVM`)
-- **Windows**: Visual Studio Build Tools 2022+ with the "Desktop development with C++" workload
-- **Azure Speech Services** subscription key and region (optional) — [create one here](https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices)
+> **The app works out of the box with Web Speech** — no accounts, no subscriptions, no API keys.
+> Azure and Copilot are optional upgrades that unlock additional capabilities.
+
+### Required (build & run)
+
+| Dependency | Purpose |
+| --- | --- |
+| **Node.js** 18+ | Frontend build toolchain |
+| **Rust** toolchain (rustup, cargo) | Backend compilation |
+| **LLVM** | Required by whisper-rs for bindgen — `winget install LLVM.LLVM` |
+| **Windows**: VS Build Tools 2022+ | "Desktop development with C++" workload |
+
+### Optional — Speech Providers
+
+| Provider | What you need | What you get |
+| --- | --- | --- |
+| **Web Speech API** | Nothing — built into the WebView | Real-time dictation with zero setup |
+| **Azure Speech Services** | Subscription key + region — [create one here](https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices) (free tier available) | High accuracy, auto-punctuation, multi-language mixing |
+| **Whisper (local)** | Download a model from Settings → Speech | Fully offline, complete privacy |
+
+### Optional — AI Prompt Enhancement
+
+| Dependency | Details |
+| --- | --- |
+| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/managing-copilot/configure-personal-settings/installing-the-github-copilot-extension-for-your-environment) |
+| **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot) |
+
+Without Copilot, the app still provides full speech-to-text with templates and history. Copilot enables the **Enhance Prompt** feature that transforms raw dictation into structured, AI-optimized prompts.
 
 ---
 
