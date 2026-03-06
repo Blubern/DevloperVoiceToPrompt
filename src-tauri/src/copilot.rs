@@ -189,6 +189,24 @@ pub async fn copilot_init(
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
+    // macOS GUI apps don't inherit the user's login-shell PATH, so tools installed
+    // via Homebrew (node, gh, etc.) won't be found. Query the login shell for its
+    // full PATH and forward it to the child process.
+    #[cfg(target_os = "macos")]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", "echo $PATH"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&output.stdout);
+            let path = path.trim();
+            if !path.is_empty() {
+                cmd.env("PATH", path);
+            }
+        }
+    }
+
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn bridge: {}", e))?;
