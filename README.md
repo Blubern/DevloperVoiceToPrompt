@@ -6,9 +6,6 @@ Developers think faster than they type. Voice-to-text inside AI tools behaves di
 
 Developer Voice to Prompt is a lightweight tray application that lets you **speak naturally, edit live, structure your thoughts, and generate optimized prompts** for any AI tool.
 
-![Developer Voice to Prompt — Overview](doc/images/OverviewHowItWorkInfo.png)
-
-
 ## The Problem
 
 Every AI tool handles text input differently. Some have built-in voice. Most don't. And when they do, the experience is inconsistent — different accuracy, different languages, different behavior.
@@ -16,16 +13,26 @@ Every AI tool handles text input differently. Some have built-in voice. Most don
 Meanwhile, developers are spending more time than ever writing prompts. Typing them out manually is slow, repetitive, and breaks the flow of thinking.
 
 **There's IntelliSense for code. There should be IntelliSense for prompting.**
-
+> **Vision**
+>
+> Bring IntelliSense-level speed and clarity to prompting—so developers can capture ideas, structure context, and communicate with AI at the speed of thought.
 ---
 
 ## How Developer Voice to Prompt Solves This
 
 This tool gives developers a **consistent, voice-first workflow** that works independently of any AI tool.
 
-Speak your idea. Edit it live. Apply a template for structure. Let AI refine it. Paste the result wherever you need it.
+Speak your idea. Edit it live. Load a **custom template** that already contains your context and format, then move the cursor to the parts you want to change and **fill them in with your voice**.
 
-No more switching between voice tools. No more retyping the same context. No more unstructured prompts.
+This makes it easy to reuse the same structure while quickly adapting it to a **specific scenario**—for example adding a new feature, referencing exact files, or naming tools the AI should call.
+
+All prompts are also stored in a **history**, independent of the AI tool you use. This gives you one place to review, reuse, or refine prompts across different tools.
+
+No more switching between voice tools.  
+No more retyping the same things.  
+More context + more specificity ⇒ better results :rocket:
+
+![Developer Voice to Prompt — Overview](doc/images/OverviewHowItWorkInfo.png)
 
 ---
 
@@ -45,11 +52,25 @@ No need to stop the microphone. No need to restart. Your edits and new speech me
 
 ### Prompt Templates
 
-Save reusable context blocks as templates and insert them with one click. Stop retyping the same setup instructions for every prompt.
+Save reusable context blocks as templates and insert them with one click. This eliminates the need to rewrite the same setup instructions for every prompt.
 
-Use templates for architecture reviews, bug analysis, refactoring instructions, agent workflows — anything you repeat.
+Templates are useful for architecture reviews, bug analysis, refactoring instructions, agent workflows, or any prompt structure you use repeatedly.
 
-<a href="doc/images/MainWindowTemplates.png"><img src="doc/images/MainWindowTemplates.png" alt="Templates panel with searchable template list" width="600"></a>
+The key advantage is that templates can be quickly **edited via voice** before sending them to your AI tool. Instead of rewriting the whole prompt, you simply add or adjust details for the current situation.
+
+Typical things you may customize inside a template include:
+- File names
+- Project names
+- Specific components or modules
+- MCP tool names
+- Skill or agent names the AI should use
+
+This is especially helpful because many AI tools search your codebase. Providing **exact file names, tools, or skills** increases the chance that the AI targets the correct parts of your project.
+
+Voice editing is intended for **quick additions or adjustments**, not for rebuilding the template. You can jump to specific sections with the cursor and dictate the missing details directly into the template.
+
+<a href="doc/images/MainWindowTemplates1.png"><img src="doc/images/MainWindowTemplates1.png" alt="Templates panel with searchable template list" width="600"></a>
+<a href="doc/images/MainWindowTemplates2.png"><img src="doc/images/MainWindowTemplates2.png" alt="Templates while edit or filled out via voice" width="600"></a>
 
 ---
 
@@ -103,24 +124,17 @@ Azure's multi-language recognition is especially useful when your domain termino
 
 ## Typical Workflow
 
-1. Press your global shortcut to open the popup
-2. Select a template to set context and structure
-3. Start speaking your idea
-4. Pause and edit the transcript if needed
-5. Continue speaking — text appends seamlessly
-6. Hit the enhance shortcut — Copilot restructures your prompt
-7. Copy and paste into your AI tool
+1. Press your global shortcut to open the popup.
+2. *(Optional)* Select a template to set context and structure (Guidelines / Samples / Architecture / File Names).
+3. Start speaking your idea.  
+   - Pause and edit the transcript if needed.  
+   - Continue speaking — the text will append seamlessly.
+4. Copy and paste the text into your AI tool.
+5. *(Optional)* Choose a model and your personal Prompt Enhancement Prompt.  
+   - Press the enhance shortcut — Copilot will restructure your prompt based on your instructions.  
+   - Use the optimized prompt and copy and paste it into your AI tool.  
+   - An undo feature is also available.
 
----
-
-## Who This Is For
-
-- Developers using AI tools daily who want faster prompt creation
-- Engineers working with prompt-based and agent-based workflows
-- Developers who think faster than they type
-- Teams that want consistent, reusable prompt workflows
-
----
 
 ## Requirements
 
@@ -132,15 +146,15 @@ Azure's multi-language recognition is especially useful when your domain termino
 | Provider | What you need | What you get |
 | --- | --- | --- |
 | **Web Speech API** | Nothing — built into the WebView | Real-time dictation with zero setup |
-| **Azure Speech Services** | Subscription key + region — [create one here](https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices) (free tier available) | High accuracy, auto-punctuation, multi-language mixing |
+| **Azure Speech Services** | Subscription key + region — [More informations here](https://docs.azure.cn/en-us/ai-services/speech-service/speech-to-text#real-time-transcription) (free tier available) | High accuracy, auto-punctuation, multi-language mixing |
 | **Whisper (local)** | Download a model from Settings → Speech | Fully offline, complete privacy |
 
 ### AI Prompt Enhancement
 
 | Dependency | Details |
 | --- | --- |
-| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/managing-copilot/configure-personal-settings/installing-the-github-copilot-extension-for-your-environment) |
-| **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot) |
+| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cliinstalling-the-github-copilot-extension-for-your-environment) |
+| **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot/plans) |
 
 Without Copilot, the app still provides full speech-to-text with templates and history. Copilot enables the **Enhance Prompt** feature that transforms raw dictation into structured, AI-optimized prompts.
 

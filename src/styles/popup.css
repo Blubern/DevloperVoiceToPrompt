@@ -242,6 +242,34 @@
   font-style: italic;
 }
 
+/* About overlay */
+.about-overlay {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  animation: helpFadeIn 0.12s ease-out;
+  width: 380px;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.about-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
 /* Popup titlebar btn used in panels */
 .history-panel .titlebar-btn {
   background: none;

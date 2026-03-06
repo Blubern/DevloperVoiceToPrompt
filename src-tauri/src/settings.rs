@@ -39,6 +39,7 @@ pub struct AppSettings {
     pub copilot_selected_enhancer: String,
     pub copilot_delete_sessions: bool,
     pub prompt_enhancer_shortcut: String,
+    pub popup_font: String,
 }
 
 impl Default for AppSettings {
@@ -75,6 +76,7 @@ impl Default for AppSettings {
             copilot_selected_enhancer: String::new(),
             copilot_delete_sessions: true,
             prompt_enhancer_shortcut: "CommandOrControl+Shift+E".into(),
+            popup_font: "mono".into(),
         }
     }
 }
@@ -202,6 +204,7 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         copilot_selected_enhancer: get_str("copilot_selected_enhancer", &defaults.copilot_selected_enhancer),
         copilot_delete_sessions: get_bool("copilot_delete_sessions", defaults.copilot_delete_sessions),
         prompt_enhancer_shortcut: get_str("prompt_enhancer_shortcut", &defaults.prompt_enhancer_shortcut),
+        popup_font: get_str("popup_font", &defaults.popup_font),
     }
 }
 

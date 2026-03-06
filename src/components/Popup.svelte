@@ -23,6 +23,7 @@
   import { listen, emit } from "@tauri-apps/api/event";
   import MicButton from "./MicButton.svelte";
   import HelpOverlay from "./popup/HelpOverlay.svelte";
+  import AboutOverlay from "./popup/AboutOverlay.svelte";
   import TemplatesPanel from "./popup/TemplatesPanel.svelte";
   import HistoryPanel from "./popup/HistoryPanel.svelte";
   import {
@@ -59,6 +60,9 @@
   let userHasEdited = $state(false);
   let lastSyncedSegmentCount = $state(0);
 
+  // Cursor position tracking for insert-at-cursor during dictation
+  let cursorPosition = $state(0);
+
   // Usage tracking: record start time of current recognition session
   let sessionStartTime: number | null = null;
   let activeProvider: SpeechProvider | null = null;
@@ -84,8 +88,9 @@
   let historyCount = $state(0);
   let historySearch = $state("");
 
-  // Help overlay
+  // Help / About overlays
   let helpOpen = $state(false);
+  let aboutOpen = $state(false);
 
   // Templates
   let templatesOpen = $state(false);
@@ -168,13 +173,37 @@
     return lang ? `${lang.label.split(" ")[0]} (${settings.whisper_language})` : settings.whisper_language;
   });
 
+  // Map font setting to CSS font-family
+  const FONT_FAMILIES: Record<string, string> = {
+    mono: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace",
+    cascadia: "'Cascadia Code', 'Cascadia Mono', monospace",
+    firacode: "'Fira Code', 'Fira Mono', monospace",
+    jetbrains: "'JetBrains Mono', monospace",
+    consolas: "'Consolas', monospace",
+    courier: "'Courier New', monospace",
+    ubuntu: "'Ubuntu Mono', monospace",
+    system: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    georgia: "'Georgia', serif",
+    palatino: "'Palatino Linotype', 'Book Antiqua', Palatino, serif",
+    garamond: "'Garamond', 'EB Garamond', serif",
+    serif: "'Georgia', 'Times New Roman', serif",
+  };
+  let popupFontFamily = $derived(FONT_FAMILIES[settings.popup_font] ?? FONT_FAMILIES.mono);
+
   // Context-aware button label
   let primaryButtonLabel = $derived.by(() => {
     const hasText = editedText.trim().length > 0;
-    if (status === "listening" && hasText) return "Stop, Copy & Close";
-    if (status === "listening" && !hasText) return "Stop Recording";
+    if (status === "listening" && hasText) return "Stop Mic, Copy & Close";
+    if (status === "listening" && !hasText) return "Stop Mic";
     if (hasText) return "Copy & Close";
     return "Copy & Close";
+  });
+
+  // Enhance button label: context-aware based on mic state
+  let enhanceButtonLabel = $derived.by(() => {
+    if (enhancing) return "Enhancing...";
+    if (status === "listening") return "Stop Mic & Enhance";
+    return "Enhance";
   });
 
   // Format elapsed time as m:ss
@@ -192,22 +221,47 @@
       editedText =
         finalSegments.join(" ") +
         (currentInterim ? (segmentCount ? " " : "") + currentInterim : "");
+      cursorPosition = editedText.length;
       lastSyncedSegmentCount = segmentCount;
     } else if (segmentCount > lastSyncedSegmentCount) {
       const newSegments = finalSegments.slice(lastSyncedSegmentCount);
       if (newSegments.length > 0) {
         const addition = newSegments.join(" ");
-        editedText = editedText.trimEnd() + " " + addition;
+        const pos = cursorPosition;
+        const before = editedText.slice(0, pos);
+        const after = editedText.slice(pos);
+        const needsSpace = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n");
+        const insertText = (needsSpace ? " " : "") + addition;
+        editedText = before + insertText + after;
+        cursorPosition = pos + insertText.length;
       }
       lastSyncedSegmentCount = segmentCount;
     }
   });
 
-  // Auto-scroll textarea to bottom on new text
+  // Restore cursor position and scroll after reactive text updates during recording
+  $effect(() => {
+    const _ = editedText;
+    if (textareaEl && status === "listening" && userHasEdited) {
+      const savedScroll = textareaEl.scrollTop;
+      requestAnimationFrame(() => {
+        if (textareaEl) {
+          textareaEl.selectionStart = cursorPosition;
+          textareaEl.selectionEnd = cursorPosition;
+          // Keep scroll stable when cursor is not at the end
+          if (cursorPosition < editedText.length) {
+            textareaEl.scrollTop = savedScroll;
+          }
+        }
+      });
+    }
+  });
+
+  // Auto-scroll textarea to bottom on new text (only when cursor is at the end)
   $effect(() => {
     // Track editedText changes
     const _ = editedText;
-    if (textareaEl && !userScrolledUp) {
+    if (textareaEl && !userScrolledUp && cursorPosition >= editedText.length) {
       requestAnimationFrame(() => {
         if (textareaEl) {
           textareaEl.scrollTop = textareaEl.scrollHeight;
@@ -330,6 +384,13 @@
     const target = e.target as HTMLTextAreaElement;
     editedText = target.value;
     userHasEdited = true;
+    cursorPosition = target.selectionStart;
+  }
+
+  function handleCursorChange() {
+    if (textareaEl) {
+      cursorPosition = textareaEl.selectionStart;
+    }
   }
 
   function clearSilenceTimer() {
@@ -486,6 +547,7 @@
     editedText = "";
     userHasEdited = false;
     lastSyncedSegmentCount = 0;
+    cursorPosition = 0;
     userScrolledUp = false;
     // Clear enhancement undo stack
     enhanceUndoStack = [];
@@ -556,6 +618,8 @@
     if (e.key === "Escape") {
       if (saveTemplateMode) {
         saveTemplateMode = false;
+      } else if (aboutOpen) {
+        aboutOpen = false;
       } else if (helpOpen) {
         helpOpen = false;
       } else if (templatesOpen) {
@@ -616,9 +680,10 @@
   }
 
   function selectTemplate(t: PromptTemplate) {
-    editedText = t.text;
+    editedText = t.text.replace(/\r\n/g, "\n");
     userHasEdited = true;
     templatesOpen = false;
+    cursorPosition = editedText.length;
   }
 
   async function saveAsTemplate() {
@@ -791,8 +856,12 @@
 
   // Execute prompt enhancement
   async function executeEnhance() {
+    // Stop mic first if recording
+    if (status === 'listening') {
+      await stopAndRecordUsage();
+    }
     const text = editedText.trim();
-    if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected' || status === 'listening') return;
+    if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected') return;
     const template = enhancerTemplates.find(t => t.id === selectedEnhancerId);
     if (!template) return;
     enhancing = true;
@@ -968,7 +1037,7 @@
           {/if}
         </button>
       {/if}
-      <button class="titlebar-btn" onclick={() => helpOpen = !helpOpen} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
+      <button class="titlebar-btn" onclick={() => { helpOpen = !helpOpen; aboutOpen = false; }} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </button>
       {#if settings.copilot_enabled && copilotStatus === 'connected' && copilotAuth?.login}
@@ -977,12 +1046,16 @@
       <button class="titlebar-btn" onclick={() => invoke('show_settings')} aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
+      <button class="titlebar-btn" onclick={() => { aboutOpen = !aboutOpen; helpOpen = false; }} aria-label="About" title="About">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      </button>
       <button class="titlebar-btn close-btn" onclick={dismiss} aria-label="Close" title="Close (Esc)">✕</button>
     </div>
   </div>
 
   <!-- Help overlay (keyboard shortcuts) -->
   <HelpOverlay {settings} bind:open={helpOpen} />
+  <AboutOverlay bind:open={aboutOpen} />
 
   <div class="content">
     <div class="main-content">
@@ -1030,10 +1103,13 @@
           bind:this={textareaEl}
           value={editedText}
           oninput={handleTextInput}
+          onmouseup={handleCursorChange}
+          onkeyup={handleCursorChange}
           onscroll={handleTextareaScroll}
           class:recording={status === "listening"}
           class:hidden-textarea={!editedText && status === "idle"}
           disabled={enhancing}
+          style="font-family: {popupFontFamily}"
         ></textarea>
 
         <!-- Enhancing overlay -->
@@ -1120,15 +1196,15 @@
             <button
               class="copilot-enhance-btn"
               onclick={executeEnhance}
-              disabled={enhancing || !editedText.trim() || !copilotSelectedModel || !selectedEnhancerId || status === 'listening'}
-              title={enhancing ? 'Enhancing...' : 'Enhance prompt with AI'}
+              disabled={enhancing || !editedText.trim() || !copilotSelectedModel || !selectedEnhancerId}
+              title={enhancing ? 'Enhancing...' : status === 'listening' ? 'Stop microphone and enhance prompt' : 'Enhance prompt with AI'}
             >
               {#if enhancing}
                 <svg class="spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
               {:else}
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2L19 5"/><path d="M11 6.2L9.8 5"/><path d="M6.87 20.13l-2-2"/><path d="M12.07 14.93l-6.6 6.6"/><path d="M5.47 19.53l2-2"/></svg>
               {/if}
-              <span class="copilot-enhance-label">{enhancing ? 'Enhancing...' : 'Enhance'}</span>
+              <span class="copilot-enhance-label">{enhanceButtonLabel}</span>
             </button>
           </div>
           {#if copilotError}
@@ -1613,7 +1689,7 @@
     border-radius: 8px;
     padding: 10px;
     font-size: 14px;
-    font-family: inherit;
+    font-family: var(--popup-font, inherit);
     resize: none;
     outline: none;
     line-height: 1.5;

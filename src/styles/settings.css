@@ -246,3 +246,24 @@
 .multiplier-high { color: #e8a040; border-color: #e8a04066; }
 .multiplier-low { color: #60c060; border-color: #60c06066; }
 .multiplier-free { color: var(--text-secondary); }
+
+/* About tab */
+.about-header { text-align: center; padding: 8px 0 16px; }
+.about-app-name { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0; }
+.about-tagline { font-size: 13px; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.5; }
+.about-version-badge { display: inline-block; padding: 3px 10px; margin-top: 10px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; font-family: "SF Mono", "Cascadia Code", "Consolas", monospace; border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.about-repo-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 14px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; font-weight: 500; text-decoration: none; transition: all 0.15s; cursor: pointer; }
+.about-repo-link:hover { background: var(--surface-hover); color: var(--accent); border-color: var(--accent); }
+.about-category-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.about-category-title:first-child { margin-top: 0; }
+.about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.about-card { background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
+.about-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+.about-card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 5px; }
+.about-card-name a { color: var(--accent); text-decoration: none; transition: color 0.15s; }
+.about-card-name a:hover { text-decoration: underline; }
+.about-card-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+.about-card-link-icon { flex-shrink: 0; color: var(--text-muted); opacity: 0; transition: opacity 0.15s; }
+.about-card:hover .about-card-link-icon { opacity: 1; }
+.about-footer { text-align: center; padding: 16px 0 4px; font-size: 12px; color: var(--text-muted); }
+.about-footer-heart { color: var(--accent); }

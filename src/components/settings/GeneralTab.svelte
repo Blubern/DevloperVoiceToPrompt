@@ -15,6 +15,7 @@
     silenceTimeoutSeconds = $bindable(),
     maxRecordingEnabled = $bindable(),
     maxRecordingSeconds = $bindable(),
+    popupFont = $bindable(),
   }: {
     theme: string;
     autostartEnabled: boolean;
@@ -28,7 +29,25 @@
     silenceTimeoutSeconds: number;
     maxRecordingEnabled: boolean;
     maxRecordingSeconds: number;
+    popupFont: string;
   } = $props();
+
+  const FONT_OPTIONS = [
+    { value: "mono", label: "Monospace (Default)", preview: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace" },
+    { value: "cascadia", label: "Cascadia Code", preview: "'Cascadia Code', 'Cascadia Mono', monospace" },
+    { value: "firacode", label: "Fira Code", preview: "'Fira Code', 'Fira Mono', monospace" },
+    { value: "jetbrains", label: "JetBrains Mono", preview: "'JetBrains Mono', monospace" },
+    { value: "consolas", label: "Consolas", preview: "'Consolas', monospace" },
+    { value: "courier", label: "Courier New", preview: "'Courier New', monospace" },
+    { value: "ubuntu", label: "Ubuntu Mono", preview: "'Ubuntu Mono', monospace" },
+    { value: "system", label: "System Sans-Serif", preview: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
+    { value: "georgia", label: "Georgia", preview: "'Georgia', serif" },
+    { value: "palatino", label: "Palatino", preview: "'Palatino Linotype', 'Book Antiqua', Palatino, serif" },
+    { value: "garamond", label: "Garamond", preview: "'Garamond', 'EB Garamond', serif" },
+    { value: "serif", label: "Serif", preview: "'Georgia', 'Times New Roman', serif" },
+  ];
+
+  let fontPreviewFamily = $derived(FONT_OPTIONS.find(o => o.value === popupFont)?.preview ?? "inherit");
 
   function toggleTheme() {
     theme = theme === "dark" ? "light" : "dark";
@@ -62,8 +81,22 @@
     <span class="hint">Switch between dark and light theme.</span>
   </div>
 
-  <div class="section">
-    <h2>Behavior</h2>
+  <div class="field">
+    <span class="label">Popup Font</span>
+    <select bind:value={popupFont}>
+      {#each FONT_OPTIONS as opt (opt.value)}
+        <option value={opt.value}>{opt.label}</option>
+      {/each}
+    </select>
+    <span class="hint">Font used in the dictation text area.</span>
+    <div class="font-preview" style="font-family: {fontPreviewFamily}">
+      The quick brown fox jumps over the lazy dog. 0O1lI {'{}()=>;'}
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Behavior</h2>
 
     <label class="field toggle-field">
       <span class="label">Start on Login</span>
@@ -179,4 +212,16 @@
       <span class="hint">Safety limit to prevent accidental long recordings. Automatically stops after this duration regardless of speech activity. Default 180 seconds (3 minutes).</span>
     </div>
   </div>
-</div>
+
+<style>
+  .font-preview {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+</style>

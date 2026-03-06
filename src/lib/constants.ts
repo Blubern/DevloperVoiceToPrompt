@@ -46,3 +46,28 @@ Enhancement instructions:
 export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER;
 export type RecordingStatus = "idle" | "listening" | "error";
 export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP;
+
+// About section
+export const APP_GITHUB_URL = "https://github.com/Blubern/DevloperVoiceToPrompt";
+
+export interface LibraryInfo {
+  name: string;
+  description: string;
+  url?: string;
+  category: "Framework" | "Speech" | "AI" | "Backend" | "Theme" | "Testing";
+}
+
+export const ABOUT_LIBRARIES: LibraryInfo[] = [
+  { name: "Tauri 2", description: "Desktop app framework with a Rust backend", url: "https://github.com/tauri-apps/tauri", category: "Framework" },
+  { name: "Svelte 5", description: "Reactive UI compiler with runes", url: "https://github.com/sveltejs/svelte", category: "Framework" },
+  { name: "Vite", description: "Next-generation frontend build tool", url: "https://github.com/vitejs/vite", category: "Framework" },
+  { name: "TypeScript", description: "Typed superset of JavaScript", url: "https://github.com/microsoft/TypeScript", category: "Framework" },
+  { name: "Azure Speech SDK", description: "Cloud speech-to-text service", url: "https://github.com/microsoft/cognitive-services-speech-sdk-js", category: "Speech" },
+  { name: "whisper-rs", description: "Rust bindings for OpenAI Whisper", url: "https://github.com/tazz4843/whisper-rs", category: "Speech" },
+  { name: "Web Speech API", description: "Browser-native speech recognition", category: "Speech" },
+  { name: "GitHub Copilot SDK", description: "AI-powered prompt enhancement", category: "AI" },
+  { name: "Tokio", description: "Async runtime for Rust", url: "https://github.com/tokio-rs/tokio", category: "Backend" },
+  { name: "Serde", description: "Serialization framework for Rust", url: "https://github.com/serde-rs/serde", category: "Backend" },
+  { name: "Catppuccin", description: "Soothing pastel color theme", url: "https://github.com/catppuccin/catppuccin", category: "Theme" },
+  { name: "Vitest", description: "Blazing fast unit testing framework", url: "https://github.com/vitest-dev/vitest", category: "Testing" },
+];

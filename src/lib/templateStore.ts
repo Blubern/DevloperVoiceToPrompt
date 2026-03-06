@@ -20,7 +20,10 @@ async function getStore(): Promise<Store> {
 export async function getTemplates(): Promise<PromptTemplate[]> {
   const s = await getStore();
   const raw = await s.get<PromptTemplate[]>("templates");
-  return raw ?? [];
+  return (raw ?? []).map((t) => ({
+    ...t,
+    text: t.text.replace(/\r\n/g, "\n"),
+  }));
 }
 
 export async function addTemplate(
@@ -28,7 +31,7 @@ export async function addTemplate(
   text: string
 ): Promise<PromptTemplate> {
   const trimmedName = name.trim();
-  const trimmedText = text.trim();
+  const trimmedText = text.trim().replace(/\r\n/g, "\n");
   if (!trimmedName || !trimmedText) throw new Error("Name and text are required");
 
   const s = await getStore();
@@ -59,7 +62,7 @@ export async function updateTemplate(
   entries[idx] = {
     ...entries[idx],
     name: name.trim(),
-    text: text.trim(),
+    text: text.trim().replace(/\r\n/g, "\n"),
     updatedAt: new Date().toISOString(),
   };
   await s.set("templates", entries);
