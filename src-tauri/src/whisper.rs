@@ -73,12 +73,9 @@ impl WhisperEngine {
             .full(params, pcm_f32)
             .map_err(|e| format!("Whisper transcription failed: {e}"))?;
 
-        let num_segments = state.full_n_segments().map_err(|e| format!("Failed to get segments: {e}"))?;
         let mut text = String::new();
-        for i in 0..num_segments {
-            if let Ok(segment) = state.full_get_segment_text(i) {
-                text.push_str(&segment);
-            }
+        for segment in state.as_iter() {
+            text.push_str(&segment.to_string());
         }
 
         Ok(text.trim().to_string())
