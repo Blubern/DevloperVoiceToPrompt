@@ -51,6 +51,8 @@
 
   let { settings }: Props = $props();
 
+  const isMac = navigator.userAgent.toLowerCase().includes('macintosh') || navigator.platform.toLowerCase().includes('mac');
+
   let status = $state<RecordingStatus>("idle");
   let finalSegments = $state<string[]>([]);
   let interimText = $state("");
@@ -987,7 +989,12 @@
 
 <div class="popup-container">
   <!-- Compact title bar -->
-  <div class="titlebar" data-tauri-drag-region>
+  <div class="titlebar" class:mac={isMac} data-tauri-drag-region>
+    {#if isMac}
+      <div class="mac-window-controls">
+        <button class="mac-close" onclick={dismiss} aria-label="Close" title="Close (Esc)"></button>
+      </div>
+    {/if}
     <div class="titlebar-left" data-tauri-drag-region>
       <span class="title" data-tauri-drag-region>Developer Voice to Prompt</span>
       <button
@@ -1143,7 +1150,9 @@
       <button class="titlebar-btn" onclick={() => { aboutOpen = !aboutOpen; helpOpen = false; }} aria-label="About" title="About">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
       </button>
-      <button class="titlebar-btn close-btn" onclick={dismiss} aria-label="Close" title="Close (Esc)">✕</button>
+      {#if !isMac}
+        <button class="titlebar-btn close-btn" onclick={dismiss} aria-label="Close" title="Close (Esc)">✕</button>
+      {/if}
     </div>
   </div>
 
@@ -1413,6 +1422,53 @@
     user-select: none;
     -webkit-user-select: none;
     cursor: grab;
+  }
+
+  /* macOS: reduce left padding so traffic light sits at the native position */
+  .titlebar.mac {
+    padding-left: 10px;
+  }
+
+  /* macOS traffic light window controls */
+  .mac-window-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+
+  .mac-close {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #FF5F57;
+    border: 0.5px solid rgba(0, 0, 0, 0.18);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s;
+  }
+
+  .mac-close::after {
+    content: '✕';
+    font-size: 7px;
+    font-weight: 900;
+    line-height: 1;
+    color: transparent;
+    transition: color 0.1s;
+  }
+
+  .mac-window-controls:hover .mac-close::after {
+    color: rgba(0, 0, 0, 0.55);
+  }
+
+  .mac-close:hover {
+    background: #E04E4B;
   }
 
   .titlebar-left {
