@@ -275,6 +275,36 @@ The installer is output to `src-tauri/target/release/bundle/`.
 
 ---
 
+## Troubleshooting
+
+### `LINK : fatal error LNK1104: cannot open file 'msvcrt.lib'`
+
+This is the most common build error. It happens because Rust's `vswhere` auto-discovers Visual Studio Enterprise first, but that install often lacks the full C++ workload (no CRT libraries like `msvcrt.lib`). The linker (`link.exe`) is found, but the libraries it needs are not.
+
+**Symptoms:**
+- `cargo build` or `npx tauri dev` fails during linking
+- The error references `link.exe` under a path like `C:\Program Files\Microsoft Visual Studio\...\Enterprise\...`
+- `cargo check` succeeds (it only compiles, no linking)
+
+**Fix:** Source `vcvarsall.bat` from VS BuildTools **in the same terminal** before building:
+
+```powershell
+cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 && set' 2>&1 | ForEach-Object {
+    if ($_ -match "^([^=]+)=(.*)$") {
+        [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+    }
+}
+$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
+```
+
+This overrides `PATH`, `LIB`, and `INCLUDE` to use BuildTools' complete C++ toolchain instead of Enterprise's incomplete one. You must do this **every time you open a new terminal**.
+
+### `LIBCLANG_PATH` not set
+
+If `cargo build` fails on `whisper-rs-sys` with bindgen errors, ensure `$env:LIBCLANG_PATH` is set to the LLVM bin directory (e.g., `C:\Program Files\LLVM\bin`). Install LLVM with `winget install LLVM.LLVM` if missing.
+
+---
+
 ## Architecture
 
 ```

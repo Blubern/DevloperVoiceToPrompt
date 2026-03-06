@@ -146,8 +146,8 @@ Output: `src-tauri/target/release/bundle/` (NSIS installer).
 
 ## Pitfalls
 
-- **VS Enterprise vs BuildTools**: Rust's `vswhere` picks Enterprise first but it lacks C++ headers. Always source `vcvarsall.bat` from BuildTools.
-- **`LIBCLANG_PATH`**: Must be set for `whisper-rs-sys` bindgen. Without it, `cargo build` fails on `whisper-rs-sys`.
+- **VS Enterprise vs BuildTools (`msvcrt.lib` linker error)**: Rust's `vswhere` picks Enterprise first but it lacks C++ headers and CRT libraries. This causes `LINK : fatal error LNK1104: cannot open file 'msvcrt.lib'` during `cargo build` / `cargo run` / `npx tauri dev`. Note that `cargo check` still passes because it only compiles without linking. Always source `vcvarsall.bat` from BuildTools **in the same terminal session** before building. The environment variables (`PATH`, `LIB`, `INCLUDE`) do not persist across terminals.
+- **`LIBCLANG_PATH`**: Must be set to `C:\Program Files\LLVM\bin` for `whisper-rs-sys` bindgen. Without it, `cargo build` fails on `whisper-rs-sys`. Install LLVM with `winget install LLVM.LLVM`.
 - **`tauri_plugin_store::StoreExt`**: Must be imported to call `.store()` on `AppHandle`.
 - **Global shortcut `on_shortcut`**: Takes `&str`, not `&String` — use `.as_str()`.
 - **Settings migration**: Old per-field store keys are auto-migrated to single `"app_settings"` object on first load. Both formats work.
