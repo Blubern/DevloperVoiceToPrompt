@@ -247,11 +247,43 @@
         <span class="hint">Default: 31337. Changes require an app restart.</span>
       </div>
       <div class="field">
-        <label class="label">SSE Endpoint</label>
+        <span class="label">Server Endpoint</span>
         <div class="mcp-url-row">
-          <code class="mcp-url">http://localhost:{mcpPort}/sse</code>
+          <code class="mcp-url">http://localhost:{mcpPort}/mcp</code>
         </div>
-        <span class="hint">Add this URL to your AI tool's MCP server configuration (e.g. VS Code settings.json → <code>mcp.servers</code>).</span>
+        <span class="hint">Add this URL to your AI tool's MCP server configuration.</span>
+      </div>
+      <div class="field">
+        <span class="label">VS Code Configuration</span>
+        <span class="hint">Add this to your VS Code <code>settings.json</code> to connect:</span>
+        <pre class="mcp-config-block"><code>{`"mcp": {
+  "servers": {
+    "developer-voice-to-prompt": {
+      "url": "http://localhost:${mcpPort}/mcp"
+    }
+  }
+}`}</code></pre>
+      </div>
+      <div class="field">
+        <span class="label">Available Tools</span>
+        <div class="mcp-tool-card">
+          <div class="mcp-tool-header">
+            <code class="mcp-tool-name">voice_to_text</code>
+          </div>
+          <p class="mcp-tool-desc">Open the voice dictation popup. The user speaks or edits the text, then submits. Returns the final text.</p>
+          <div class="mcp-params">
+            <div class="mcp-param">
+              <span class="mcp-param-name">input_reason</span>
+              <span class="mcp-param-type">string, required</span>
+              <span class="mcp-param-desc">Why the voice input is being requested. Shown as a context banner in the dictation popup (e.g. "Write a commit message for the staged changes").</span>
+            </div>
+            <div class="mcp-param">
+              <span class="mcp-param-name">context_input</span>
+              <span class="mcp-param-type">string, optional</span>
+              <span class="mcp-param-desc">Pre-filled text to load into the dictation textarea. The user can edit or replace it by voice or keyboard before submitting.</span>
+            </div>
+          </div>
+        </div>
       </div>
     {/if}
   </div>
@@ -281,5 +313,83 @@
     font-size: 12px;
     color: var(--text-primary);
     user-select: all;
+  }
+
+  .mcp-config-block {
+    margin-top: 4px;
+    padding: 10px 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    overflow-x: auto;
+    user-select: all;
+    white-space: pre;
+  }
+
+  .mcp-config-block code {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+
+  .mcp-tool-card {
+    margin-top: 4px;
+    padding: 10px 12px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .mcp-tool-header {
+    margin-bottom: 4px;
+  }
+
+  .mcp-tool-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+
+  .mcp-tool-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+  }
+
+  .mcp-params {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .mcp-param {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+  }
+
+  .mcp-param-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+
+  .mcp-param-type {
+    font-size: 11px;
+    color: var(--accent);
+    font-style: italic;
+  }
+
+  .mcp-param-desc {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.4;
   }
 </style>
