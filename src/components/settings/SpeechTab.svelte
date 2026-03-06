@@ -99,6 +99,12 @@
   async function refreshWhisperModels() {
     try { whisperModels = await invoke<WhisperModelInfo[]>("whisper_list_models"); }
     catch { whisperModels = []; }
+    // Auto-select: if the current model isn't downloaded, switch to the first that is
+    const currentIsDownloaded = whisperModels.some(m => m.name === whisperModel && m.downloaded);
+    if (!currentIsDownloaded) {
+      const firstDownloaded = whisperModels.find(m => m.downloaded);
+      if (firstDownloaded) whisperModel = firstDownloaded.name;
+    }
   }
 
   async function downloadWhisperModel(name: string) {
