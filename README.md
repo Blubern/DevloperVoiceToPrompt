@@ -33,13 +33,13 @@ No more switching between voice tools. No more retyping the same context. No mor
 
 ### Speak and Edit Live
 
-![Dictation popup — idle state](images/MainWindow.png)
+<a href="images/MainWindow.png"><img src="images/MainWindow.png" alt="Dictation popup — idle state" width="600"></a>
 
 Start speaking — the transcript appears in real time. Pause, edit the text, then continue speaking. The transcript picks up right where you left off.
 
 No need to stop the microphone. No need to restart. Your edits and new speech merge seamlessly.
 
-![Live dictation with real-time transcript](images/MainWindowRecording.png)
+<a href="images/MainWindowRecording.png"><img src="images/MainWindowRecording.png" alt="Live dictation with real-time transcript" width="600"></a>
 
 ---
 
@@ -49,7 +49,7 @@ Save reusable context blocks as templates and insert them with one click. Stop r
 
 Use templates for architecture reviews, bug analysis, refactoring instructions, agent workflows — anything you repeat.
 
-![Templates panel with searchable template list](images/MainWindowTemplates.png)
+<a href="images/MainWindowTemplates.png"><img src="images/MainWindowTemplates.png" alt="Templates panel with searchable template list" width="600"></a>
 
 ---
 
@@ -61,7 +61,7 @@ Choose from available models (GPT-4o, Claude, and more). Select an enhancer temp
 
 Multi-level undo lets you step back through every enhancement.
 
-![GitHub Copilot integration — model selection and authentication](images/SettingsGithubCopilot.png)
+<a href="images/SettingsGithubCopilot.png"><img src="images/SettingsGithubCopilot.png" alt="GitHub Copilot integration — model selection and authentication" width="600"></a>
 
 ---
 
@@ -69,7 +69,7 @@ Multi-level undo lets you step back through every enhancement.
 
 Every prompt is saved locally. Browse, search, reuse, or delete past transcriptions from a slide-out history panel — directly inside the dictation popup.
 
-![History panel with search and quick actions](images/MainWindowHistory.png)
+<a href="images/MainWindowHistory.png"><img src="images/MainWindowHistory.png" alt="History panel with search and quick actions" width="600"></a>
 
 ---
 
@@ -93,11 +93,11 @@ Switch engines instantly with a keyboard shortcut — no restart needed.
 
 For Web Speech the execution local or not depends on the used browser and the implementation of it.
 
-Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking (https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API).
+Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking ([Web Speech API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)).
 
 | Switch language |
 | :---: |
-| ![Language switching — before](images/MainWindowEasyLanguageSwitch.png) ![Language switching — after](images/MainWindowEasyLanguageSwitch1.png) |
+| <a href="images/MainWindowEasyLanguageSwitch.png"><img src="images/MainWindowEasyLanguageSwitch.png" alt="Language switching — before" width="380"></a> <a href="images/MainWindowEasyLanguageSwitch1.png"><img src="images/MainWindowEasyLanguageSwitch1.png" alt="Language switching — after" width="380"></a> |
 
 ---
 
@@ -132,11 +132,11 @@ Everything below is technical reference for developers who want to understand, b
 
 | General | Speech | Phrases |
 | :---: | :---: | :---: |
-| ![General settings](images/SettingsGeneral.png) | ![Speech provider settings](images/SettingsSpeech.png) | ![Custom phrases](images/SettingsPhrases.png) |
+| <a href="images/SettingsGeneral.png"><img src="images/SettingsGeneral.png" alt="General settings" width="250"></a> | <a href="images/SettingsSpeech.png"><img src="images/SettingsSpeech.png" alt="Speech provider settings" width="250"></a> | <a href="images/SettingsPhrases.png"><img src="images/SettingsPhrases.png" alt="Custom phrases" width="250"></a> |
 
 | Templates | History | Usage |
 | :---: | :---: | :---: |
-| ![Template management](images/SettingsTemplates.png) | ![History settings](images/SettingsHistory.png) | ![Usage statistics](images/SettingsUsage.png) |
+| <a href="images/SettingsTemplates.png"><img src="images/SettingsTemplates.png" alt="Template management" width="250"></a> | <a href="images/SettingsHistory.png"><img src="images/SettingsHistory.png" alt="History settings" width="250"></a> | <a href="images/SettingsUsage.png"><img src="images/SettingsUsage.png" alt="Usage statistics" width="250"></a> |
 
 ---
 
