@@ -22,9 +22,11 @@ pub fn show_settings(app: tauri::AppHandle) {
 pub fn set_dock_visibility(visible: bool) {
     #[cfg(target_os = "macos")]
     {
+        use objc2::MainThreadMarker;
         use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
         unsafe {
-            let app = NSApplication::sharedApplication();
+            let mtm = MainThreadMarker::new_unchecked();
+            let app = NSApplication::sharedApplication(mtm);
             let policy = if visible {
                 NSApplicationActivationPolicy::Regular
             } else {
