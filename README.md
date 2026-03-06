@@ -172,6 +172,22 @@ Without Copilot, the app still provides full speech-to-text with templates and h
 
 > Browse all versions on the [Releases page](https://github.com/Blubern/DevloperVoiceToPrompt/releases).
 
+### macOS — "App is damaged" warning
+
+macOS Gatekeeper may block the app because it is not yet code-signed or notarized by Apple. If you see *"Developer Voice to Prompt is damaged and can't be opened"* after downloading the DMG, remove the quarantine attribute:
+
+```bash
+xattr -cr "/Applications/Developer Voice to Prompt.app"
+```
+
+If you opened the app directly from the DMG without copying it to Applications first, point the command at the mounted path instead:
+
+```bash
+xattr -cr "/Volumes/Developer Voice to Prompt/Developer Voice to Prompt.app"
+```
+
+This is a one-time step per download. Code signing and notarization are planned for a future release.
+
 ---
 
 # Documentation
