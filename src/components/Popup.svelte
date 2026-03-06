@@ -393,12 +393,24 @@
     }
   });
 
-  // Check if selected Whisper model is downloaded
+  // Check if selected Whisper model is downloaded; auto-select a downloaded one if not.
   $effect(() => {
-    if (settings.speech_provider === PROVIDER_WHISPER && settings.whisper_model) {
+    if (settings.speech_provider === PROVIDER_WHISPER) {
       invoke<{ name: string; downloaded: boolean }[]>("whisper_list_models").then((models) => {
-        const m = models.find((m) => m.name === settings.whisper_model);
-        whisperModelMissing = m ? !m.downloaded : true;
+        const selected = models.find((m) => m.name === settings.whisper_model);
+        if (selected?.downloaded) {
+          whisperModelMissing = false;
+          return;
+        }
+        // Current model is missing or unset – pick the first downloaded model instead.
+        const available = models.find((m) => m.downloaded);
+        if (available) {
+          settings = { ...settings, whisper_model: available.name };
+          saveSettings(settings).catch(() => {});
+          whisperModelMissing = false;
+        } else {
+          whisperModelMissing = !!settings.whisper_model;
+        }
       }).catch(() => {
         whisperModelMissing = false;
       });

@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   azure_region: "eastus",
   whisper_model: "base",
   whisper_language: "en-US",
-  whisper_chunk_seconds: 5,
+  whisper_chunk_seconds: 3,
   languages: ["en-US"],
   shortcut: "CommandOrControl+Alt+V",
   microphone_device_id: "",

@@ -70,7 +70,7 @@ impl Default for AppSettings {
             provider_switch_shortcut: "CommandOrControl+Shift+P".into(),
             whisper_model: "base".into(),
             whisper_language: "en-US".into(),
-            whisper_chunk_seconds: 5,
+            whisper_chunk_seconds: 3,
             max_recording_enabled: true,
             max_recording_seconds: 180,
             autostart_enabled: false,
