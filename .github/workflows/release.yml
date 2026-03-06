@@ -40,6 +40,22 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Install LLVM (Windows)
+        if: matrix.os == 'windows'
+        run: choco install llvm -y
+
+      - name: Set LIBCLANG_PATH (Windows)
+        if: matrix.os == 'windows'
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Install LLVM (macOS)
+        if: matrix.os == 'macos'
+        run: brew install llvm
+
+      - name: Set LIBCLANG_PATH (macOS)
+        if: matrix.os == 'macos'
+        run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> $GITHUB_ENV
+
       - name: Install frontend dependencies
         run: npm install
 
