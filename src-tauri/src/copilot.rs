@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, ChildStderr};
+use tokio::process::{Child, ChildStdin, ChildStdout};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
@@ -11,7 +11,6 @@ struct BridgeProcess {
     _child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    stderr: BufReader<ChildStderr>,
     next_id: AtomicU64,
 }
 
@@ -98,34 +97,15 @@ async fn bridge_call_with_params(
     .map_err(|e| format!("Failed to read from bridge: {}", e))?;
 
     if buf.is_empty() {
-        // Bridge exited — read stderr for a useful error message (capped at 4KB)
-        let mut err_lines = Vec::new();
-        let mut total_len = 0usize;
-        loop {
-            let mut err_line = String::new();
-            match bridge.stderr.read_line(&mut err_line).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    total_len += n;
-                    err_lines.push(err_line);
-                    if total_len > 4096 {
-                        break;
-                    }
-                }
-            }
-        }
-        let full_err = err_lines.join("").trim().to_string();
-        if full_err.is_empty() {
-            return Err("Bridge process exited unexpectedly".into());
-        } else {
-            return Err(format!("Bridge error: {}", full_err));
-        }
+        tracing::error!("Bridge process exited unexpectedly (empty stdout)");
+        return Err("Bridge process exited unexpectedly".into());
     }
 
     let resp: BridgeResponse =
         serde_json::from_str(&buf).map_err(|e| format!("Invalid bridge response: {}", e))?;
 
     if let Some(err) = resp.error {
+        tracing::error!(method, error = %err, "Bridge returned error");
         return Err(err);
     }
 
@@ -217,17 +197,39 @@ pub async fn copilot_init(
     let stdout = child.stdout.take().ok_or("No stdout on bridge process")?;
     let stderr = child.stderr.take().ok_or("No stderr on bridge process")?;
 
+    // Spawn a background task to continuously read and log stderr from the bridge
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line).await {
+                Ok(0) => break, // EOF — process exited
+                Ok(_) => {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        tracing::warn!(source = "copilot-bridge", "{}", trimmed);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(source = "copilot-bridge", "stderr read error: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
     let mut bridge = BridgeProcess {
         _child: child,
         stdin,
         stdout: BufReader::new(stdout),
-        stderr: BufReader::new(stderr),
         next_id: AtomicU64::new(1),
     };
 
     // Send "init" to have the bridge create a CopilotClient and verify the connection
     bridge_call(&mut bridge, "init").await?;
 
+    tracing::info!("Copilot bridge initialized");
     *guard = Some(bridge);
     Ok(())
 }
@@ -301,7 +303,9 @@ pub async fn copilot_enhance(
     model_id: String,
     system_prompt: String,
     user_text: String,
+    delete_session: bool,
 ) -> Result<String, String> {
+    tracing::info!(model = %model_id, text_len = user_text.len(), delete_session, "Copilot enhance request");
     let mut guard = state.bridge.lock().await;
     let bridge = guard
         .as_mut()
@@ -311,11 +315,18 @@ pub async fn copilot_enhance(
         "model": model_id,
         "system_prompt": system_prompt,
         "user_text": user_text,
+        "delete_session": delete_session,
     });
 
     let val = bridge_call_with_params(bridge, "enhance", Some(params)).await?;
 
     val.as_str()
-        .map(String::from)
-        .ok_or_else(|| "Unexpected response format from enhance".to_string())
+        .map(|s| {
+            tracing::info!(result_len = s.len(), "Copilot enhance completed");
+            String::from(s)
+        })
+        .ok_or_else(|| {
+            tracing::error!("Copilot enhance returned unexpected format");
+            "Unexpected response format from enhance".to_string()
+        })
 }

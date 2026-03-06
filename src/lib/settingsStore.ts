@@ -30,6 +30,7 @@ export interface AppSettings {
   copilot_enabled: boolean;
   copilot_selected_model: string;
   copilot_selected_enhancer: string;
+  copilot_delete_sessions: boolean;
   prompt_enhancer_shortcut: string;
 }
 
@@ -63,6 +64,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   copilot_enabled: false,
   copilot_selected_model: "",
   copilot_selected_enhancer: "",
+  copilot_delete_sessions: true,
   prompt_enhancer_shortcut: "CommandOrControl+Shift+E",
 };
 

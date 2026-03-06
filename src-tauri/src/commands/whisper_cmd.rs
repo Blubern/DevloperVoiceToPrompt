@@ -21,6 +21,7 @@ pub async fn whisper_load_model(
     state: tauri::State<'_, WhisperState>,
     model_name: String,
 ) -> Result<(), String> {
+    tracing::info!(model = %model_name, "Loading Whisper model");
     let path = whisper::model_file_path(&app, &model_name)?;
     if !path.exists() {
         return Err(format!(

@@ -2,9 +2,10 @@
   interface Props {
     status: "idle" | "listening" | "error";
     onToggle: () => void;
+    disabled?: boolean;
   }
 
-  let { status, onToggle }: Props = $props();
+  let { status, onToggle, disabled = false }: Props = $props();
 </script>
 
 <button
@@ -12,9 +13,11 @@
   class:listening={status === "listening"}
   class:error={status === "error"}
   class:idle={status === "idle"}
+  class:disabled={disabled}
   onclick={onToggle}
+  {disabled}
   aria-label={status === "listening" ? "Stop dictation" : "Start dictation"}
-  title={status === "listening" ? "Click to stop" : "Click to start dictation"}
+  title={disabled ? "Enhancement in progress" : status === "listening" ? "Click to stop" : "Click to start dictation"}
 >
   <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -49,6 +52,11 @@
   .mic-button:hover {
     border-color: var(--accent);
     color: var(--accent);
+  }
+  .mic-button.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .mic-button.idle {

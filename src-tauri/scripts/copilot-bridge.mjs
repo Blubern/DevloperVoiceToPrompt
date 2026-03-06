@@ -6,7 +6,7 @@
 //   Request  (stdin):  { "id": 1, "method": "init"|"auth_status"|"list_models"|"stop" }
 //   Response (stdout): { "id": 1, "result": ... }  or  { "id": 1, "error": "..." }
 
-import { CopilotClient } from "@github/copilot-sdk";
+import { CopilotClient, approveAll } from "@github/copilot-sdk";
 import { createInterface } from "readline";
 
 let client = null;
@@ -54,18 +54,31 @@ async function handleRequest(req) {
 
     case "enhance": {
       if (!client) throw new Error("Client not initialized");
-      const { model, system_prompt, user_text } = req.params ?? {};
+      const { model, system_prompt, user_text, delete_session } = req.params ?? {};
       if (!model || !system_prompt || !user_text) {
         throw new Error("Missing required params: model, system_prompt, user_text");
       }
-      const response = await client.chat({
+      const session = await client.createSession({
         model,
-        messages: [
-          { role: "system", content: system_prompt },
-          { role: "user", content: user_text },
-        ],
+        systemMessage: {
+          mode: "replace",
+          content: system_prompt,
+        },
+        onPermissionRequest: approveAll,
       });
-      return response?.message?.content ?? "";
+      const sessionId = session.sessionId;
+      try {
+        const response = await session.sendAndWait(
+          { prompt: user_text },
+          30000
+        );
+        return response?.data?.content ?? "";
+      } finally {
+        await session.destroy().catch(() => {});
+        if (delete_session !== false) {
+          await client.deleteSession(sessionId).catch(() => {});
+        }
+      }
     }
 
     default:

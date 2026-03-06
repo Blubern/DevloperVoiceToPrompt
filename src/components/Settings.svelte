@@ -16,6 +16,7 @@
   import HistoryTab from "./settings/HistoryTab.svelte";
   import UsageTab from "./settings/UsageTab.svelte";
   import CopilotTab from "./settings/CopilotTab.svelte";
+  import LogsTab from "./settings/LogsTab.svelte";
 
   interface Props {
     initialSettings: AppSettings | null;
@@ -55,6 +56,7 @@
   let copilotEnabled = $state(DEFAULT_SETTINGS.copilot_enabled);
   let copilotSelectedModel = $state(DEFAULT_SETTINGS.copilot_selected_model);
   let copilotSelectedEnhancer = $state(DEFAULT_SETTINGS.copilot_selected_enhancer);
+  let copilotDeleteSessions = $state(DEFAULT_SETTINGS.copilot_delete_sessions);
   let promptEnhancerShortcut = $state(DEFAULT_SETTINGS.prompt_enhancer_shortcut);
 
   // Shell-only state
@@ -63,7 +65,7 @@
   let success = $state(false);
   let audioDevices = $state<AudioDevice[]>([]);
   let micWarning = $state("");
-  let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "copilot">("general");
+  let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "copilot" | "logs">("general");
 
   // Sync local state from initialSettings prop
   $effect(() => {
@@ -99,6 +101,7 @@
     copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
     copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
     copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
+    copilotDeleteSessions = s.copilot_delete_sessions ?? DEFAULT_SETTINGS.copilot_delete_sessions;
     promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
@@ -137,6 +140,7 @@
       copilot_enabled: copilotEnabled,
       copilot_selected_model: copilotSelectedModel,
       copilot_selected_enhancer: copilotSelectedEnhancer,
+      copilot_delete_sessions: copilotDeleteSessions,
       prompt_enhancer_shortcut: promptEnhancerShortcut,
     };
   }
@@ -181,6 +185,7 @@
     copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
     copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
     copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
+    copilotDeleteSessions = s.copilot_delete_sessions ?? DEFAULT_SETTINGS.copilot_delete_sessions;
     promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
@@ -234,7 +239,7 @@
     <div class="tab-bar">
       {#each [
         ["general", "General"], ["speech", "Speech"], ["phrases", "Phrases"],
-        ["templates", "Templates"], ["history", "History"], ["usage", "Usage"], ["copilot", "GitHub Copilot"]
+        ["templates", "Templates"], ["history", "History"], ["usage", "Usage"], ["copilot", "GitHub Copilot"], ["logs", "Logs"]
       ] as [id, label]}
         <button type="button" class="tab" class:active={activeTab === id} onclick={() => activeTab = id as typeof activeTab}>{label}</button>
       {/each}
@@ -262,7 +267,9 @@
       {:else if activeTab === 'usage'}
         <UsageTab />
       {:else if activeTab === 'copilot'}
-        <CopilotTab bind:copilotEnabled bind:copilotSelectedModel bind:copilotSelectedEnhancer bind:promptEnhancerShortcut />
+        <CopilotTab bind:copilotEnabled bind:copilotSelectedModel bind:copilotSelectedEnhancer bind:copilotDeleteSessions bind:promptEnhancerShortcut />
+      {:else if activeTab === 'logs'}
+        <LogsTab />
       {/if}
     </div>
 

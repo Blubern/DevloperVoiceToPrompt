@@ -33,11 +33,13 @@ export async function copilotStop(): Promise<void> {
 export async function copilotEnhance(
   modelId: string,
   systemPrompt: string,
-  userText: string
+  userText: string,
+  deleteSession: boolean = true
 ): Promise<string> {
   return invoke<string>("copilot_enhance", {
     modelId,
     systemPrompt,
     userText,
+    deleteSession,
   });
 }

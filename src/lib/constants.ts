@@ -36,6 +36,12 @@ export const DEFAULT_MAX_RECORDING_SECONDS = 180;
 // Whisper silence detection threshold (RMS energy)
 export const WHISPER_SILENCE_RMS_THRESHOLD = 0.01;
 
+// Prompt enhancer system prompt wrapper
+export const ENHANCE_SYSTEM_PROMPT_WRAPPER = `You are a prompt enhancer. The user will provide raw dictated text. Apply the following enhancement instructions, then output ONLY the final optimized prompt with no explanations or commentary.
+
+Enhancement instructions:
+`;
+
 // Types
 export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER;
 export type RecordingStatus = "idle" | "listening" | "error";

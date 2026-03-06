@@ -10,6 +10,7 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
 
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+    tracing::info!(provider = %settings.speech_provider, "Saving settings");
     settings::save_settings(&app, &settings)?;
 
     // Apply autostart setting

@@ -37,6 +37,7 @@ pub struct AppSettings {
     pub copilot_enabled: bool,
     pub copilot_selected_model: String,
     pub copilot_selected_enhancer: String,
+    pub copilot_delete_sessions: bool,
     pub prompt_enhancer_shortcut: String,
 }
 
@@ -72,6 +73,7 @@ impl Default for AppSettings {
             copilot_enabled: false,
             copilot_selected_model: String::new(),
             copilot_selected_enhancer: String::new(),
+            copilot_delete_sessions: true,
             prompt_enhancer_shortcut: "CommandOrControl+Shift+E".into(),
         }
     }
@@ -198,6 +200,7 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         copilot_enabled: get_bool("copilot_enabled", defaults.copilot_enabled),
         copilot_selected_model: get_str("copilot_selected_model", &defaults.copilot_selected_model),
         copilot_selected_enhancer: get_str("copilot_selected_enhancer", &defaults.copilot_selected_enhancer),
+        copilot_delete_sessions: get_bool("copilot_delete_sessions", defaults.copilot_delete_sessions),
         prompt_enhancer_shortcut: get_str("prompt_enhancer_shortcut", &defaults.prompt_enhancer_shortcut),
     }
 }

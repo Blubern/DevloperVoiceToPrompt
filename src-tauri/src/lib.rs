@@ -9,6 +9,7 @@ use tauri_plugin_store::StoreExt;
 
 mod commands;
 mod copilot;
+pub mod logging;
 pub mod settings;
 mod whisper;
 
@@ -129,7 +130,7 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
             create_or_toggle_popup(&app_handle);
         }
     }) {
-        eprintln!("Failed to register global shortcut: {}", e);
+        tracing::error!(error = %e, "Failed to register global shortcut");
     }
 }
 
@@ -160,6 +161,9 @@ pub fn run() {
             copilot::copilot_list_models,
             copilot::copilot_stop,
             copilot::copilot_enhance,
+            commands::get_logs,
+            commands::clear_logs,
+            commands::get_log_path,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app
@@ -171,6 +175,16 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Initialize tracing (file-based logging)
+            let guard = logging::init_tracing(app.handle());
+            // Keep the guard alive for the app's lifetime
+            app.manage(guard);
+
+            // Clean up log files older than 7 days
+            logging::cleanup_old_logs(app.handle(), 7);
+
+            tracing::info!("Application started");
+
             setup_tray(app.handle())?;
             setup_global_shortcut(app.handle());
 

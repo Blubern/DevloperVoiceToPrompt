@@ -34,6 +34,7 @@
     EVENT_SETTINGS_UPDATED,
     EVENT_TEMPLATES_UPDATED,
     EVENT_ENHANCER_TEMPLATES_UPDATED,
+    ENHANCE_SYSTEM_PROMPT_WRAPPER,
     type RecordingStatus,
   } from "../lib/constants";
   import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
@@ -110,6 +111,11 @@
   let enhancerTemplates = $state<EnhancerTemplate[]>([]);
   let selectedEnhancerId = $state("");
   let enhancing = $state(false);
+
+  // Enhancement undo stack (multi-level, resets on copy/close and clear)
+  let enhanceUndoStack = $state<string[]>([]);
+  let showEnhanceToast = $state(false);
+  let enhanceToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   let sortedCopilotModels = $derived([...copilotModels].sort((a, b) => a.name.localeCompare(b.name)));
 
@@ -391,6 +397,7 @@
   }
 
   async function toggleMic() {
+    if (enhancing) return;
     if (status === "listening") {
       await stopAndRecordUsage();
       return;
@@ -480,6 +487,10 @@
     userHasEdited = false;
     lastSyncedSegmentCount = 0;
     userScrolledUp = false;
+    // Clear enhancement undo stack
+    enhanceUndoStack = [];
+    showEnhanceToast = false;
+    if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
   }
 
   function undoClear() {
@@ -514,6 +525,10 @@
         historyCount = Math.min(historyCount + 1, settings.history_max_entries);
       }
     }
+    // Clear enhancement undo stack before clearText (which also clears it)
+    enhanceUndoStack = [];
+    showEnhanceToast = false;
+    if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
     if (status === "listening") {
       await stopAndRecordUsage();
     }
@@ -563,6 +578,9 @@
     } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
       e.preventDefault();
       executeEnhance();
+    } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && enhanceUndoStack.length > 0) {
+      e.preventDefault();
+      undoEnhance();
     }
   }
 
@@ -759,17 +777,39 @@
     }
   }
 
+  // Undo last enhancement (multi-level)
+  function undoEnhance() {
+    if (enhanceUndoStack.length === 0) return;
+    editedText = enhanceUndoStack[enhanceUndoStack.length - 1];
+    enhanceUndoStack = enhanceUndoStack.slice(0, -1);
+    userHasEdited = true;
+    showEnhanceToast = false;
+    if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
+  }
+
   // Execute prompt enhancement
   async function executeEnhance() {
     const text = editedText.trim();
-    if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected') return;
+    if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected' || status === 'listening') return;
     const template = enhancerTemplates.find(t => t.id === selectedEnhancerId);
     if (!template) return;
     enhancing = true;
+    copilotError = '';
     try {
-      const result = await copilotEnhance(copilotSelectedModel, template.text, text);
+      const systemPrompt = ENHANCE_SYSTEM_PROMPT_WRAPPER + template.text;
+      const result = await copilotEnhance(copilotSelectedModel, systemPrompt, text, settings.copilot_delete_sessions);
+      if (!result || !result.trim()) {
+        copilotError = 'Enhancement returned empty result';
+        return;
+      }
+      // Push current text to undo stack before replacing
+      enhanceUndoStack = [...enhanceUndoStack, editedText];
       editedText = result;
       userHasEdited = true;
+      // Show enhancement toast
+      showEnhanceToast = true;
+      if (enhanceToastTimer) clearTimeout(enhanceToastTimer);
+      enhanceToastTimer = setTimeout(() => { showEnhanceToast = false; enhanceToastTimer = null; }, 4000);
     } catch (e: any) {
       copilotError = String(e);
     } finally {
@@ -870,7 +910,7 @@
         <button
           class="mic-selector-btn"
           onclick={() => { micDropdownOpen = !micDropdownOpen; }}
-          disabled={status === "listening"}
+          disabled={status === "listening" || enhancing}
           title={`Microphone: ${selectedMicLabel()}`}
         >
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
@@ -903,6 +943,7 @@
         class="history-toggle"
         onclick={toggleTemplatesPanel}
         class:active={templatesOpen}
+        disabled={enhancing}
         aria-label="Toggle templates"
         aria-pressed={templatesOpen}
       >
@@ -914,6 +955,7 @@
           class="history-toggle"
           onclick={toggleHistoryPanel}
           class:active={historyOpen}
+          disabled={enhancing}
           aria-label="Toggle history"
           aria-pressed={historyOpen}
         >
@@ -989,11 +1031,20 @@
           onscroll={handleTextareaScroll}
           class:recording={status === "listening"}
           class:hidden-textarea={!editedText && status === "idle"}
+          disabled={enhancing}
         ></textarea>
+
+        <!-- Enhancing overlay -->
+        {#if enhancing}
+          <div class="enhancing-overlay">
+            <svg class="enhancing-spinner" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            <span class="enhancing-label">Enhancing prompt...</span>
+          </div>
+        {/if}
 
         <!-- Floating mic button anchored to textarea -->
         <div class="mic-float">
-          <MicButton {status} onToggle={toggleMic} />
+          <MicButton {status} onToggle={toggleMic} disabled={enhancing} />
         </div>
       </div>
 
@@ -1022,18 +1073,18 @@
           <button
             class="btn btn-primary"
             onclick={copyAndClose}
-            disabled={!editedText.trim() && status !== "listening"}
+            disabled={enhancing || (!editedText.trim() && status !== "listening")}
           >
             {primaryButtonLabel}
           </button>
           {#if editedText.trim() && status !== "listening"}
-            <button class="btn btn-secondary" onclick={copyToClipboard} aria-label="Copy to clipboard" title="Copy to clipboard">
+            <button class="btn btn-secondary" onclick={copyToClipboard} disabled={enhancing} aria-label="Copy to clipboard" title="Copy to clipboard">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
-            <button class="btn btn-secondary" onclick={clearText} aria-label="Clear text" title="Clear text">
+            <button class="btn btn-secondary" onclick={clearText} disabled={enhancing} aria-label="Clear text" title="Clear text">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
-            <button class="btn btn-secondary" onclick={() => { saveTemplateMode = true; saveTemplateName = ""; }} aria-label="Save as template" title="Save as template">
+            <button class="btn btn-secondary" onclick={() => { saveTemplateMode = true; saveTemplateName = ""; }} disabled={enhancing} aria-label="Save as template" title="Save as template">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             </button>
           {/if}
@@ -1042,22 +1093,32 @@
         <!-- Copilot enhancer (inline, after action buttons) -->
         {#if settings.copilot_enabled && copilotStatus === 'connected' && enhancerTemplates.length > 0}
           <div class="copilot-inline">
-            <select class="copilot-select" value={copilotSelectedModel} onchange={(e) => handleModelChange((e.target as HTMLSelectElement).value)} title="Select Copilot model">
+            <select class="copilot-select" value={copilotSelectedModel} onchange={(e) => handleModelChange((e.target as HTMLSelectElement).value)} disabled={enhancing} title="Select Copilot model">
               <option value="">Model...</option>
               {#each sortedCopilotModels as model}
                 <option value={model.id}>{model.name}{model.is_premium ? ` (${model.multiplier}x)` : ' (Included)'}</option>
               {/each}
             </select>
-            <select class="copilot-select" value={selectedEnhancerId} onchange={(e) => handleEnhancerChange((e.target as HTMLSelectElement).value)} title="Select prompt enhancer template">
+            <select class="copilot-select" value={selectedEnhancerId} onchange={(e) => handleEnhancerChange((e.target as HTMLSelectElement).value)} disabled={enhancing} title="Select prompt enhancer template">
               <option value="">Enhancer...</option>
               {#each enhancerTemplates as t}
                 <option value={t.id}>{t.name}</option>
               {/each}
             </select>
+            {#if enhanceUndoStack.length > 0}
+              <button
+                class="copilot-undo-btn"
+                onclick={undoEnhance}
+                title="Undo enhancement (Ctrl+Z)"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                <span class="copilot-enhance-label">Undo</span>
+              </button>
+            {/if}
             <button
               class="copilot-enhance-btn"
               onclick={executeEnhance}
-              disabled={enhancing || !editedText.trim() || !copilotSelectedModel || !selectedEnhancerId}
+              disabled={enhancing || !editedText.trim() || !copilotSelectedModel || !selectedEnhancerId || status === 'listening'}
               title={enhancing ? 'Enhancing...' : 'Enhance prompt with AI'}
             >
               {#if enhancing}
@@ -1068,6 +1129,13 @@
               <span class="copilot-enhance-label">{enhancing ? 'Enhancing...' : 'Enhance'}</span>
             </button>
           </div>
+          {#if copilotError}
+            <div class="copilot-error">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {copilotError}
+              <button class="copilot-error-dismiss" onclick={() => copilotError = ''}>✕</button>
+            </div>
+          {/if}
         {/if}
       </div>
 
@@ -1108,6 +1176,15 @@
         <div class="undo-toast">
           Text cleared
           <button class="undo-btn" onclick={undoClear}>Undo</button>
+        </div>
+      {/if}
+
+      <!-- Enhancement toast -->
+      {#if showEnhanceToast}
+        <div class="undo-toast enhance-toast">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Prompt enhanced
+          <button class="undo-btn" onclick={undoEnhance}>Undo</button>
         </div>
       {/if}
 
@@ -1450,6 +1527,30 @@
     flex-direction: column;
     position: relative;
     padding-right: 28px;
+  }
+
+  /* Enhancing overlay */
+  .enhancing-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: color-mix(in srgb, var(--bg-primary) 85%, transparent);
+    z-index: 5;
+    border-radius: 8px;
+    backdrop-filter: blur(2px);
+  }
+  .enhancing-spinner {
+    color: var(--accent);
+    animation: spin 1s linear infinite;
+  }
+  .enhancing-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
   }
 
   /* Empty state CTA */
@@ -1916,8 +2017,54 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+  .copilot-undo-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 3px 10px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .copilot-undo-btn:hover {
+    background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+    color: var(--text-primary);
+  }
   .copilot-enhance-label {
     line-height: 1;
+  }
+  .copilot-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--red);
+    padding: 4px 8px;
+    background: color-mix(in srgb, var(--red) 8%, transparent);
+    border-radius: 4px;
+    margin-right: 64px;
+  }
+  .copilot-error-dismiss {
+    background: none;
+    border: none;
+    color: var(--red);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 12px;
+    opacity: 0.7;
+    margin-left: auto;
+  }
+  .copilot-error-dismiss:hover {
+    opacity: 1;
+  }
+  .enhance-toast {
+    bottom: 72px;
   }
 
   .spin {
