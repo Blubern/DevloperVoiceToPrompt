@@ -101,18 +101,19 @@ Choose the engine that fits your workflow:
 | Feature | Web Speech | Azure | Whisper |
 | --- | :---: | :---: | :---: |
 | Real-time transcription | ✅ | ✅ | ❌ |
-| Editable while speaking | ✅ | ✅ | ❌ |
+| Editable while speaking | ✅ | ✅ | ✅[^1] |
 | Auto-punctuation | ❌ | ✅ | ✅ |
 | Multi-language mixing | ❌ | ✅ | ❌ |
-| Custom phrase boost | ❌ | ✅ | ❌ |
+| Custom phrase boost | ❌ | ✅ | ✅ |
 | Silence auto-stop | ✅ | ✅ | ✅ |
 | Microphone selection | ✅ | ✅ | ✅ |
 | Zero setup | ✅ | ❌ | ❌ |
-| Local (Offline) | :question: | ❌ | ✅ |
+| Local (Offline) | :question:[^2] | ❌ | ✅ |
+
+[^1]: Because Whisper does not support true realtime transcription, some latency can occur. However, you can edit the text while speaking.
+[^2]: For Web Speech the execution local or not depends on the used browser and the implementation of it.
 
 Switch engines instantly with a keyboard shortcut — no restart needed.
-
-For Web Speech the execution local or not depends on the used browser and the implementation of it.
 
 Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking ([Web Speech API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)).
 
