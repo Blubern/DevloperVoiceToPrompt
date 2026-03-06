@@ -22,15 +22,15 @@ pub fn show_settings(app: tauri::AppHandle) {
 pub fn set_dock_visibility(visible: bool) {
     #[cfg(target_os = "macos")]
     {
-        use cocoa::appkit::{NSApplication, NSApplicationActivationPolicy};
+        use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
         unsafe {
-            let app = NSApplication::sharedApplication(cocoa::base::nil);
+            let app = NSApplication::sharedApplication();
             let policy = if visible {
-                NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular
+                NSApplicationActivationPolicy::Regular
             } else {
-                NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory
+                NSApplicationActivationPolicy::Accessory
             };
-            app.setActivationPolicy_(policy);
+            app.setActivationPolicy(policy);
         }
     }
     #[cfg(not(target_os = "macos"))]

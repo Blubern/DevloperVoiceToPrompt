@@ -35,5 +35,4 @@ rmcp = { version = "1.1.0", features = ["server", "transport-streamable-http-ser
 axum = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
-objc = "0.2"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSRunningApplication"] }
