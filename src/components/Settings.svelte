@@ -60,6 +60,8 @@
   let promptEnhancerShortcut = $state(DEFAULT_SETTINGS.prompt_enhancer_shortcut);
   let popupFont = $state(DEFAULT_SETTINGS.popup_font);
   let openPopupOnStart = $state(DEFAULT_SETTINGS.open_popup_on_start);
+  let mcpEnabled = $state(DEFAULT_SETTINGS.mcp_enabled);
+  let mcpPort = $state(DEFAULT_SETTINGS.mcp_port);
 
   // Shell-only state
   let saving = $state(false);
@@ -148,6 +150,8 @@
       prompt_enhancer_shortcut: promptEnhancerShortcut,
       popup_font: popupFont,
       open_popup_on_start: openPopupOnStart,
+      mcp_enabled: mcpEnabled,
+      mcp_port: mcpPort,
     };
   }
 
@@ -195,6 +199,8 @@
     promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     popupFont = s.popup_font ?? DEFAULT_SETTINGS.popup_font;
     openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
+    mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
+    mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -260,7 +266,8 @@
         <GeneralTab bind:theme bind:autostartEnabled bind:shortcut bind:popupCopyShortcut
           bind:popupVoiceShortcut bind:providerSwitchShortcut bind:alwaysOnTop
           bind:autoStartRecording bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds
-          bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart />
+          bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart
+          bind:mcpEnabled bind:mcpPort />
       {:else if activeTab === 'speech'}
         <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
           bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation

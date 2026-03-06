@@ -17,6 +17,8 @@
     maxRecordingSeconds = $bindable(),
     popupFont = $bindable(),
     openPopupOnStart = $bindable(),
+    mcpEnabled = $bindable(),
+    mcpPort = $bindable(),
   }: {
     theme: string;
     autostartEnabled: boolean;
@@ -32,6 +34,8 @@
     maxRecordingSeconds: number;
     popupFont: string;
     openPopupOnStart: boolean;
+    mcpEnabled: boolean;
+    mcpPort: number;
   } = $props();
 
   const FONT_OPTIONS = [
@@ -224,6 +228,34 @@
     </div>
   </div>
 
+  <div class="section">
+    <div class="section-title">MCP Server</div>
+    <div class="field">
+      <label class="toggle-field">
+        <span class="label">Enable MCP Server</span>
+        <div class="toggle-row">
+          <input type="checkbox" bind:checked={mcpEnabled} class="toggle-checkbox" />
+          <span class="toggle-label">{mcpEnabled ? 'On' : 'Off'}</span>
+        </div>
+      </label>
+      <span class="hint">Expose a local MCP (Model Context Protocol) server so AI tools like GitHub Copilot can request voice input. Requires an app restart to take effect.</span>
+    </div>
+    {#if mcpEnabled}
+      <div class="field">
+        <label class="label" for="mcp-port">Port</label>
+        <input id="mcp-port" type="number" min="1024" max="65535" bind:value={mcpPort} style="width: 100px;" />
+        <span class="hint">Default: 31337. Changes require an app restart.</span>
+      </div>
+      <div class="field">
+        <label class="label">SSE Endpoint</label>
+        <div class="mcp-url-row">
+          <code class="mcp-url">http://localhost:{mcpPort}/sse</code>
+        </div>
+        <span class="hint">Add this URL to your AI tool's MCP server configuration (e.g. VS Code settings.json → <code>mcp.servers</code>).</span>
+      </div>
+    {/if}
+  </div>
+
 <style>
   .font-preview {
     margin-top: 6px;
@@ -234,5 +266,20 @@
     font-size: 13px;
     line-height: 1.5;
     color: var(--text-secondary);
+  }
+
+  .mcp-url-row {
+    margin-top: 4px;
+  }
+
+  .mcp-url {
+    display: inline-block;
+    padding: 4px 8px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-primary);
+    user-select: all;
   }
 </style>

@@ -28,6 +28,7 @@ export const EVENT_TEMPLATES_UPDATED = "templates-updated" as const;
 export const EVENT_ENHANCER_TEMPLATES_UPDATED = "enhancer-templates-updated" as const;
 export const EVENT_CHECK_FIRST_RUN = "check-first-run" as const;
 export const EVENT_WHISPER_DOWNLOAD_PROGRESS = "whisper-download-progress" as const;
+export const EVENT_MCP_VOICE_REQUEST = "mcp-voice-request" as const;
 
 // Timer defaults
 export const DEFAULT_SILENCE_TIMEOUT_SECONDS = 30;
@@ -46,6 +47,11 @@ Enhancement instructions:
 export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER;
 export type RecordingStatus = "idle" | "listening" | "error";
 export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP;
+
+export interface McpVoiceRequest {
+  input_reason: string;
+  context_input: string | null;
+}
 
 // About section
 export const APP_GITHUB_URL = "https://github.com/Blubern/DevloperVoiceToPrompt";

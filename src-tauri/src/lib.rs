@@ -10,8 +10,20 @@ use tauri_plugin_store::StoreExt;
 mod commands;
 mod copilot;
 pub mod logging;
+pub mod mcp;
 pub mod settings;
 mod whisper;
+
+/// Show the popup without toggling — always makes it visible and focused.
+/// Used by the MCP server to open the popup when a tool call arrives.
+pub fn create_or_show_popup(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("popup") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    } else {
+        create_or_toggle_popup(app);
+    }
+}
 
 fn create_or_toggle_popup(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
@@ -85,7 +97,7 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         .menu(&menu);
 
     #[cfg(target_os = "macos")]
-    let tray_builder = tray_builder.icon_as_template(true);
+    let tray_builder = tray_builder.icon_as_template(false);
 
     let _tray = tray_builder
         .on_menu_event(move |app, event| match event.id().as_ref() {
@@ -153,6 +165,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .manage(whisper::WhisperState::default())
         .manage(copilot::CopilotState::default())
+        .manage(mcp::McpState::default())
         .invoke_handler(tauri::generate_handler![
             commands::toggle_popup,
             commands::hide_popup,
@@ -173,6 +186,8 @@ pub fn run() {
             commands::get_logs,
             commands::clear_logs,
             commands::get_log_path,
+            commands::mcp_submit_result,
+            commands::mcp_cancel,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app
@@ -207,8 +222,15 @@ pub fn run() {
             setup_tray(app.handle())?;
             setup_global_shortcut(app.handle());
 
-            // Open popup on startup if enabled in settings
+            // Load settings once for startup checks
             let user_settings = settings::load_settings(app.handle());
+
+            // Start MCP server if enabled
+            if user_settings.mcp_enabled {
+                mcp::start_mcp_server(app.handle().clone(), user_settings.mcp_port);
+            }
+
+            // Open popup on startup if enabled in settings
             if user_settings.open_popup_on_start {
                 create_or_toggle_popup(app.handle());
             }

@@ -41,6 +41,8 @@ pub struct AppSettings {
     pub prompt_enhancer_shortcut: String,
     pub popup_font: String,
     pub open_popup_on_start: bool,
+    pub mcp_enabled: bool,
+    pub mcp_port: u16,
 }
 
 impl Default for AppSettings {
@@ -57,7 +59,7 @@ impl Default for AppSettings {
             microphone_device_id: String::new(),
             theme: "dark".into(),
             phrase_list: vec![],
-            always_on_top: true,
+            always_on_top: false,
             auto_punctuation: true,
             auto_start_recording: false,
             silence_timeout_seconds: 30,
@@ -79,6 +81,8 @@ impl Default for AppSettings {
             prompt_enhancer_shortcut: "CommandOrControl+Shift+E".into(),
             popup_font: "mono".into(),
             open_popup_on_start: true,
+            mcp_enabled: false,
+            mcp_port: 31337,
         }
     }
 }
@@ -208,6 +212,8 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         prompt_enhancer_shortcut: get_str("prompt_enhancer_shortcut", &defaults.prompt_enhancer_shortcut),
         popup_font: get_str("popup_font", &defaults.popup_font),
         open_popup_on_start: get_bool("open_popup_on_start", defaults.open_popup_on_start),
+        mcp_enabled: get_bool("mcp_enabled", defaults.mcp_enabled),
+        mcp_port: get_u32("mcp_port", defaults.mcp_port as u32) as u16,
     }
 }
 

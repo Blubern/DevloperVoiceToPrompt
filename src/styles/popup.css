@@ -289,3 +289,44 @@
   background: var(--surface-hover);
   color: var(--accent);
 }
+
+/* MCP voice-request banner */
+.mcp-context-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  background: color-mix(in srgb, var(--sapphire, #89b4fa) 12%, var(--bg-primary));
+  border: 1px solid color-mix(in srgb, var(--sapphire, #89b4fa) 40%, transparent);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.mcp-banner-icon {
+  flex-shrink: 0;
+  color: var(--sapphire, #89b4fa);
+  margin-top: 1px;
+}
+
+.mcp-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mcp-banner-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--sapphire, #89b4fa);
+}
+
+.mcp-banner-reason {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

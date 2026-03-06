@@ -35,8 +35,10 @@
     EVENT_SETTINGS_UPDATED,
     EVENT_TEMPLATES_UPDATED,
     EVENT_ENHANCER_TEMPLATES_UPDATED,
+    EVENT_MCP_VOICE_REQUEST,
     ENHANCE_SYSTEM_PROMPT_WRAPPER,
     type RecordingStatus,
+    type McpVoiceRequest,
   } from "../lib/constants";
   import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
   import { AudioLevelMeter } from "../lib/audioLevelMeter";
@@ -124,7 +126,12 @@
   let showEnhanceToast = $state(false);
   let enhanceToastTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // MCP mode: set when the popup was opened by an MCP tool call
+  let mcpRequest = $state<McpVoiceRequest | null>(null);
+
   let sortedCopilotModels = $derived([...copilotModels].sort((a, b) => a.name.localeCompare(b.name)));
+
+  let isMcpMode = $derived(mcpRequest !== null);
 
   // Elapsed time display
   let elapsedSeconds = $state(0);
@@ -196,6 +203,12 @@
   // Context-aware button label
   let primaryButtonLabel = $derived.by(() => {
     const hasText = editedText.trim().length > 0;
+    if (isMcpMode) {
+      if (status === "listening" && hasText) return "Stop Mic & Submit";
+      if (status === "listening" && !hasText) return "Stop Mic";
+      if (hasText) return "Submit to MCP";
+      return "Submit to MCP";
+    }
     if (status === "listening" && hasText) return "Stop Mic, Copy & Close";
     if (status === "listening" && !hasText) return "Stop Mic";
     if (hasText) return "Copy & Close";
@@ -616,6 +629,11 @@
     if (status === "listening") {
       await stopAndRecordUsage();
     }
+    // If open via MCP, send the result back to the caller
+    if (mcpRequest !== null) {
+      mcpRequest = null;
+      await invoke("mcp_submit_result", { text: text || "" }).catch(() => {});
+    }
     clearText();
     errorMessage = "";
     silenceMessage = "";
@@ -627,6 +645,11 @@
   async function dismiss() {
     if (status === "listening") {
       await stopAndRecordUsage();
+    }
+    // If we were opened by an MCP call, cancel it so the caller gets an error
+    if (mcpRequest !== null) {
+      mcpRequest = null;
+      await invoke("mcp_cancel").catch(() => {});
     }
     clearText();
     errorMessage = "";
@@ -792,6 +815,29 @@
     let unlistenFn: (() => void) | null = null;
     listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
       enhancerTemplates = await getEnhancerTemplates();
+    }).then((fn) => { unlistenFn = fn; });
+    return () => { unlistenFn?.(); };
+  });
+
+  // Listen for MCP voice requests from the Rust backend
+  $effect(() => {
+    let unlistenFn: (() => void) | null = null;
+    listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
+      mcpRequest = event.payload;
+      // Pre-fill textarea with context_input if provided
+      if (event.payload.context_input) {
+        editedText = event.payload.context_input;
+        userHasEdited = true;
+        cursorPosition = editedText.length;
+      } else {
+        // Clear any previous text so the textarea is empty
+        finalSegments = [];
+        interimText = "";
+        editedText = "";
+        userHasEdited = false;
+        lastSyncedSegmentCount = 0;
+        cursorPosition = 0;
+      }
     }).then((fn) => { unlistenFn = fn; });
     return () => { unlistenFn?.(); };
   });
@@ -1102,6 +1148,20 @@
             <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
           </div>
           <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
+        </div>
+      {/if}
+
+      <!-- MCP voice-request banner -->
+      {#if isMcpMode && mcpRequest}
+        <div class="mcp-context-banner">
+          <svg class="mcp-banner-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <path d="M8 12h8"/><path d="M12 8v8"/>
+          </svg>
+          <div class="mcp-banner-content">
+            <span class="mcp-banner-label">AI tool is requesting voice input</span>
+            <span class="mcp-banner-reason">{mcpRequest.input_reason}</span>
+          </div>
         </div>
       {/if}
 

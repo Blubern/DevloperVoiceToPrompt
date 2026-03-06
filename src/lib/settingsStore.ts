@@ -34,6 +34,8 @@ export interface AppSettings {
   prompt_enhancer_shortcut: string;
   popup_font: string;
   open_popup_on_start: boolean;
+  mcp_enabled: boolean;
+  mcp_port: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -51,7 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   microphone_device_id: "",
   theme: "dark",
   phrase_list: [],
-  always_on_top: true,
+  always_on_top: false,
   auto_punctuation: true,
   auto_start_recording: false,
   silence_timeout_seconds: 30,
@@ -70,6 +72,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   prompt_enhancer_shortcut: "CommandOrControl+Shift+E",
   popup_font: "mono",
   open_popup_on_start: true,
+  mcp_enabled: false,
+  mcp_port: 31337,
 };
 
 export const AZURE_REGIONS = [
