@@ -40,6 +40,13 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> $GITHUB_ENV
 
+      - name: Set macOS build environment
+        if: matrix.platform == 'macos-latest'
+        run: |
+          echo "CFLAGS=-march=armv8.5-a" >> $GITHUB_ENV
+          echo "CXXFLAGS=-march=armv8.5-a" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(xcrun --show-sdk-path)/usr/include" >> $GITHUB_ENV
+
       - name: Install frontend dependencies
         run: npm install
 
@@ -51,12 +58,6 @@ jobs:
 
       - name: Build frontend
         run: npm run build
-
-      - name: Set CMAKE flags for macOS ARM (avoid i8mm build error)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          echo "CMAKE_C_FLAGS=-march=armv8.5-a" >> $GITHUB_ENV
-          echo "CMAKE_CXX_FLAGS=-march=armv8.5-a" >> $GITHUB_ENV
 
       - name: Check Rust
         working-directory: src-tauri

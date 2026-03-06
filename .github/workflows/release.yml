@@ -54,13 +54,18 @@ jobs:
         if: matrix.os == 'macos'
         run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> $GITHUB_ENV
 
+      - name: Set macOS build environment
+        if: matrix.os == 'macos'
+        run: |
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(xcrun --show-sdk-path)/usr/include" >> $GITHUB_ENV
+
       - name: Install frontend dependencies
         run: npm install
 
       - name: Build Tauri app
         env:
-          CMAKE_C_FLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a' || '' }}
+          CFLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a' || '' }}
+          CXXFLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a' || '' }}
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.os == 'macos' && '10.15' || '' }}
         run: npx tauri build ${{ matrix.args }}
 
