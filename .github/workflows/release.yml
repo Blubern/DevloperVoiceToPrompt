@@ -57,7 +57,8 @@ jobs:
       - name: Set macOS build environment
         if: matrix.os == 'macos'
         run: |
-          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(xcrun --show-sdk-path)/usr/include" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+          echo "WHISPER_DONT_GENERATE_BINDINGS=1" >> $GITHUB_ENV
 
       - name: Install frontend dependencies
         run: npm install

@@ -45,7 +45,8 @@ jobs:
         run: |
           echo "CFLAGS=-march=armv8.5-a+crypto" >> $GITHUB_ENV
           echo "CXXFLAGS=-march=armv8.5-a+crypto" >> $GITHUB_ENV
-          echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(xcrun --show-sdk-path)/usr/include" >> $GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
+          echo "WHISPER_DONT_GENERATE_BINDINGS=1" >> $GITHUB_ENV
 
       - name: Install frontend dependencies
         run: npm install
