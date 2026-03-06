@@ -8,7 +8,6 @@ Developer Voice to Prompt is a lightweight tray application that lets you **spea
 
 ![Developer Voice to Prompt — Overview](images/OverviewHowItWorkInfo.png)
 
----
 
 ## The Problem
 
@@ -33,6 +32,8 @@ No more switching between voice tools. No more retyping the same context. No mor
 ## Feature Highlights
 
 ### Speak and Edit Live
+
+![Dictation popup — idle state](images/MainWindow.png)
 
 Start speaking — the transcript appears in real time. Pause, edit the text, then continue speaking. The transcript picks up right where you left off.
 
@@ -60,6 +61,8 @@ Choose from available models (GPT-4o, Claude, and more). Select an enhancer temp
 
 Multi-level undo lets you step back through every enhancement.
 
+![GitHub Copilot integration — model selection and authentication](images/SettingsGithubCopilot.png)
+
 ---
 
 ### Prompt History
@@ -74,15 +77,27 @@ Every prompt is saved locally. Browse, search, reuse, or delete past transcripti
 
 Choose the engine that fits your workflow:
 
-| Engine | Strengths |
-| --- | --- |
-| **Web Speech** | Zero setup, works out of the box, browser-native |
-| **Azure Speech** | High accuracy, auto-punctuation, **mix multiple languages in the same sentence** |
-| **Whisper** | Fully offline, runs locally on your machine, complete privacy |
+| Feature | Web Speech | Azure | Whisper |
+| --- | :---: | :---: | :---: |
+| Real-time transcription | ✅ | ✅ | ❌ |
+| Editable while speaking | ✅ | ✅ | ❌ |
+| Auto-punctuation | ❌ | ✅ | ✅ |
+| Multi-language mixing | ❌ | ✅ | ❌ |
+| Custom phrase boost | ❌ | ✅ | ❌ |
+| Silence auto-stop | ✅ | ✅ | ✅ |
+| Microphone selection | ✅ | ✅ | ✅ |
+| Zero setup | ✅ | ❌ | ❌ |
+| Local (Offline) | :question: | ❌ | ✅ |
 
 Switch engines instantly with a keyboard shortcut — no restart needed.
 
-Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking.
+For Web Speech the execution local or not depends on the used browser and the implementation of it.
+
+Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking (https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API).
+
+| Switch language |
+| :---: |
+| ![Language switching — before](images/MainWindowEasyLanguageSwitch.png) ![Language switching — after](images/MainWindowEasyLanguageSwitch1.png) |
 
 ---
 
@@ -110,6 +125,18 @@ Azure's multi-language recognition is especially useful when your domain termino
 # Documentation
 
 Everything below is technical reference for developers who want to understand, build, or contribute to the project.
+
+---
+
+## Settings
+
+| General | Speech | Phrases |
+| :---: | :---: | :---: |
+| ![General settings](images/SettingsGeneral.png) | ![Speech provider settings](images/SettingsSpeech.png) | ![Custom phrases](images/SettingsPhrases.png) |
+
+| Templates | History | Usage |
+| :---: | :---: | :---: |
+| ![Template management](images/SettingsTemplates.png) | ![History settings](images/SettingsHistory.png) | ![Usage statistics](images/SettingsUsage.png) |
 
 ---
 
