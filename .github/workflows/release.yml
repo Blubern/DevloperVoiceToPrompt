@@ -85,6 +85,12 @@ jobs:
 
           echo "Artifact paths: $ARTIFACTS"
 
+          # Fail early if the build produced no artifacts
+          if [ -z "$ARTIFACTS" ] || [ "$ARTIFACTS" = "[]" ]; then
+            echo "::error::No artifacts produced by tauri-build – the Rust/Tauri build likely failed."
+            exit 1
+          fi
+
           # Parse JSON array of paths
           echo "$ARTIFACTS" | tr -d '[]"' | tr ',' '\n' | while read -r filepath; do
             filepath="$(echo "$filepath" | xargs)"  # trim whitespace
