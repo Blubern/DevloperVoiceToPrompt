@@ -43,6 +43,7 @@ pub struct AppSettings {
     pub open_popup_on_start: bool,
     pub mcp_enabled: bool,
     pub mcp_port: u16,
+    pub show_in_dock: bool,
 }
 
 impl Default for AppSettings {
@@ -83,6 +84,7 @@ impl Default for AppSettings {
             open_popup_on_start: true,
             mcp_enabled: false,
             mcp_port: 31337,
+            show_in_dock: false,
         }
     }
 }
@@ -214,6 +216,7 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         open_popup_on_start: get_bool("open_popup_on_start", defaults.open_popup_on_start),
         mcp_enabled: get_bool("mcp_enabled", defaults.mcp_enabled),
         mcp_port: get_u32("mcp_port", defaults.mcp_port as u32) as u16,
+        show_in_dock: get_bool("show_in_dock", defaults.show_in_dock),
     }
 }
 

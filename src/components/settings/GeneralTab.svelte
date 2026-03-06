@@ -19,6 +19,8 @@
     openPopupOnStart = $bindable(),
     mcpEnabled = $bindable(),
     mcpPort = $bindable(),
+    showInDock = $bindable(),
+    isMac = false,
   }: {
     theme: string;
     autostartEnabled: boolean;
@@ -36,6 +38,8 @@
     openPopupOnStart: boolean;
     mcpEnabled: boolean;
     mcpPort: number;
+    showInDock: boolean;
+    isMac: boolean;
   } = $props();
 
   const FONT_OPTIONS = [
@@ -112,6 +116,17 @@
       </div>
       <span class="hint">Automatically start the app when you log in to your computer.</span>
     </label>
+
+    {#if isMac}
+    <label class="field toggle-field">
+      <span class="label">Show in Dock</span>
+      <div class="toggle-row">
+        <input type="checkbox" bind:checked={showInDock} class="toggle-checkbox" />
+        <span class="toggle-label">{showInDock ? 'On' : 'Off'}</span>
+      </div>
+      <span class="hint">Show the app icon in the macOS Dock. When off, the app is only accessible from the system tray.</span>
+    </label>
+    {/if}
 
     <label class="field toggle-field">
       <span class="label">Open Popup on Start</span>

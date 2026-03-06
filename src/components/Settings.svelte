@@ -62,6 +62,8 @@
   let openPopupOnStart = $state(DEFAULT_SETTINGS.open_popup_on_start);
   let mcpEnabled = $state(DEFAULT_SETTINGS.mcp_enabled);
   let mcpPort = $state(DEFAULT_SETTINGS.mcp_port);
+  let showInDock = $state(DEFAULT_SETTINGS.show_in_dock);
+  let isMac = $state(false);
 
   // Shell-only state
   let saving = $state(false);
@@ -109,6 +111,7 @@
     promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     popupFont = s.popup_font ?? DEFAULT_SETTINGS.popup_font;
     openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
+    showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -152,6 +155,7 @@
       open_popup_on_start: openPopupOnStart,
       mcp_enabled: mcpEnabled,
       mcp_port: mcpPort,
+      show_in_dock: showInDock,
     };
   }
 
@@ -201,6 +205,7 @@
     openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
     mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
     mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
+    showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
     document.documentElement.dataset.theme = savedTheme;
@@ -214,6 +219,9 @@
   }
 
   onMount(async () => {
+    // Detect macOS for platform-specific UI
+    isMac = navigator.userAgent.includes("Macintosh") || navigator.platform === "MacIntel";
+
     const result = await enumerateAudioDevices();
     audioDevices = result.devices;
     micWarning = result.error ?? "";
@@ -267,7 +275,7 @@
           bind:popupVoiceShortcut bind:providerSwitchShortcut bind:alwaysOnTop
           bind:autoStartRecording bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds
           bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart
-          bind:mcpEnabled bind:mcpPort />
+          bind:mcpEnabled bind:mcpPort bind:showInDock {isMac} />
       {:else if activeTab === 'speech'}
         <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
           bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation

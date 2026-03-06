@@ -27,6 +27,9 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
         let _ = popup.set_always_on_top(settings.always_on_top);
     }
 
+    // Apply macOS Dock visibility
+    super::window::set_dock_visibility(settings.show_in_dock);
+
     // Re-register the global shortcut with the new key combo
     let gs = app.global_shortcut();
 
