@@ -44,6 +44,10 @@
 
   onMount(async () => {
     enhancerTemplates = await getEnhancerTemplates();
+    // Auto-select first template if none is selected
+    if (!copilotSelectedEnhancer && enhancerTemplates.length > 0) {
+      copilotSelectedEnhancer = enhancerTemplates[0].id;
+    }
   });
 
   // Auto-connect when toggled on

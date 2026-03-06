@@ -738,6 +738,8 @@
         const savedEnhancer = settings.copilot_selected_enhancer;
         if (savedEnhancer && enhancerTemplates.some(t => t.id === savedEnhancer)) {
           selectedEnhancerId = savedEnhancer;
+        } else if (enhancerTemplates.length > 0) {
+          selectedEnhancerId = enhancerTemplates[0].id;
         }
       })();
     } else if (!enabled && copilotStatus !== 'disconnected') {
