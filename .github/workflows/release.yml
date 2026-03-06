@@ -64,8 +64,8 @@ jobs:
 
       - name: Build Tauri app
         env:
-          CFLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a' || '' }}
-          CXXFLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a' || '' }}
+          CFLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a+crypto' || '' }}
+          CXXFLAGS: ${{ matrix.os == 'macos' && '-march=armv8.5-a+crypto' || '' }}
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.os == 'macos' && '10.15' || '' }}
         run: npx tauri build ${{ matrix.args }}
 

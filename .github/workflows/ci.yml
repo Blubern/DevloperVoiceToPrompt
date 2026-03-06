@@ -43,8 +43,8 @@ jobs:
       - name: Set macOS build environment
         if: matrix.platform == 'macos-latest'
         run: |
-          echo "CFLAGS=-march=armv8.5-a" >> $GITHUB_ENV
-          echo "CXXFLAGS=-march=armv8.5-a" >> $GITHUB_ENV
+          echo "CFLAGS=-march=armv8.5-a+crypto" >> $GITHUB_ENV
+          echo "CXXFLAGS=-march=armv8.5-a+crypto" >> $GITHUB_ENV
           echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(xcrun --show-sdk-path)/usr/include" >> $GITHUB_ENV
 
       - name: Install frontend dependencies
