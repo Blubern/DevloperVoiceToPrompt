@@ -95,8 +95,7 @@
   // Templates
   let templatesOpen = $state(false);
   let templateEntries = $state<PromptTemplate[]>([]);
-  let saveTemplateMode = $state(false);
-  let saveTemplateName = $state("");
+  let templateSaveTriggered = $state(false);
   let showTemplateSavedToast = $state(false);
 
   // Copied toast
@@ -639,9 +638,7 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      if (saveTemplateMode) {
-        saveTemplateMode = false;
-      } else if (aboutOpen) {
+      if (aboutOpen) {
         aboutOpen = false;
       } else if (helpOpen) {
         helpOpen = false;
@@ -696,10 +693,16 @@
   async function toggleTemplatesPanel() {
     if (!templatesOpen) {
       templateEntries = await getTemplates();
-      saveTemplateMode = false;
-      saveTemplateName = "";
     }
     templatesOpen = !templatesOpen;
+  }
+
+  async function triggerSaveTemplate() {
+    if (!templatesOpen) {
+      templateEntries = await getTemplates();
+      templatesOpen = true;
+    }
+    templateSaveTriggered = true;
   }
 
   function selectTemplate(t: PromptTemplate) {
@@ -709,13 +712,11 @@
     cursorPosition = editedText.length;
   }
 
-  async function saveAsTemplate() {
-    const name = saveTemplateName.trim();
+  async function saveAsTemplate(name: string) {
     const text = editedText.trim();
     if (!name || !text) return;
     await addTemplate(name, text);
-    saveTemplateMode = false;
-    saveTemplateName = "";
+    await emit(EVENT_TEMPLATES_UPDATED);
     showTemplateSavedToast = true;
     setTimeout(() => { showTemplateSavedToast = false; }, 1800);
   }
@@ -1199,7 +1200,7 @@
             <button class="btn btn-secondary" onclick={clearText} disabled={enhancing} aria-label="Clear text" title="Clear text">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
-            <button class="btn btn-secondary" onclick={() => { saveTemplateMode = true; saveTemplateName = ""; }} disabled={enhancing} aria-label="Save as template" title="Save as template">
+            <button class="btn btn-secondary" onclick={triggerSaveTemplate} disabled={enhancing} aria-label="Save as template" title="Save as template">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
             </button>
           {/if}
@@ -1262,21 +1263,7 @@
         </div>
       {/if}
 
-      <!-- Save as template inline prompt -->
-      {#if saveTemplateMode}
-        <div class="save-template-prompt">
-          <span class="save-template-label">Save as template:</span>
-          <input
-            class="save-template-input"
-            type="text"
-            placeholder="Template name..."
-            bind:value={saveTemplateName}
-            onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveAsTemplate(); } if (e.key === 'Escape') { saveTemplateMode = false; } }}
-          />
-          <button class="save-template-btn" onclick={saveAsTemplate} disabled={!saveTemplateName.trim()}>Save</button>
-          <button class="save-template-cancel" onclick={() => saveTemplateMode = false}>✕</button>
-        </div>
-      {/if}
+
 
       <!-- Template saved toast -->
       {#if showTemplateSavedToast}
@@ -1306,7 +1293,8 @@
     </div>
 
     <!-- Templates side panel -->
-    <TemplatesPanel bind:open={templatesOpen} entries={templateEntries} onSelect={selectTemplate} />
+    <TemplatesPanel bind:open={templatesOpen} entries={templateEntries} onSelect={selectTemplate}
+      onSave={saveAsTemplate} hasText={editedText.trim().length > 0} bind:saveTriggered={templateSaveTriggered} />
 
     <!-- History side panel -->
     <HistoryPanel bind:open={historyOpen} entries={historyEntries} bind:search={historySearch}
@@ -1968,60 +1956,6 @@
   .mic-float :global(.mic-button svg) {
     width: 26px;
     height: 26px;
-  }
-
-  /* Save as template prompt */
-  .save-template-prompt {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    font-size: 12px;
-  }
-  .save-template-label {
-    color: var(--text-secondary);
-    white-space: nowrap;
-    font-weight: 500;
-  }
-  .save-template-input {
-    flex: 1;
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-size: 12px;
-    outline: none;
-  }
-  .save-template-input:focus {
-    border-color: var(--accent);
-  }
-  .save-template-btn {
-    padding: 4px 10px;
-    border: none;
-    border-radius: 6px;
-    background: var(--accent);
-    color: var(--bg-primary);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .save-template-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .save-template-cancel {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-    padding: 2px 4px;
-  }
-  .save-template-cancel:hover {
-    color: var(--text-primary);
   }
 
   /* Empty state hint for provider switch shortcut */
