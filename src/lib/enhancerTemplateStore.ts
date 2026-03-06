@@ -20,11 +20,11 @@ async function getStore(): Promise<Store> {
 export const DEFAULT_ENHANCER_TEMPLATES = [
   {
     name: "Developer Prompt Optimizer",
-    text: `Take the raw dictated text and transform it into a clear, well-structured developer prompt. Fix grammar, remove filler words, and organize the intent into actionable instructions. Preserve all technical terms, code references, and specific requirements. Use concise professional language suitable for AI coding assistants.`,
+    text: `Take the raw dictated text and transform it into a clear, well-structured developer prompt. Fix grammar, remove filler words, and organize the intent into actionable instructions. Preserve all technical terms, code references, and specific requirements. Use concise professional language suitable for AI coding assistants. Leave the Language like it is no translations.`,
   },
   {
     name: "Dictation Cleanup",
-    text: `Clean up the raw dictated text without changing its meaning. Fix grammar, punctuation, and sentence structure. Remove filler words, false starts, and repetitions. Keep the original tone, intent, and all technical terms exactly as intended. Do not rephrase, summarize, or add anything new.`,
+    text: `Clean up the raw dictated text without changing its meaning. Fix grammar, punctuation, and sentence structure. Remove filler words, false starts, and repetitions. Keep the original tone, intent, and all technical terms exactly as intended. Do not rephrase, summarize, or add anything new. Leave the Language like it is no translations.`,
   },
 ];
 
