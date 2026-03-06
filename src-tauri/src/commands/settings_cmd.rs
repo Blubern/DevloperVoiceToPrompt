@@ -1,3 +1,4 @@
+use tauri::Manager;
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -19,6 +20,11 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
         let _ = autolaunch.enable();
     } else {
         let _ = autolaunch.disable();
+    }
+
+    // Apply always_on_top to the popup window if it is currently open
+    if let Some(popup) = app.get_webview_window("popup") {
+        let _ = popup.set_always_on_top(settings.always_on_top);
     }
 
     // Re-register the global shortcut with the new key combo

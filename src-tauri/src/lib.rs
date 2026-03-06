@@ -57,6 +57,10 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
 }
 
 pub fn show_settings(app: &tauri::AppHandle) {
+    // Temporarily lower the popup so the settings window is not hidden behind it
+    if let Some(popup) = app.get_webview_window("popup") {
+        let _ = popup.set_always_on_top(false);
+    }
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
@@ -171,6 +175,16 @@ pub fn run() {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
+                    // Restore popup's always_on_top from the stored setting
+                    let app = window.app_handle();
+                    if let Some(popup) = app.get_webview_window("popup") {
+                        let on_top = app
+                            .store("settings.json")
+                            .ok()
+                            .and_then(|store| store.get("always_on_top").and_then(|v| v.as_bool()))
+                            .unwrap_or(true);
+                        let _ = popup.set_always_on_top(on_top);
+                    }
                 }
             }
         })
