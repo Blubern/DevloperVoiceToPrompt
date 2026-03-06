@@ -2,6 +2,19 @@
 
 **Turn spoken thoughts into structured AI prompts — right from your desktop.**
 
+## Release
+
+[![Release](https://github.com/Blubern/DevloperVoiceToPrompt/actions/workflows/release.yml/badge.svg)](https://github.com/Blubern/DevloperVoiceToPrompt/actions/workflows/release.yml)
+
+| Platform | Download |
+| --- | --- |
+| **Windows** | [Latest `.exe` installer](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
+| **macOS** | [Latest `.dmg`](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
+
+> Browse all versions on the [Releases page](https://github.com/Blubern/DevloperVoiceToPrompt/releases).
+
+---
+
 Developers think faster than they type. Voice-to-text inside AI tools behaves differently everywhere, and some tools have no voice support at all. Typing prompts often feels like coding without IntelliSense.
 
 Developer Voice to Prompt is a lightweight tray application that lets you **speak naturally, edit live, structure your thoughts, and generate optimized prompts** for any AI tool.
