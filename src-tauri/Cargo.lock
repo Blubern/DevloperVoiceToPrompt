@@ -10,6 +10,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures-util",
+ "objc2",
  "objc2-app-kit",
  "reqwest",
  "rmcp",

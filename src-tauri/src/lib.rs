@@ -166,6 +166,7 @@ pub fn run() {
         .manage(whisper::WhisperState::default())
         .manage(copilot::CopilotState::default())
         .manage(mcp::McpState::default())
+        .manage(mcp::McpServerHandle::default())
         .invoke_handler(tauri::generate_handler![
             commands::toggle_popup,
             commands::hide_popup,
@@ -188,6 +189,7 @@ pub fn run() {
             commands::get_log_path,
             commands::mcp_submit_result,
             commands::mcp_cancel,
+            commands::is_mcp_running,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app

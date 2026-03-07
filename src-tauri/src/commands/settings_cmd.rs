@@ -12,6 +12,12 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
     tracing::info!(provider = %settings.speech_provider, "Saving settings");
+
+    // Snapshot old MCP settings before persisting so we can detect changes
+    let old_settings = settings::load_settings(&app);
+    let mcp_changed = old_settings.mcp_enabled != settings.mcp_enabled
+        || old_settings.mcp_port != settings.mcp_port;
+
     settings::save_settings(&app, &settings)?;
 
     // Apply autostart setting
@@ -29,6 +35,15 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
 
     // Apply macOS Dock visibility
     super::window::set_dock_visibility(settings.show_in_dock);
+
+    // Apply MCP server changes (start/stop without requiring app restart)
+    if mcp_changed {
+        let server_handle = app.state::<crate::mcp::McpServerHandle>();
+        crate::mcp::stop_mcp_server(&server_handle);
+        if settings.mcp_enabled {
+            crate::mcp::start_mcp_server(app.clone(), settings.mcp_port);
+        }
+    }
 
     // Re-register the global shortcut with the new key combo
     let gs = app.global_shortcut();

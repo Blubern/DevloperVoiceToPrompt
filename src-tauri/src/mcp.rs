@@ -10,7 +10,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 // ---------------------------------------------------------------------------
 // Shared state: one pending request at a time
@@ -23,6 +23,13 @@ pub struct PendingRequest {
 
 #[derive(Debug, Default, Clone)]
 pub struct McpState(pub Arc<Mutex<Option<PendingRequest>>>);
+
+// ---------------------------------------------------------------------------
+// Server lifecycle handle: holds a shutdown signal for the running server
+// ---------------------------------------------------------------------------
+
+#[derive(Default, Clone)]
+pub struct McpServerHandle(pub Arc<Mutex<Option<watch::Sender<bool>>>>);
 
 // ---------------------------------------------------------------------------
 // Tauri event payload emitted to the popup
@@ -144,14 +151,34 @@ impl ServerHandler for VoiceToTextServer {
 }
 
 // ---------------------------------------------------------------------------
-// Server startup
+// Server startup / shutdown
 // ---------------------------------------------------------------------------
+
+pub fn stop_mcp_server(handle: &McpServerHandle) {
+    let mut guard = handle.0.lock().unwrap();
+    if let Some(tx) = guard.take() {
+        let _ = tx.send(true);
+        tracing::info!("MCP server shutdown signal sent");
+    }
+}
 
 pub fn start_mcp_server(app: AppHandle, port: u16) {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService,
         session::local::LocalSessionManager,
     };
+
+    let server_handle = app.state::<McpServerHandle>();
+
+    // Stop any existing server first
+    stop_mcp_server(&server_handle);
+
+    // Create shutdown channel
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    {
+        let mut guard = server_handle.0.lock().unwrap();
+        *guard = Some(shutdown_tx);
+    }
 
     tauri::async_runtime::spawn(async move {
         let addr = format!("127.0.0.1:{port}");
@@ -177,8 +204,18 @@ pub fn start_mcp_server(app: AppHandle, port: u16) {
             );
 
         let router = axum::Router::new().nest_service("/mcp", service);
-        if let Err(e) = axum::serve(listener, router).await {
+
+        let shutdown_signal = async move {
+            let _ = shutdown_rx.wait_for(|&v| v).await;
+        };
+
+        if let Err(e) = axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown_signal)
+            .await
+        {
             tracing::error!("MCP server stopped: {e}");
+        } else {
+            tracing::info!("MCP server shut down gracefully");
         }
     });
 }

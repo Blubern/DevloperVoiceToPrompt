@@ -21,6 +21,7 @@
     mcpPort = $bindable(),
     showInDock = $bindable(),
     isMac = false,
+    mcpRunning = false,
   }: {
     theme: string;
     autostartEnabled: boolean;
@@ -40,6 +41,7 @@
     mcpPort: number;
     showInDock: boolean;
     isMac: boolean;
+    mcpRunning: boolean;
   } = $props();
 
   const FONT_OPTIONS = [
@@ -251,15 +253,18 @@
         <div class="toggle-row">
           <input type="checkbox" bind:checked={mcpEnabled} class="toggle-checkbox" />
           <span class="toggle-label">{mcpEnabled ? 'On' : 'Off'}</span>
+          <span class="mcp-status-badge" class:running={mcpRunning} class:stopped={!mcpRunning}>
+            {mcpRunning ? 'Running' : 'Stopped'}
+          </span>
         </div>
       </label>
-      <span class="hint">Expose a local MCP (Model Context Protocol) server so AI tools like GitHub Copilot can request voice input. Requires an app restart to take effect.</span>
+      <span class="hint">Expose a local MCP (Model Context Protocol) server so AI tools like GitHub Copilot can request voice input. Takes effect when you save settings.</span>
     </div>
     {#if mcpEnabled}
       <div class="field">
         <label class="label" for="mcp-port">Port</label>
         <input id="mcp-port" type="number" min="1024" max="65535" bind:value={mcpPort} style="width: 100px;" />
-        <span class="hint">Default: 31337. Changes require an app restart.</span>
+        <span class="hint">Default: 31337. Changes take effect when you save settings.</span>
       </div>
       <div class="field">
         <span class="label">Server Endpoint</span>
@@ -267,6 +272,11 @@
           <code class="mcp-url">http://localhost:{mcpPort}/mcp</code>
         </div>
         <span class="hint">Add this URL to your AI tool's MCP server configuration.</span>
+      </div>
+      <div class="field">
+        <span class="label">Transport</span>
+        <span class="mcp-transport-info">Streamable HTTP (HTTP + SSE)</span>
+        <span class="hint">Uses the MCP Streamable HTTP transport. Clients connect via HTTP POST for requests and receive responses via Server-Sent Events (SSE).</span>
       </div>
       <div class="field">
         <span class="label">VS Code Configuration</span>
@@ -328,6 +338,36 @@
     font-size: 12px;
     color: var(--text-primary);
     user-select: all;
+  }
+
+  .mcp-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
+  .mcp-status-badge.running {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+  }
+
+  .mcp-status-badge.stopped {
+    background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
+    color: var(--text-secondary);
+  }
+
+  .mcp-transport-info {
+    display: inline-block;
+    padding: 4px 8px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-primary);
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   }
 
   .mcp-config-block {

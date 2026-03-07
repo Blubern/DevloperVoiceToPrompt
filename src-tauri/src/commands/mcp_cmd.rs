@@ -1,5 +1,5 @@
-use tauri::State;
-use crate::mcp::McpState;
+use tauri::{Manager, State};
+use crate::mcp::{McpState, McpServerHandle};
 
 /// Called by the frontend when the user clicks "Submit to MCP".
 /// Resolves the pending MCP tool call with the dictated text.
@@ -23,4 +23,12 @@ pub fn mcp_cancel(state: State<McpState>) -> Result<(), String> {
         let _ = pending.tx.send(Err("cancelled".into()));
     }
     Ok(())
+}
+
+/// Check whether the MCP server is currently running (has an active shutdown handle).
+#[tauri::command]
+pub fn is_mcp_running(app: tauri::AppHandle) -> bool {
+    let handle = app.state::<McpServerHandle>();
+    let guard = handle.0.lock().unwrap();
+    guard.is_some()
 }

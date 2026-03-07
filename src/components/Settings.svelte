@@ -1,5 +1,6 @@
 <script lang="ts">
   import { emit } from "@tauri-apps/api/event";
+  import { invoke } from "@tauri-apps/api/core";
   import {
     type AppSettings,
     DEFAULT_SETTINGS,
@@ -72,6 +73,7 @@
   let audioDevices = $state<AudioDevice[]>([]);
   let micWarning = $state("");
   let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "copilot" | "logs">("general");
+  let mcpRunning = $state(false);
 
   // Sync local state from initialSettings prop
   $effect(() => {
@@ -111,6 +113,8 @@
     promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
     popupFont = s.popup_font ?? DEFAULT_SETTINGS.popup_font;
     openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
+    mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
+    mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
     showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
@@ -218,6 +222,14 @@
     document.documentElement.dataset.theme = theme;
   }
 
+  async function refreshMcpStatus() {
+    try {
+      mcpRunning = await invoke<boolean>("is_mcp_running");
+    } catch {
+      mcpRunning = false;
+    }
+  }
+
   onMount(async () => {
     // Detect macOS for platform-specific UI
     isMac = navigator.userAgent.includes("Macintosh") || navigator.platform === "MacIntel";
@@ -225,9 +237,24 @@
     const result = await enumerateAudioDevices();
     audioDevices = result.devices;
     micWarning = result.error ?? "";
+
+    await refreshMcpStatus();
   });
 
   async function handleSave() {
+    // Warn if MCP server is being disabled or port changed (drops active connections)
+    if (initialSettings) {
+      const wasMcpOn = initialSettings.mcp_enabled;
+      const isDisabling = wasMcpOn && !mcpEnabled;
+      const isPortChanging = wasMcpOn && mcpEnabled && mcpPort !== initialSettings.mcp_port;
+      if (isDisabling || isPortChanging) {
+        const msg = isDisabling
+          ? "Disabling the MCP server will drop all active connections. AI tools using this server will need to reconnect. Continue?"
+          : "Changing the MCP server port will drop all active connections. AI tools using this server will need to reconnect with the new port. Continue?";
+        if (!confirm(msg)) return;
+      }
+    }
+
     saving = true;
     error = "";
     success = false;
@@ -236,6 +263,8 @@
       success = true;
       onSaved?.();
       await emit(EVENT_SETTINGS_UPDATED);
+      // Refresh MCP status after save (server may have started/stopped)
+      setTimeout(refreshMcpStatus, 500);
       setTimeout(() => (success = false), 2000);
     } catch (e) {
       error = String(e);
@@ -275,7 +304,7 @@
           bind:popupVoiceShortcut bind:providerSwitchShortcut bind:alwaysOnTop
           bind:autoStartRecording bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds
           bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart
-          bind:mcpEnabled bind:mcpPort bind:showInDock {isMac} />
+          bind:mcpEnabled bind:mcpPort bind:showInDock {isMac} {mcpRunning} />
       {:else if activeTab === 'speech'}
         <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
           bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation
