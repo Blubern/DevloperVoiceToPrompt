@@ -65,6 +65,7 @@
   let mcpPort = $state(DEFAULT_SETTINGS.mcp_port);
   let showInDock = $state(DEFAULT_SETTINGS.show_in_dock);
   let isMac = $state(false);
+  let isWindows = $state(false);
 
   // Shell-only state
   let saving = $state(false);
@@ -231,8 +232,9 @@
   }
 
   onMount(async () => {
-    // Detect macOS for platform-specific UI
+    // Detect platform for platform-specific UI
     isMac = navigator.userAgent.includes("Macintosh") || navigator.platform === "MacIntel";
+    isWindows = navigator.userAgent.includes("Windows");
 
     const result = await enumerateAudioDevices();
     audioDevices = result.devices;
@@ -304,7 +306,7 @@
           bind:popupVoiceShortcut bind:providerSwitchShortcut bind:alwaysOnTop
           bind:autoStartRecording bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds
           bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart
-          bind:mcpEnabled bind:mcpPort bind:showInDock {isMac} {mcpRunning} />
+          bind:mcpEnabled bind:mcpPort bind:showInDock {isMac} {isWindows} {mcpRunning} />
       {:else if activeTab === 'speech'}
         <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
           bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation

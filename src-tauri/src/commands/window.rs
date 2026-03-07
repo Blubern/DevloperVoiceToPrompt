@@ -17,26 +17,34 @@ pub fn show_settings(app: tauri::AppHandle) {
     crate::show_settings(&app);
 }
 
-/// Toggle macOS Dock icon visibility at runtime.
-/// On non-macOS platforms this is a no-op.
-pub fn set_dock_visibility(visible: bool) {
+/// Toggle Dock (macOS) or Taskbar (Windows) icon visibility at runtime.
+/// On other platforms this is a no-op.
+pub fn set_dock_visibility(app: &tauri::AppHandle, visible: bool) {
     #[cfg(target_os = "macos")]
     {
+        let _ = app;
         use objc2::MainThreadMarker;
         use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
         unsafe {
             let mtm = MainThreadMarker::new_unchecked();
-            let app = NSApplication::sharedApplication(mtm);
+            let ns_app = NSApplication::sharedApplication(mtm);
             let policy = if visible {
                 NSApplicationActivationPolicy::Regular
             } else {
                 NSApplicationActivationPolicy::Accessory
             };
-            app.setActivationPolicy(policy);
+            ns_app.setActivationPolicy(policy);
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = win.set_skip_taskbar(!visible);
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
         let _ = visible;
     }
 }

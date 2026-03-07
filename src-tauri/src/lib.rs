@@ -232,8 +232,8 @@ pub fn run() {
                 mcp::start_mcp_server(app.handle().clone(), user_settings.mcp_port);
             }
 
-            // Apply macOS Dock visibility from saved settings
-            commands::set_dock_visibility(user_settings.show_in_dock);
+            // Apply Dock (macOS) / Taskbar (Windows) visibility from saved settings
+            commands::set_dock_visibility(app.handle(), user_settings.show_in_dock);
 
             // Open popup on startup if enabled in settings
             if user_settings.open_popup_on_start {

@@ -21,6 +21,7 @@
     mcpPort = $bindable(),
     showInDock = $bindable(),
     isMac = false,
+    isWindows = false,
     mcpRunning = false,
   }: {
     theme: string;
@@ -41,6 +42,7 @@
     mcpPort: number;
     showInDock: boolean;
     isMac: boolean;
+    isWindows: boolean;
     mcpRunning: boolean;
   } = $props();
 
@@ -119,14 +121,14 @@
       <span class="hint">Automatically start the app when you log in to your computer.</span>
     </label>
 
-    {#if isMac}
+    {#if isMac || isWindows}
     <label class="field toggle-field">
-      <span class="label">Show in Dock</span>
+      <span class="label">{isMac ? 'Show in Dock' : 'Show in Taskbar'}</span>
       <div class="toggle-row">
         <input type="checkbox" bind:checked={showInDock} class="toggle-checkbox" />
         <span class="toggle-label">{showInDock ? 'On' : 'Off'}</span>
       </div>
-      <span class="hint">Show the app icon in the macOS Dock. When off, the app is only accessible from the system tray.</span>
+      <span class="hint">{isMac ? 'Show the app icon in the macOS Dock.' : 'Show the app icon in the Windows Taskbar.'} When off, the app is only accessible from the system tray.</span>
     </label>
     {/if}
 

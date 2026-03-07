@@ -33,8 +33,8 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
         let _ = popup.set_always_on_top(settings.always_on_top);
     }
 
-    // Apply macOS Dock visibility
-    super::window::set_dock_visibility(settings.show_in_dock);
+    // Apply Dock (macOS) / Taskbar (Windows) visibility
+    super::window::set_dock_visibility(&app, settings.show_in_dock);
 
     // Apply MCP server changes (start/stop without requiring app restart)
     if mcp_changed {
