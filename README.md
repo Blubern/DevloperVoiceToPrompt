@@ -1,102 +1,141 @@
 # Developer Voice to Prompt
 
-**Turn spoken thoughts into structured AI prompts — right from your desktop.**
+Turn spoken developer thoughts into structured prompts, reusable templates, and voice input for MCP-enabled tools.
 
-Developers think faster than they type. Voice-to-text inside AI tools behaves differently everywhere, and some tools have no voice support at all. Typing prompts often feels like coding without IntelliSense.
+Developer Voice to Prompt is a desktop tray app for developers who think faster than they type. It gives you one consistent voice workflow across AI tools: capture an idea, edit it live, drop it into a reusable prompt template, optionally enhance it, and send it wherever you work.
 
-Developer Voice to Prompt is a lightweight tray application that lets you **speak naturally, edit live, structure your thoughts, and generate optimized prompts** for any AI tool.
+The base experience works immediately with Web Speech. No developer account, no API key, and no subscription are required to start dictating.
 
-## The Problem
+![Developer Voice to Prompt overview](doc/images/OverviewHowItWorkInfo.png)
 
-Every AI tool handles text input differently. Some have built-in voice. Most don't. And when they do, the experience is inconsistent — different accuracy, different languages, different behavior.
+## Why This Exists
 
-Meanwhile, developers are spending more time than ever writing prompts. Typing them out manually is slow, repetitive, and breaks the flow of thinking.
+Prompting is now part of daily development work, but the input experience is fragmented.
 
-**There's IntelliSense for code. There should be IntelliSense for prompting.**
-> **Vision**
->
-> Bring IntelliSense-level speed and clarity to prompting—so developers can capture ideas, structure context, and communicate with AI at the speed of thought.
----
+- Some AI tools have voice input.
+- Many do not.
+- Some workflows need reusable prompt structure, exact file names, or tool names.
+- Switching between dictation tools, editors, and AI clients breaks flow.
 
-## How Developer Voice to Prompt Solves This
+Developer Voice to Prompt gives you a single voice-first workflow that stays useful even when you switch models, IDEs, or AI tools.
 
-This tool gives developers a **consistent, voice-first workflow** that works independently of any AI tool.
+## Built For Developers
 
-Speak your idea. Edit it live. Load a **custom template** that already contains your context and format, then move the cursor to the parts you want to change and **fill them in with your voice**.
+This app is aimed at developers who want to:
 
-This makes it easy to reuse the same structure while quickly adapting it to a **specific scenario**—for example adding a new feature, referencing exact files, or naming tools the AI should call.
+- capture implementation ideas before they disappear
+- fill reusable prompt templates with exact file names, modules, or tool names
+- refine bug reports, refactoring requests, and architecture prompts by voice
+- keep a reusable prompt history outside any one AI product
+- provide voice input to MCP-aware tools without depending on their built-in dictation UX
 
-All prompts are also stored in a **history**, independent of the AI tool you use. This gives you one place to review, reuse, or refine prompts across different tools.
+## Core Workflows
 
-No more switching between voice tools.  
-No more retyping the same things.  
-More context + more specificity ⇒ better results :rocket:
+### Speak, Edit, Continue
 
-![Developer Voice to Prompt — Overview](doc/images/OverviewHowItWorkInfo.png)
+Start speaking and the transcript appears live. If you notice something wrong, edit the text directly and continue speaking without restarting the session.
 
----
-
-## Feature Highlights
-
-### Speak and Edit Live
-
-<a href="doc/images/MainWindow.png"><img src="doc/images/MainWindow.png" alt="Dictation popup — idle state" width="600"></a>
-
-Start speaking — the transcript appears in real time. Pause, edit the text, then continue speaking. The transcript picks up right where you left off.
-
-No need to stop the microphone. No need to restart. Your edits and new speech merge seamlessly.
-
+<a href="doc/images/MainWindow.png"><img src="doc/images/MainWindow.png" alt="Dictation popup idle state" width="600"></a>
 <a href="doc/images/MainWindowRecording.png"><img src="doc/images/MainWindowRecording.png" alt="Live dictation with real-time transcript" width="600"></a>
 
----
+### Reuse Prompt Templates
 
-### Prompt Templates
+Templates let you keep the parts that should stay stable while changing only the details that matter for the current task.
 
-Save reusable context blocks as templates and insert them with one click. This eliminates the need to rewrite the same setup instructions for every prompt.
+Typical template fields developers fill in by voice:
 
-Templates are useful for architecture reviews, bug analysis, refactoring instructions, agent workflows, or any prompt structure you use repeatedly.
-
-The key advantage is that templates can be quickly **edited via voice** before sending them to your AI tool. Instead of rewriting the whole prompt, you simply add or adjust details for the current situation.
-
-Typical things you may customize inside a template include:
-- File names
-- Project names
-- Specific components or modules
+- file names
+- module names
+- affected components
 - MCP tool names
-- Skill or agent names the AI should use
+- agent or skill names
+- acceptance criteria
 
-This is especially helpful because many AI tools search your codebase. Providing **exact file names, tools, or skills** increases the chance that the AI targets the correct parts of your project.
+This is especially useful when the target AI tool searches your codebase and performs better with exact names.
 
-Voice editing is intended for **quick additions or adjustments**, not for rebuilding the template. You can jump to specific sections with the cursor and dictate the missing details directly into the template.
+<a href="doc/images/MainWindowTemplates1.png"><img src="doc/images/MainWindowTemplates1.png" alt="Template list" width="600"></a>
+<a href="doc/images/MainWindowTemplates2.png"><img src="doc/images/MainWindowTemplates2.png" alt="Template editing" width="600"></a>
 
-<a href="doc/images/MainWindowTemplates1.png"><img src="doc/images/MainWindowTemplates1.png" alt="Templates panel with searchable template list" width="600"></a>
-<a href="doc/images/MainWindowTemplates2.png"><img src="doc/images/MainWindowTemplates2.png" alt="Templates while edit or filled out via voice" width="600"></a>
+### Keep Your Prompt History
 
----
+Every prompt is stored locally so you can search, reuse, refine, or delete it later. That history belongs to your workflow, not to a single AI product.
 
-### AI-Powered Prompt Enhancement
+<a href="doc/images/MainWindowHistory.png"><img src="doc/images/MainWindowHistory.png" alt="Prompt history panel" width="600"></a>
 
-Connect to **GitHub Copilot** and transform raw spoken thoughts into structured, optimized prompts.
+### Enhance Rough Dictation Into Better Prompts
 
-Choose from available models (GPT-4o, Claude, and more). Select an enhancer template that defines how your text should be restructured. One shortcut turns rough dictation into a clean, ready-to-use prompt.
+If you connect GitHub Copilot, raw dictation can be transformed into a cleaner, more structured prompt based on your own enhancement instructions.
 
-Multi-level undo lets you step back through every enhancement.
+Use this when you want to turn a rough stream of thoughts into something closer to:
 
-<a href="doc/images/SettingsGithubCopilot.png"><img src="doc/images/SettingsGithubCopilot.png" alt="GitHub Copilot integration — model selection and authentication" width="600"></a>
+- a bug investigation brief
+- a refactoring request
+- a feature implementation plan
+- an agent instruction block
+- a review or debugging prompt
 
----
+<a href="doc/images/SettingsGithubCopilot.png"><img src="doc/images/SettingsGithubCopilot.png" alt="GitHub Copilot settings" width="600"></a>
 
-### Prompt History
+## MCP Server For Voice Input
 
-Every prompt is saved locally. Browse, search, reuse, or delete past transcriptions from a slide-out history panel — directly inside the dictation popup.
+Developer Voice to Prompt can also run as a local MCP server.
 
-<a href="doc/images/MainWindowHistory.png"><img src="doc/images/MainWindowHistory.png" alt="History panel with search and quick actions" width="600"></a>
+That means MCP-capable tools can ask this app for voice input, open the popup, show the reason they need input, and wait for you to speak or type the answer. This is useful when your AI client supports MCP tools but has weak or no native dictation support.
 
----
+### What It Does
 
-### Three Speech Engines
+- runs a local HTTP MCP server on `localhost`
+- exposes a `voice_to_text` tool
+- opens the popup when a client requests voice input
+- shows the request reason in the popup so you know what the AI is asking for
+- optionally pre-fills context text that you can edit before submitting
+- returns the final text back to the calling MCP client
 
-Choose the engine that fits your workflow:
+### Typical Use Cases
+
+- answer an agent's follow-up question without typing
+- dictate missing implementation details into an MCP-driven workflow
+- speak a bug reproduction description when the agent asks for clarification
+- capture architecture context for an AI tool that can call MCP tools but has no voice UI
+
+### Setup
+
+1. Open Settings.
+2. Enable the MCP server in General.
+3. Choose the local port.
+4. Save settings.
+5. Add the local server URL to your MCP-capable client.
+
+The server is disabled by default until you enable it and save.
+
+<a href="doc/images/McpSettings.png"><img src="doc/images/McpSettings.png" alt="MCP settings" width="700"></a>
+
+The app exposes a local `voice_to_text` MCP tool that other tools can call.
+
+<a href="doc/images/McpTools.png"><img src="doc/images/McpTools.png" alt="MCP tools" width="700"></a>
+
+One example is registering the local server in GitHub Copilot, but the feature is not limited to Copilot. Any same-machine MCP client that can talk to a local HTTP MCP server can use it.
+
+<a href="doc/images/GithubCopilotAddMcpServer.png"><img src="doc/images/GithubCopilotAddMcpServer.png" alt="Add MCP server in GitHub Copilot" width="700"></a>
+
+Sample with GitHub Copilot: when Copilot calls the tool, the popup shows the request context so you can answer with voice or typed edits and send the result back to the caller.
+
+<a href="doc/images/GithubCopilotaAskMeSomethingVoiceInput.png"><img src="doc/images/GithubCopilotaAskMeSomethingVoiceInput.png" alt="GitHub Copilot requesting voice input through MCP" width="700"></a>
+
+### Current MCP Behavior
+
+These points reflect the current implementation:
+
+- local only: the server binds to `127.0.0.1`
+- one request at a time: concurrent dictation requests are rejected
+- timeout: pending requests time out after 5 minutes if nothing is submitted
+- cancel on close: closing the popup cancels the MCP request
+- configurable port: set it in Settings
+- no authentication layer: intended for trusted local workflows
+
+## Speech Engines
+
+Choose the engine that matches your workflow.
 
 | Feature | Web Speech | Azure | Whisper |
 | --- | :---: | :---: | :---: |
@@ -108,360 +147,101 @@ Choose the engine that fits your workflow:
 | Silence auto-stop | ✅ | ✅ | ✅ |
 | Microphone selection | ✅ | ✅ | ✅ |
 | Zero setup | ✅ | ❌ | ❌ |
-| Local (Offline) | :question:[^2] | ❌ | ✅ |
+| Local offline use | :question:[^2] | ❌ | ✅ |
 
-[^1]: Because Whisper does not support true realtime transcription, some latency can occur. However, you can edit the text while speaking.
-[^2]: For Web Speech the execution local or not depends on the used browser and the implementation of it ([Web Speech API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)).
+[^1]: Whisper is not true real-time transcription, so some latency can occur while speaking.
+[^2]: Web Speech can be local or cloud-backed depending on the platform WebView implementation.
 
-Switch engines instantly with a keyboard shortcut — no restart needed.
-
-Azure's multi-language recognition is especially useful when your domain terminology, codebase naming, or technical vocabulary comes from a different language than you're speaking.
+Azure is especially useful when your spoken language and your technical vocabulary do not match cleanly, for example when you speak one language but say English framework names, class names, or code terms.
 
 | Switch language |
 | :---: |
-| <a href="doc/images/MainWindowEasyLanguageSwitch.png"><img src="doc/images/MainWindowEasyLanguageSwitch.png" alt="Language switching — before" width="380"></a> <a href="doc/images/MainWindowEasyLanguageSwitch1.png"><img src="doc/images/MainWindowEasyLanguageSwitch1.png" alt="Language switching — after" width="380"></a> |
-
----
+| <a href="doc/images/MainWindowEasyLanguageSwitch.png"><img src="doc/images/MainWindowEasyLanguageSwitch.png" alt="Language switch before" width="380"></a> <a href="doc/images/MainWindowEasyLanguageSwitch1.png"><img src="doc/images/MainWindowEasyLanguageSwitch1.png" alt="Language switch after" width="380"></a> |
 
 ## Typical Workflow
 
-1. Press your global shortcut to open the popup.
-2. *(Optional)* Select a template to set context and structure (Guidelines / Samples / Architecture / File Names).
-3. Start speaking your idea.  
-   - Pause and edit the transcript if needed.  
-   - Continue speaking — the text will append seamlessly.
-4. Copy and paste the text into your AI tool.
-5. *(Optional)* Choose a model and your personal Prompt Enhancement Prompt.  
-   - Press the enhance shortcut — Copilot will restructure your prompt based on your instructions.  
-   - Use the optimized prompt and copy and paste it into your AI tool.  
-   - An undo feature is also available.
-
+1. Open the popup with your global shortcut.
+2. Optionally load a template.
+3. Speak your prompt, idea, or answer.
+4. Edit while speaking if needed.
+5. Copy the result into your AI tool, or submit it back to an MCP client.
+6. Optionally run prompt enhancement if you use Copilot.
 
 ## Requirements
 
-> **The app works out of the box with Web Speech** — no accounts, no subscriptions, no API keys.
-> Azure and Copilot are optional upgrades that unlock additional capabilities.
+### What Works Immediately
 
-### Speech Providers
+The app works out of the box with Web Speech.
 
-| Provider | What you need | What you get |
+- no developer account required
+- no API key required
+- no paid plan required
+
+That makes it the fastest way to start using the app.
+
+### Optional Upgrades
+
+| Capability | What you need | Why you would use it |
 | --- | --- | --- |
-| **Web Speech API** | Nothing — built into the WebView | Real-time dictation with zero setup |
-| **Azure Speech Services** | Subscription key + region — [More informations here](https://docs.azure.cn/en-us/ai-services/speech-service/speech-to-text#real-time-transcription) (free tier available) | High accuracy, auto-punctuation, multi-language mixing |
-| **Whisper (local)** | Download a model from Settings → Speech | Fully offline, complete privacy |
+| Azure Speech | Azure Speech key and region, free tier available | Better speech recognition, punctuation, phrase boosting, multi-language scenarios |
+| Whisper local | Download a model in Settings | Local offline transcription and privacy |
+| Prompt enhancement | GitHub Copilot CLI plus a Copilot plan, including free tier options | Turn rough dictation into cleaner prompts |
+| MCP voice input | An MCP-capable client running on the same machine | Let AI tools request voice input through the popup |
 
-### AI Prompt Enhancement
+Without Azure, Whisper, Copilot, or MCP, the app is still useful as a standalone dictation and prompt-template tool.
 
-| Dependency | Details |
-| --- | --- |
-| **GitHub Copilot CLI** | Must be installed and authenticated — [install guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli) |
-| **GitHub Copilot subscription** | Any plan works, including the **free tier** — [sign up](https://github.com/features/copilot/plans) |
-
-Without Copilot, the app still provides full speech-to-text with templates and history. Copilot enables the **Enhance Prompt** feature that transforms raw dictation into structured, AI-optimized prompts.
-
----
-
-## Release
+## Downloads
 
 [![Release](https://github.com/Blubern/DevloperVoiceToPrompt/actions/workflows/release.yml/badge.svg)](https://github.com/Blubern/DevloperVoiceToPrompt/actions/workflows/release.yml)
 
 | Platform | Download |
 | --- | --- |
-| **Windows** | [Latest `.exe` installer](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
-| **macOS** | [Latest `.dmg`](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
+| Windows | [Latest installer](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
+| macOS | [Latest DMG](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
 
-> Browse all versions on the [Releases page](https://github.com/Blubern/DevloperVoiceToPrompt/releases).
+All releases are listed on the [Releases page](https://github.com/Blubern/DevloperVoiceToPrompt/releases).
 
-### macOS — "App is damaged" warning
+## macOS Install Note
 
-macOS Gatekeeper may block the app because it is not yet code-signed or notarized by Apple. If you see *"Developer Voice to Prompt is damaged and can't be opened"* after downloading the DMG, remove the quarantine attribute:
+If macOS shows a message like `Developer Voice to Prompt is damaged and can't be opened`, that is Gatekeeper blocking an app that is not yet code-signed and notarized by Apple.
+
+Use this sequence:
+
+1. Download the DMG.
+2. Drag the app into Applications.
+3. Try to open it once.
+4. If macOS blocks it, run:
 
 ```bash
 xattr -cr "/Applications/Developer Voice to Prompt.app"
 ```
 
-If you opened the app directly from the DMG without copying it to Applications first, point the command at the mounted path instead:
+If you have not copied the app to Applications yet and are trying to launch it directly from the mounted DMG, use the mounted path instead:
 
 ```bash
 xattr -cr "/Volumes/Developer Voice to Prompt/Developer Voice to Prompt.app"
 ```
 
-This is a one-time step per download. Code signing and notarization are planned for a future release.
-
----
-
-# Documentation
-
-Everything below is technical reference for developers who want to understand, build, or contribute to the project.
-
----
-
-## Settings
-
-| General | Speech | Phrases |
-| :---: | :---: | :---: |
-| <a href="doc/images/SettingsGeneral.png"><img src="doc/images/SettingsGeneral.png" alt="General settings" width="250"></a> | <a href="doc/images/SettingsSpeech.png"><img src="doc/images/SettingsSpeech.png" alt="Speech provider settings" width="250"></a> | <a href="doc/images/SettingsPhrases.png"><img src="doc/images/SettingsPhrases.png" alt="Custom phrases" width="250"></a> |
-
-| Templates | History | Usage |
-| :---: | :---: | :---: |
-| <a href="doc/images/SettingsTemplates.png"><img src="doc/images/SettingsTemplates.png" alt="Template management" width="250"></a> | <a href="doc/images/SettingsHistory.png"><img src="doc/images/SettingsHistory.png" alt="History settings" width="250"></a> | <a href="doc/images/SettingsUsage.png"><img src="doc/images/SettingsUsage.png" alt="Usage statistics" width="250"></a> |
-
----
-
-## Features
-
-### Speech Recognition
-
-- **Three providers**: Web Speech API, Azure Cognitive Services, local Whisper (via whisper-rs)
-- **Real-time transcription** with interim and final results
-- **Editable while speaking** — edit the transcript mid-dictation without losing speech input
-- **Multi-language support** — 35+ languages; Azure supports mixing languages in a single sentence
-- **Auto-punctuation** — Azure automatically adds punctuation and capitalization
-- **Whisper model management** — download, delete, and select model sizes (tiny → large)
-- **Silence auto-stop** — configurable (10–300 seconds) to automatically pause recording
-- **Max recording duration** — hard limit (30–600 seconds) to prevent runaway recordings
-- **Audio level meter** — real-time visual feedback of microphone input level
-- **Custom phrase recognition** — add technical terms, library names, and domain vocabulary to boost accuracy (Azure)
-- **Instant provider switching** — cycle between engines with a keyboard shortcut
-- **Microphone selection** — choose and switch input devices without restarting
-
-### Prompt Workflows
-
-- **Prompt templates** — save and insert reusable context blocks (searchable panel)
-- **Prompt enhancer templates** — define how Copilot should restructure your spoken text
-- **GitHub Copilot integration** — transform raw dictation into structured prompts using available models
-- **Model selection** — choose from available Copilot models with tier indicators
-- **Multi-level enhancement undo** — step back through every Copilot enhancement (Ctrl+Z)
-- **Quick-save as template** — save current text as a new template directly from the popup
-
-### History and Usage
-
-- **Transcription history** — all prompts stored locally with configurable max entries
-- **History panel** — slide-out sidebar with full-text search, insert, copy, and delete
-- **Usage statistics** — per-provider tracking (today, this week, last 30 days)
-- **Formatted duration display** — human-readable time breakdowns
-
-### Application
-
-- **System tray** — runs in the background, always ready
-- **Global keyboard shortcut** — toggle the popup from any application
-- **Always-on-top popup** — floating window that stays above other apps
-- **Saved window geometry** — popup size and position remembered across sessions
-- **Auto-start recording** — optionally begin recording when the popup opens
-- **Start on login** — launch automatically with Windows
-- **Dark / Light theme** — Catppuccin Mocha and Latte palettes
-- **8 settings tabs** — General, Speech, Phrases, Templates, History, Usage, Copilot, Logs
-- **Application logs** — searchable, filterable log viewer with 7-day auto-cleanup
-- **Persistent settings** — all configuration survives restarts
-
----
+Then open the app again. This is a one-time step for that downloaded copy.
 
 ## Keyboard Shortcuts
 
-All shortcuts are customizable in Settings → General (or Copilot tab for Enhance Prompt).
+All shortcuts are customizable in Settings.
 
-| Action | Windows | macOS | Scope |
-| --- | --- | --- | --- |
-| **Show / Hide Popup** | `Ctrl+Alt+V` | `Cmd+Alt+V` | Global (works from any app) |
-| **Start / Stop Voice** | `Ctrl+Shift+M` | `Cmd+Shift+M` | In popup |
-| **Copy & Close** | `Ctrl+Enter` | `Cmd+Enter` | In popup |
-| **Switch Speech Provider** | `Ctrl+Shift+P` | `Cmd+Shift+P` | In popup |
-| **Enhance Prompt (AI)** | `Ctrl+Shift+E` | `Cmd+Shift+E` | In popup (requires Copilot) |
-| **Dismiss** | `Esc` | `Esc` | In popup |
+| Action | Windows | macOS |
+| --- | --- | --- |
+| Show or hide popup | `Ctrl+Alt+V` | `Cmd+Alt+V` |
+| Start or stop voice | `Ctrl+Shift+M` | `Cmd+Shift+M` |
+| Copy and close | `Ctrl+Enter` | `Cmd+Enter` |
+| Switch speech provider | `Ctrl+Shift+P` | `Cmd+Shift+P` |
+| Enhance prompt | `Ctrl+Shift+E` | `Cmd+Shift+E` |
+| Dismiss | `Esc` | `Esc` |
 
-Press **?** in the popup to see active shortcuts at any time.
+Press `?` in the popup to see active shortcuts.
 
----
+## Developer Docs
 
-## Tech Stack
-
-### Frontend
-
-- **[Svelte 5](https://svelte.dev/)** — UI framework using runes (`$state`, `$derived`, `$effect`)
-- **[Vite 6](https://vite.dev/)** — Build tool and dev server
-- **[TypeScript 5](https://www.typescriptlang.org/)** — Type safety
-
-### Backend
-
-- **[Tauri 2](https://v2.tauri.app/)** — Cross-platform desktop framework (Rust core, WebView frontend)
-- **[Rust](https://www.rust-lang.org/)** — Backend logic, IPC commands, system tray, global shortcuts
-
-### Libraries
-
-#### JavaScript / TypeScript
-
-| Package | Purpose |
-| --- | --- |
-| `@github/copilot-sdk` | GitHub Copilot integration — prompt enhancement via available models |
-| `microsoft-cognitiveservices-speech-sdk` | Azure Speech Services — real-time cloud speech recognition |
-| `@tauri-apps/api` | Tauri frontend API (IPC, windows, events) |
-| `@tauri-apps/plugin-clipboard-manager` | System clipboard access |
-| `@tauri-apps/plugin-global-shortcut` | Global keyboard shortcut registration |
-| `@tauri-apps/plugin-store` | Persistent key-value settings storage |
-| `@tauri-apps/plugin-process` | Process lifecycle management |
-
-#### Rust (Cargo)
-
-| Crate | Purpose |
-| --- | --- |
-| `tauri` | Core framework (tray-icon, image-png features) |
-| `tauri-plugin-global-shortcut` | Global shortcut backend |
-| `tauri-plugin-clipboard-manager` | Clipboard backend |
-| `tauri-plugin-store` | Settings persistence (JSON file) |
-| `tauri-plugin-process` | Process management |
-| `whisper-rs` | Local Whisper speech recognition (CPU-based, via whisper.cpp) |
-| `serde` / `serde_json` | Serialization and deserialization |
-
----
-
-## Development Setup
-
-### Prerequisites
-
-| Dependency | Purpose |
-| --- | --- |
-| **Node.js** 18+ | Frontend build toolchain |
-| **Rust** toolchain (rustup, cargo) | Backend compilation |
-| **LLVM** | Required by whisper-rs for bindgen — `winget install LLVM.LLVM` |
-| **Windows**: VS Build Tools 2022+ | "Desktop development with C++" workload |
-
-### Getting Started
-
-1. **Clone the repository**
-
-   ```bash
-   git clone <repo-url>
-   cd SpeechToText
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   npm install
-   ```
-
-3. **Set build environment** (required every new terminal on Windows)
-
-   ```powershell
-   cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 && set' 2>&1 | ForEach-Object {
-       if ($_ -match "^([^=]+)=(.*)$") {
-           [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
-       }
-   }
-   $env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
-   ```
-
-4. **Run in development mode**
-
-   ```bash
-   npx tauri dev
-   ```
-
-5. **Configure** — on first launch the Settings window opens. Choose a speech provider, configure it, set languages, and optionally set a global shortcut.
-
----
-
-## Building
-
-```bash
-npx tauri build
-```
-
-The installer is output to `src-tauri/target/release/bundle/`.
-
----
-
-## Troubleshooting
-
-### `LINK : fatal error LNK1104: cannot open file 'msvcrt.lib'`
-
-This is the most common build error. It happens because Rust's `vswhere` auto-discovers Visual Studio Enterprise first, but that install often lacks the full C++ workload (no CRT libraries like `msvcrt.lib`). The linker (`link.exe`) is found, but the libraries it needs are not.
-
-**Symptoms:**
-- `cargo build` or `npx tauri dev` fails during linking
-- The error references `link.exe` under a path like `C:\Program Files\Microsoft Visual Studio\...\Enterprise\...`
-- `cargo check` succeeds (it only compiles, no linking)
-
-**Fix:** Source `vcvarsall.bat` from VS BuildTools **in the same terminal** before building:
-
-```powershell
-cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 && set' 2>&1 | ForEach-Object {
-    if ($_ -match "^([^=]+)=(.*)$") {
-        [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
-    }
-}
-$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
-```
-
-This overrides `PATH`, `LIB`, and `INCLUDE` to use BuildTools' complete C++ toolchain instead of Enterprise's incomplete one. You must do this **every time you open a new terminal**.
-
-### `LIBCLANG_PATH` not set
-
-If `cargo build` fails on `whisper-rs-sys` with bindgen errors, ensure `$env:LIBCLANG_PATH` is set to the LLVM bin directory (e.g., `C:\Program Files\LLVM\bin`). Install LLVM with `winget install LLVM.LLVM` if missing.
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Tauri (Rust)                                        │
-│  ┌───────────┐  ┌──────────┐  ┌──────────────────┐  │
-│  │ System    │  │ Global   │  │ Plugin Store     │  │
-│  │ Tray      │  │ Shortcut │  │ (settings, etc.) │  │
-│  └───────────┘  └──────────┘  └──────────────────┘  │
-│  ┌──────────────────┐  ┌──────────────────────────┐  │
-│  │ Whisper Engine   │  │ Copilot Bridge (Node.js) │  │
-│  │ (whisper-rs/CPU) │  │ (JSON-RPC stdin/stdout)  │  │
-│  └──────────────────┘  └──────────────────────────┘  │
-│          IPC commands (invoke / listen)               │
-├──────────────────────────────────────────────────────┤
-│  WebView (Svelte 5 + TypeScript)                     │
-│  ┌───────────────┐  ┌─────────────────────────────┐  │
-│  │ Settings      │  │ Popup (Dictation)           │  │
-│  │ Window        │  │ Window                      │  │
-│  │ (720×780,     │  │ (600×450, resizable,        │  │
-│  │  8 tabs)      │  │  always-on-top, panels)     │  │
-│  └───────────────┘  └─────────────────────────────┘  │
-│              │                    │                    │
-│    ┌─────────┴─────────┐  ┌─────┴──────────────┐     │
-│    │ Azure Speech SDK  │  │ Web Speech API     │     │
-│    │ (WebSocket)       │  │ (Browser-native)   │     │
-│    └───────────────────┘  └────────────────────┘     │
-└──────────────────────────────────────────────────────┘
-```
-
-**Two-window design:**
-
-- **Main window** — Settings configuration with 8 tabs and OS window decorations
-- **Popup window** — Floating dictation overlay with draggable title bar, slide-out history and templates panels, resizable with saved position
-
-**Data stores** (via `tauri-plugin-store`):
-
-| File | Contents |
-| --- | --- |
-| `settings.json` | App settings + window geometry |
-| `templates.json` | User prompt templates |
-| `enhancer-templates.json` | Copilot enhancement instructions |
-| `history.json` | Transcription history entries |
-| `usage.json` | Per-provider usage statistics |
-
-The global shortcut is registered at startup and re-registered on save. Speech engines run in the WebView (Web Speech, Azure via WebSocket) or in Rust (Whisper via whisper-rs). Copilot enhancement routes through a Node.js bridge process using JSON-RPC over stdin/stdout.
-
----
-
-## Theming
-
-Uses [Catppuccin](https://catppuccin.com/) color palettes:
-
-| Theme | Palette |
-| --- | --- |
-| Dark | Catppuccin Mocha |
-| Light | Catppuccin Latte |
-
-Toggle via the sun/moon icon button in the Settings header.
-
----
+If you want to build from source, understand the architecture, or work on the project itself, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## License
 
