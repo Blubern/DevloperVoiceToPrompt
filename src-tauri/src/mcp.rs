@@ -6,7 +6,7 @@ use rmcp::{
         CallToolResult, Content, Implementation,
         ServerCapabilities, ServerInfo,
     },
-    schemars, tool, tool_router,
+    schemars, tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -64,7 +64,6 @@ pub struct VoiceToTextInput {
 pub struct VoiceToTextServer {
     app: AppHandle,
     state: McpState,
-    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
@@ -83,6 +82,8 @@ impl VoiceToTextServer {
         &self,
         Parameters(input): Parameters<VoiceToTextInput>,
     ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!("MCP tool 'voice_to_text' invoked (input_reason={})", input.input_reason);
+
         // Reject concurrent requests
         {
             let guard = self.state.0.lock().unwrap();
@@ -135,11 +136,12 @@ impl VoiceToTextServer {
     }
 }
 
+#[tool_handler]
 impl ServerHandler for VoiceToTextServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(
-                "developer-voice-to-prompt",
+                "DeveloperVoiceToText",
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
@@ -184,7 +186,7 @@ pub fn start_mcp_server(app: AppHandle, port: u16) {
         let addr = format!("127.0.0.1:{port}");
         let listener = match tokio::net::TcpListener::bind(&addr).await {
             Ok(l) => {
-                tracing::info!("MCP server listening on http://{addr}/mcp");
+                tracing::info!("MCP server listening on http://{addr}/mcp (service=DeveloperVoiceToText, tools=[voice_to_text])");
                 l
             }
             Err(e) => {

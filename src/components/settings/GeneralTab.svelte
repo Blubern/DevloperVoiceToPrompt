@@ -285,7 +285,7 @@
         <span class="hint">Add this to your VS Code <code>settings.json</code> to connect:</span>
         <pre class="mcp-config-block"><code>{`"mcp": {
   "servers": {
-    "developer-voice-to-prompt": {
+    "DeveloperVoiceToText": {
       "url": "http://localhost:${mcpPort}/mcp"
     }
   }
