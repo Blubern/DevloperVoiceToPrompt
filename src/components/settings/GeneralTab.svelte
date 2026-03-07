@@ -277,8 +277,8 @@
       </div>
       <div class="field">
         <span class="label">Transport</span>
-        <span class="mcp-transport-info">Streamable HTTP (HTTP + SSE)</span>
-        <span class="hint">Uses the MCP Streamable HTTP transport. Clients connect via HTTP POST for requests and receive responses via Server-Sent Events (SSE).</span>
+        <span class="mcp-transport-info">Streamable HTTP</span>
+        <span class="hint">Uses the MCP Streamable HTTP transport over a standard HTTP endpoint.</span>
       </div>
       <div class="field">
         <span class="label">VS Code Configuration</span>
