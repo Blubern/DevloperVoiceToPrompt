@@ -43,6 +43,7 @@ pub struct AppSettings {
     pub open_popup_on_start: bool,
     pub mcp_enabled: bool,
     pub mcp_port: u16,
+    pub mcp_timeout_seconds: u32,
     pub show_in_dock: bool,
 }
 
@@ -84,6 +85,7 @@ impl Default for AppSettings {
             open_popup_on_start: true,
             mcp_enabled: false,
             mcp_port: 31337,
+            mcp_timeout_seconds: 300,
             show_in_dock: false,
         }
     }
@@ -216,6 +218,7 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         open_popup_on_start: get_bool("open_popup_on_start", defaults.open_popup_on_start),
         mcp_enabled: get_bool("mcp_enabled", defaults.mcp_enabled),
         mcp_port: get_u32("mcp_port", defaults.mcp_port as u32) as u16,
+        mcp_timeout_seconds: get_u32("mcp_timeout_seconds", defaults.mcp_timeout_seconds),
         show_in_dock: get_bool("show_in_dock", defaults.show_in_dock),
     }
 }
@@ -233,6 +236,7 @@ mod tests {
         assert_eq!(original.shortcut, deserialized.shortcut);
         assert_eq!(original.languages, deserialized.languages);
         assert_eq!(original.max_recording_seconds, deserialized.max_recording_seconds);
+        assert_eq!(original.mcp_timeout_seconds, deserialized.mcp_timeout_seconds);
     }
 
     #[test]
@@ -242,8 +246,9 @@ mod tests {
         assert_eq!(settings.speech_provider, "azure");
         // All other fields should be defaults
         assert_eq!(settings.os_language, "en-US");
-        assert_eq!(settings.shortcut, "CommandOrControl+Shift+Space");
-        assert!(settings.always_on_top);
+        assert_eq!(settings.shortcut, "CommandOrControl+Alt+V");
+        assert!(!settings.always_on_top);
+        assert_eq!(settings.mcp_timeout_seconds, 300);
     }
 
     #[test]

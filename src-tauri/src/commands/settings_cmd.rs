@@ -13,6 +13,10 @@ pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
 pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
     tracing::info!(provider = %settings.speech_provider, "Saving settings");
 
+    if settings.mcp_timeout_seconds > 0 && !(10..=3600).contains(&settings.mcp_timeout_seconds) {
+        return Err("MCP timeout must be between 10 and 3600 seconds, or 0 to disable it.".into());
+    }
+
     // Snapshot old MCP settings before persisting so we can detect changes
     let old_settings = settings::load_settings(&app);
     let mcp_changed = old_settings.mcp_enabled != settings.mcp_enabled

@@ -19,6 +19,8 @@
     openPopupOnStart = $bindable(),
     mcpEnabled = $bindable(),
     mcpPort = $bindable(),
+    mcpTimeoutEnabled = $bindable(),
+    mcpTimeoutSeconds = $bindable(),
     showInDock = $bindable(),
     isMac = false,
     isWindows = false,
@@ -40,6 +42,8 @@
     openPopupOnStart: boolean;
     mcpEnabled: boolean;
     mcpPort: number;
+    mcpTimeoutEnabled: boolean;
+    mcpTimeoutSeconds: number;
     showInDock: boolean;
     isMac: boolean;
     isWindows: boolean;
@@ -267,6 +271,22 @@
         <label class="label" for="mcp-port">Port</label>
         <input id="mcp-port" type="number" min="1024" max="65535" bind:value={mcpPort} style="width: 100px;" />
         <span class="hint">Default: 31337. Changes take effect when you save settings.</span>
+      </div>
+      <div class="field">
+        <label class="toggle-field">
+          <span class="label">Request Timeout</span>
+          <div class="toggle-row">
+            <input type="checkbox" bind:checked={mcpTimeoutEnabled} class="toggle-checkbox" />
+            <span class="toggle-label">{mcpTimeoutEnabled ? 'On' : 'Off'}</span>
+          </div>
+        </label>
+        {#if mcpTimeoutEnabled}
+          <div class="input-row" style="margin-top: 6px;">
+            <input type="number" min="10" max="3600" bind:value={mcpTimeoutSeconds} style="width: 90px;" />
+            <span class="timeout-unit">seconds</span>
+          </div>
+        {/if}
+        <span class="hint">How long the MCP server waits for you to submit dictated text. Set 10-3600 seconds, or turn it off to wait indefinitely.</span>
       </div>
       <div class="field">
         <span class="label">Server Endpoint</span>

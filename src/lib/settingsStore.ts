@@ -36,6 +36,7 @@ export interface AppSettings {
   open_popup_on_start: boolean;
   mcp_enabled: boolean;
   mcp_port: number;
+  mcp_timeout_seconds: number;
   show_in_dock: boolean;
 }
 
@@ -75,6 +76,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   open_popup_on_start: true,
   mcp_enabled: false,
   mcp_port: 31337,
+  mcp_timeout_seconds: 300,
   show_in_dock: false,
 };
 

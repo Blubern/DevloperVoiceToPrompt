@@ -292,41 +292,141 @@
 
 /* MCP voice-request banner */
 .mcp-context-banner {
+  position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 9px 12px;
-  background: color-mix(in srgb, var(--sapphire, #89b4fa) 12%, var(--bg-primary));
-  border: 1px solid color-mix(in srgb, var(--sapphire, #89b4fa) 40%, transparent);
-  border-radius: 6px;
-  margin-bottom: 6px;
+  gap: 12px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--bg-secondary) 82%, var(--accent) 18%);
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border) 42%);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 8px 22px color-mix(in srgb, black 12%, transparent);
+  overflow: hidden;
+  animation: mcpBannerPulse 2.4s ease-in-out infinite;
+}
+
+.mcp-context-banner::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--orange) 100%);
+  pointer-events: none;
+}
+
+.mcp-banner-icon-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-primary) 68%, var(--accent) 32%);
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border) 64%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 10%, transparent);
+}
+
+.mcp-banner-ping {
+  position: absolute;
+  inset: -5px;
+  border-radius: inherit;
+  border: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  opacity: 0.8;
+  animation: mcpBannerPing 1.8s ease-out infinite;
 }
 
 .mcp-banner-icon {
-  flex-shrink: 0;
-  color: var(--sapphire, #89b4fa);
-  margin-top: 1px;
+  position: relative;
+  z-index: 1;
+  color: var(--accent);
 }
 
 .mcp-banner-content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
+  flex: 1;
+}
+
+.mcp-banner-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .mcp-banner-label {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--sapphire, #89b4fa);
+  letter-spacing: 0.9px;
+  color: var(--accent);
+}
+
+.mcp-banner-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 72%, var(--border) 28%);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--bg-primary);
+  white-space: nowrap;
 }
 
 .mcp-banner-reason {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-primary);
-  line-height: 1.4;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+  text-shadow: none;
+}
+
+.mcp-banner-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+@keyframes mcpBannerPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent),
+      0 8px 22px color-mix(in srgb, black 12%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+      0 10px 26px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+}
+
+@keyframes mcpBannerPing {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.16);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.16);
+    opacity: 0;
+  }
 }

@@ -71,6 +71,10 @@ impl VoiceToTextServer {
     fn new(app: AppHandle, state: McpState) -> Self {
         Self { app, state, tool_router: Self::tool_router() }
     }
+
+    fn request_timeout_seconds(&self) -> u32 {
+        crate::settings::load_settings(&self.app).mcp_timeout_seconds
+    }
 }
 
 #[tool_router]
@@ -119,18 +123,28 @@ impl VoiceToTextServer {
         // Show the popup window
         crate::create_or_show_popup(&self.app);
 
-        // Wait for the user to submit or cancel (up to 5 minutes)
-        match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
-            Ok(Ok(Ok(text))) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Ok(Ok(Err(reason))) => Ok(CallToolResult::error(vec![Content::text(format!("Dictation cancelled: {reason}"))])),
-            Ok(Err(_)) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).")] )),
-            Err(_) => {
-                // Timeout — clean up state
-                let mut guard = self.state.0.lock().unwrap();
-                *guard = None;
-                Ok(CallToolResult::error(vec![Content::text(
-                    "Dictation timed out after 5 minutes with no submission.",
-                )]))
+        // Wait for the user to submit or cancel. A timeout of 0 disables the limit.
+        let timeout_seconds = self.request_timeout_seconds();
+
+        if timeout_seconds == 0 {
+            match rx.await {
+                Ok(Ok(text)) => Ok(CallToolResult::success(vec![Content::text(text)])),
+                Ok(Err(reason)) => Ok(CallToolResult::error(vec![Content::text(format!("Dictation cancelled: {reason}"))])),
+                Err(_) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).") ])),
+            }
+        } else {
+            match tokio::time::timeout(std::time::Duration::from_secs(timeout_seconds as u64), rx).await {
+                Ok(Ok(Ok(text))) => Ok(CallToolResult::success(vec![Content::text(text)])),
+                Ok(Ok(Err(reason))) => Ok(CallToolResult::error(vec![Content::text(format!("Dictation cancelled: {reason}"))])),
+                Ok(Err(_)) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).") ])),
+                Err(_) => {
+                    // Timeout — clean up state
+                    let mut guard = self.state.0.lock().unwrap();
+                    *guard = None;
+                    Ok(CallToolResult::error(vec![Content::text(format!(
+                        "Dictation timed out after {timeout_seconds} seconds with no submission.",
+                    ))]))
+                }
             }
         }
     }

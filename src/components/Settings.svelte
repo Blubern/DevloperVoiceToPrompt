@@ -63,6 +63,8 @@
   let openPopupOnStart = $state(DEFAULT_SETTINGS.open_popup_on_start);
   let mcpEnabled = $state(DEFAULT_SETTINGS.mcp_enabled);
   let mcpPort = $state(DEFAULT_SETTINGS.mcp_port);
+  let mcpTimeoutEnabled = $state(true);
+  let mcpTimeoutSeconds = $state(DEFAULT_SETTINGS.mcp_timeout_seconds);
   let showInDock = $state(DEFAULT_SETTINGS.show_in_dock);
   let isMac = $state(false);
   let isWindows = $state(false);
@@ -116,6 +118,9 @@
     openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
     mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
     mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
+    const savedMcpTimeout = s.mcp_timeout_seconds ?? DEFAULT_SETTINGS.mcp_timeout_seconds;
+    mcpTimeoutEnabled = savedMcpTimeout > 0;
+    mcpTimeoutSeconds = savedMcpTimeout > 0 ? savedMcpTimeout : DEFAULT_SETTINGS.mcp_timeout_seconds;
     showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
@@ -160,6 +165,7 @@
       open_popup_on_start: openPopupOnStart,
       mcp_enabled: mcpEnabled,
       mcp_port: mcpPort,
+      mcp_timeout_seconds: mcpTimeoutEnabled ? mcpTimeoutSeconds : 0,
       show_in_dock: showInDock,
     };
   }
@@ -210,6 +216,9 @@
     openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
     mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
     mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
+    const savedMcpTimeout = s.mcp_timeout_seconds ?? DEFAULT_SETTINGS.mcp_timeout_seconds;
+    mcpTimeoutEnabled = savedMcpTimeout > 0;
+    mcpTimeoutSeconds = savedMcpTimeout > 0 ? savedMcpTimeout : DEFAULT_SETTINGS.mcp_timeout_seconds;
     showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
     const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
     theme = savedTheme;
@@ -306,7 +315,8 @@
           bind:popupVoiceShortcut bind:providerSwitchShortcut bind:alwaysOnTop
           bind:autoStartRecording bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds
           bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart
-          bind:mcpEnabled bind:mcpPort bind:showInDock {isMac} {isWindows} {mcpRunning} />
+          bind:mcpEnabled bind:mcpPort bind:mcpTimeoutEnabled bind:mcpTimeoutSeconds
+          bind:showInDock {isMac} {isWindows} {mcpRunning} />
       {:else if activeTab === 'speech'}
         <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
           bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation

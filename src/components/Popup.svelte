@@ -861,20 +861,13 @@
     let unlistenFn: (() => void) | null = null;
     listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
       mcpRequest = event.payload;
-      // Pre-fill textarea with context_input if provided
-      if (event.payload.context_input) {
-        editedText = event.payload.context_input;
-        userHasEdited = true;
-        cursorPosition = editedText.length;
-      } else {
-        // Clear any previous text so the textarea is empty
-        finalSegments = [];
-        interimText = "";
-        editedText = "";
-        userHasEdited = false;
-        lastSyncedSegmentCount = 0;
-        cursorPosition = 0;
-      }
+      // Always start MCP requests with an empty editor so the ask is clear.
+      finalSegments = [];
+      interimText = "";
+      editedText = "";
+      userHasEdited = false;
+      lastSyncedSegmentCount = 0;
+      cursorPosition = 0;
 
       focusTextareaAtEnd();
     }).then((fn) => { unlistenFn = fn; });
@@ -1206,13 +1199,20 @@
       <!-- MCP voice-request banner -->
       {#if isMcpMode && mcpRequest}
         <div class="mcp-context-banner">
-          <svg class="mcp-banner-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <path d="M8 12h8"/><path d="M12 8v8"/>
-          </svg>
+          <div class="mcp-banner-icon-shell" aria-hidden="true">
+            <span class="mcp-banner-ping"></span>
+            <svg class="mcp-banner-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <path d="M8 12h8"/><path d="M12 8v8"/>
+            </svg>
+          </div>
           <div class="mcp-banner-content">
-            <span class="mcp-banner-label">AI tool is requesting voice input</span>
+            <div class="mcp-banner-topline">
+              <span class="mcp-banner-label">Agent Request Active</span>
+              <span class="mcp-banner-badge">Waiting for your voice input</span>
+            </div>
             <span class="mcp-banner-reason">{mcpRequest.input_reason}</span>
+            <span class="mcp-banner-hint">Speak, type, then submit the result back to the requesting agent.</span>
           </div>
         </div>
       {/if}
