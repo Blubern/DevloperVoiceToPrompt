@@ -71,6 +71,13 @@ pub async fn whisper_transcribe(
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &audio_b64)
         .map_err(|e| format!("Invalid base64 audio data: {e}"))?;
 
+    if bytes.len() % 4 != 0 {
+        tracing::warn!(
+            "Audio data has {} trailing bytes (not aligned to f32); truncating",
+            bytes.len() % 4
+        );
+    }
+
     let pcm_f32: Vec<f32> = bytes
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))

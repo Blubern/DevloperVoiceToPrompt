@@ -8,13 +8,13 @@ export interface PromptTemplate {
   updatedAt: string;
 }
 
-let store: Store | null = null;
+let storePromise: Promise<Store> | null = null;
 
-async function getStore(): Promise<Store> {
-  if (!store) {
-    store = await load("templates.json");
+function getStore(): Promise<Store> {
+  if (!storePromise) {
+    storePromise = load("templates.json");
   }
-  return store;
+  return storePromise;
 }
 
 export async function getTemplates(): Promise<PromptTemplate[]> {

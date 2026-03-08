@@ -13,6 +13,7 @@
     checkMicrophonePermission,
     webSpeechAvailable,
     enumerateAudioDevices,
+    revokeWorkletUrl,
     type SpeechCallbacks,
     type SpeechProvider,
     type AudioDevice,
@@ -918,6 +919,11 @@
       }
     });
     return () => { listenPromise.then((fn) => fn()); };
+  });
+
+  // Release the cached AudioWorklet Blob URL when the popup is destroyed.
+  $effect(() => {
+    return () => { revokeWorkletUrl(); };
   });
 
   // Listen to enhancer-templates-updated from Settings

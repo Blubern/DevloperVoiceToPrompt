@@ -13,13 +13,14 @@ export interface UsageStats {
   total: ProviderUsage;
 }
 
-let store: Store | null = null;
+let storePromise: Promise<Store> | null = null;
+let migrationDone = false;
 
-async function getStore(): Promise<Store> {
-  if (!store) {
-    store = await load("usage.json");
+function getStore(): Promise<Store> {
+  if (!storePromise) {
+    storePromise = load("usage.json");
   }
-  return store;
+  return storePromise;
 }
 
 function todayKey(): string {
@@ -35,8 +36,10 @@ function getMonday(date: Date): Date {
   return d;
 }
 
-/** Migrate old untagged "daily" data into "daily_web" (best guess). */
+/** Migrate old untagged "daily" data into "daily_web" (best guess). Runs at most once per session. */
 async function migrateIfNeeded(s: Store): Promise<void> {
+  if (migrationDone) return;
+  migrationDone = true;
   const old = await s.get<Record<string, number>>("daily");
   if (!old || Object.keys(old).length === 0) return;
   // Merge old data into daily_web
@@ -57,6 +60,7 @@ export async function recordUsage(seconds: number, provider: "os" | "azure" | "w
   const daily: Record<string, number> = raw ?? {};
   daily[key] = (daily[key] ?? 0) + seconds;
   await s.set(storeKey, daily);
+  await s.save();
 }
 
 function computeProviderUsage(daily: Record<string, number>): ProviderUsage {
@@ -106,6 +110,7 @@ export async function resetUsage(): Promise<void> {
   await s.set("daily_azure", {});
   await s.set("daily_whisper", {});
   await s.delete("daily"); // clean up legacy
+  await s.save();
 }
 
 export async function pruneOldEntries(): Promise<void> {
@@ -124,6 +129,7 @@ export async function pruneOldEntries(): Promise<void> {
     }
     await s.set(storeKey, pruned);
   }
+  await s.save();
 }
 
 export function formatDuration(totalSeconds: number): string {

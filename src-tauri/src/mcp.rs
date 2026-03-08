@@ -86,9 +86,12 @@ impl VoiceToTextServer {
     ) -> Result<CallToolResult, ErrorData> {
         tracing::info!("MCP tool 'voice_to_text' invoked (input_reason={})", input.input_reason);
 
-        // Reject concurrent requests
+        // Create the oneshot channel
+        let (tx, rx) = oneshot::channel::<Result<String, String>>();
+
+        // Reject concurrent requests and store the sender in a single critical section
         {
-            let guard = self.state.0.lock().map_err(|e| {
+            let mut guard = self.state.0.lock().map_err(|e| {
                 tracing::error!("MCP state lock poisoned: {e}");
                 ErrorData::internal_error("Internal lock error", None)
             })?;
@@ -97,17 +100,6 @@ impl VoiceToTextServer {
                     "Another dictation is already in progress. Please wait for it to complete.",
                 )]));
             }
-        }
-
-        // Create the oneshot channel
-        let (tx, rx) = oneshot::channel::<Result<String, String>>();
-
-        // Store the sender so the Tauri command can resolve it
-        {
-            let mut guard = self.state.0.lock().map_err(|e| {
-                tracing::error!("MCP state lock poisoned: {e}");
-                ErrorData::internal_error("Internal lock error", None)
-            })?;
             *guard = Some(PendingRequest { tx });
         }
 

@@ -8,7 +8,7 @@ export interface EnhancerTemplate {
   updatedAt: string;
 }
 
-let store: Store | null = null;
+let storePromise: Promise<Store> | null = null;
 
 const DEVELOPER_PROMPT_OPTIMIZER_NAME = "Developer Prompt Optimizer";
 const LEGACY_DEVELOPER_PROMPT_OPTIMIZER_TEXT = `Take the raw dictated text and transform it into a clear, well-structured developer prompt. Fix grammar, remove filler words, and organize the intent into actionable instructions. Preserve all technical terms, code references, and specific requirements. Use concise professional language suitable for AI coding assistants. Leave the Language like it is no translations.`;
@@ -84,11 +84,11 @@ Do NOT:
 Keep all technical terms exactly as they appear.
 Preserve the original language.`;
 
-async function getStore(): Promise<Store> {
-  if (!store) {
-    store = await load("enhancer-templates.json");
+function getStore(): Promise<Store> {
+  if (!storePromise) {
+    storePromise = load("enhancer-templates.json");
   }
-  return store;
+  return storePromise;
 }
 
 export const DEFAULT_ENHANCER_TEMPLATES = [

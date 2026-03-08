@@ -225,9 +225,18 @@ pub async fn copilot_init(
         .spawn()
         .map_err(|e| format!("Failed to spawn bridge: {}", e))?;
 
-    let stdin = child.stdin.take().ok_or("No stdin on bridge process")?;
-    let stdout = child.stdout.take().ok_or("No stdout on bridge process")?;
-    let stderr = child.stderr.take().ok_or("No stderr on bridge process")?;
+    let stdin = match child.stdin.take() {
+        Some(s) => s,
+        None => { let _ = child.kill().await; return Err("No stdin on bridge process".into()); }
+    };
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => { let _ = child.kill().await; return Err("No stdout on bridge process".into()); }
+    };
+    let stderr = match child.stderr.take() {
+        Some(s) => s,
+        None => { let _ = child.kill().await; return Err("No stderr on bridge process".into()); }
+    };
 
     // Spawn a background task to continuously read and log stderr from the bridge
     tokio::spawn(async move {

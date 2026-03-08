@@ -18,7 +18,9 @@ mod whisper;
 /// Used by the MCP server to open the popup when a tool call arrives.
 pub fn create_or_show_popup(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
-        let _ = win.show();
+        if let Err(e) = win.show() {
+            tracing::error!("Failed to show popup: {e}");
+        }
         let _ = win.set_focus();
     } else {
         create_or_toggle_popup(app);
@@ -78,7 +80,9 @@ pub fn show_settings(app: &tauri::AppHandle) {
         let _ = popup.set_always_on_top(false);
     }
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
+        if let Err(e) = win.show() {
+            tracing::error!("Failed to show settings window: {e}");
+        }
         let _ = win.set_focus();
     }
 }
@@ -242,5 +246,8 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            eprintln!("Fatal application error: {e}");
+            std::process::exit(1);
+        });
 }

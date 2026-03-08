@@ -6,13 +6,13 @@ export interface HistoryEntry {
   input_reason?: string;
 }
 
-let store: Store | null = null;
+let storePromise: Promise<Store> | null = null;
 
-async function getStore(): Promise<Store> {
-  if (!store) {
-    store = await load("history.json");
+function getStore(): Promise<Store> {
+  if (!storePromise) {
+    storePromise = load("history.json");
   }
-  return store;
+  return storePromise;
 }
 
 export async function addHistoryEntry(

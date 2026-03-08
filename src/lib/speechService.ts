@@ -137,6 +137,13 @@ export class OsSpeechProvider implements SpeechProvider {
       return;
     }
 
+    // Abort any existing recognition to prevent double-start leaks
+    if (this.recognition) {
+      this.intentionallyStopped = true;
+      this.recognition.abort();
+      this.recognition = null;
+    }
+
     this.callbacks = callbacks;
     this.intentionallyStopped = false;
     this.restartCount = 0;
@@ -147,6 +154,7 @@ export class OsSpeechProvider implements SpeechProvider {
     rec.interimResults = true;
 
     rec.onresult = (e: SpeechRecognitionEvent) => {
+      if (this.recognition !== rec) return; // stale instance
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         if (result.isFinal) {
@@ -158,6 +166,7 @@ export class OsSpeechProvider implements SpeechProvider {
     };
 
     rec.onerror = (e: SpeechRecognitionErrorEvent) => {
+      if (this.recognition !== rec) return; // stale instance
       if (e.error === "aborted" && this.intentionallyStopped) return;
       if (e.error === "no-speech") return; // silent — not a real error
       callbacks.onError(`Speech recognition error: ${e.error}`);
@@ -165,6 +174,7 @@ export class OsSpeechProvider implements SpeechProvider {
     };
 
     rec.onend = () => {
+      if (this.recognition !== rec) return; // stale instance
       if (this.intentionallyStopped) {
         callbacks.onStatusChange("idle");
         return;
@@ -349,14 +359,20 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private workletNode: AudioWorkletNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
 
-  /** Continuously growing session PCM buffer at 16 kHz. */
-  private sessionBuffer: Float32Array = new Float32Array(0);
+  /**
+   * Incoming PCM chunks at 16 kHz. Kept as a list to avoid O(n) copying on
+   * every incoming audio frame. Concatenated into a flat Float32Array only
+   * when a decode window is needed.
+   */
+  private sessionChunks: Float32Array[] = [];
+  private sessionSampleCount = 0;
 
   /** How many samples have already been committed as final text.
    *  The next decode window starts from `committedSamples - overlapSamples`. */
   private committedSamples = 0;
 
   private decodeTimer: ReturnType<typeof setInterval> | null = null;
+  private firstDecodeTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
 
   /** Backpressure: true while a decode invoke is in-flight. */
@@ -416,19 +432,19 @@ export class WhisperSpeechProvider implements SpeechProvider {
       },
     };
     this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-    this.audioContext = new AudioContext({ sampleRate: 16000 });
 
-    // Use cached AudioWorklet for PCM capture
-    await this.audioContext.audioWorklet.addModule(getWorkletUrl());
+    try {
+      this.audioContext = new AudioContext({ sampleRate: 16000 });
 
-    this.workletNode = new AudioWorkletNode(this.audioContext, "pcm-processor");
+      // Use cached AudioWorklet for PCM capture
+      await this.audioContext.audioWorklet.addModule(getWorkletUrl());
+
+      this.workletNode = new AudioWorkletNode(this.audioContext, "pcm-processor");
     this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
       if (!this.running) return;
       const incoming = e.data;
-      const merged = new Float32Array(this.sessionBuffer.length + incoming.length);
-      merged.set(this.sessionBuffer);
-      merged.set(incoming, this.sessionBuffer.length);
-      this.sessionBuffer = merged;
+      this.sessionChunks.push(incoming);
+      this.sessionSampleCount += incoming.length;
 
       // Compute RMS audio level from the incoming PCM chunk and report to UI.
       if (this.callbacks?.onAudioLevel) {
@@ -449,7 +465,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
     // Fire an eager first decode after 500 ms so the user sees text quickly,
     // then switch to the regular cadence.
     const firstDecodeDelay = Math.min(500, this.decodeMs);
-    setTimeout(() => {
+    this.firstDecodeTimer = setTimeout(() => {
+      this.firstDecodeTimer = null;
       if (!this.running) return;
       this._tickDecode();
       // Now start the steady-state interval
@@ -459,6 +476,18 @@ export class WhisperSpeechProvider implements SpeechProvider {
         }, this.decodeMs);
       }
     }, firstDecodeDelay);
+    } catch (err) {
+      // Clean up media stream on failure to prevent mic leak
+      if (this.mediaStream) {
+        this.mediaStream.getTracks().forEach((t) => t.stop());
+        this.mediaStream = null;
+      }
+      if (this.audioContext) {
+        try { this.audioContext.close(); } catch { /* ignore */ }
+        this.audioContext = null;
+      }
+      throw err;
+    }
   }
 
   // ----- decode pipeline -----
@@ -478,26 +507,27 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
     // Determine the window to decode: from (committedSamples - overlap) to end of buffer.
     const windowStart = Math.max(0, this.committedSamples - this.overlapSamples);
-    const windowEnd = this.sessionBuffer.length;
+    const windowEnd = this.sessionSampleCount;
     if (windowEnd - windowStart < 1600) return; // < 0.1s of audio, skip
 
     // Only check silence on the NEW audio portion (after committedSamples).
     // The overlap region always contains old speech and would falsely pass the RMS check.
     const newAudioStart = this.committedSamples;
-    if (windowEnd > newAudioStart) {
-      const newSamples = this.sessionBuffer.slice(newAudioStart, windowEnd);
-      if (newSamples.length < 800) return; // < 50ms of new audio, skip
-      let sumSq = 0;
-      for (let i = 0; i < newSamples.length; i++) {
-        sumSq += newSamples[i] * newSamples[i];
-      }
-      const rms = Math.sqrt(sumSq / newSamples.length);
-      if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return;
-    } else {
-      return; // no new audio beyond what's committed
-    }
+    if (windowEnd <= newAudioStart) return; // no new audio beyond what's committed
+    if (windowEnd - newAudioStart < 800) return; // < 50ms of new audio, skip
 
-    const samples = this.sessionBuffer.slice(windowStart, windowEnd);
+    // Build the flat buffer once per decode cycle — not on every audio chunk.
+    const sessionBuffer = this._buildSessionBuffer();
+
+    const newSamples = sessionBuffer.subarray(newAudioStart, windowEnd);
+    let sumSq = 0;
+    for (let i = 0; i < newSamples.length; i++) {
+      sumSq += newSamples[i] * newSamples[i];
+    }
+    const rms = Math.sqrt(sumSq / newSamples.length);
+    if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return;
+
+    const samples = sessionBuffer.slice(windowStart, windowEnd);
 
     // Notify UI that a new decode cycle is starting.
     this.callbacks.onDecodeStart?.();
@@ -646,6 +676,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.lastCommittedWords = text.split(/\s+/).slice(-10); // keep last 10 words
       this.lastInterim = "";
       this.stabilityHits = 0;
+      // Compact: discard chunks before the overlap window to bound memory growth.
+      this._compactChunks();
     } else {
       // Still changing — show as interim.
       this.callbacks.onInterim(text);
@@ -674,8 +706,9 @@ export class WhisperSpeechProvider implements SpeechProvider {
     // contend on the Whisper Mutex during the final flush.
     if (this.decoding) {
       await new Promise<void>((resolve) => {
+        const deadline = Date.now() + 5000; // 5s timeout
         const check = () => {
-          if (!this.decoding) return resolve();
+          if (!this.decoding || Date.now() >= deadline) return resolve();
           setTimeout(check, 10);
         };
         check();
@@ -696,9 +729,10 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private async _flushFinal(): Promise<void> {
     if (!this.callbacks) return;
     const start = Math.max(0, this.committedSamples - this.overlapSamples);
-    if (this.sessionBuffer.length - start < 1600) return;
+    if (this.sessionSampleCount - start < 1600) return;
 
-    const samples = this.sessionBuffer.slice(start);
+    const sessionBuffer = this._buildSessionBuffer();
+    const samples = sessionBuffer.slice(start);
     let sumSq = 0;
     for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
     const rms = Math.sqrt(sumSq / samples.length);
@@ -750,6 +784,10 @@ export class WhisperSpeechProvider implements SpeechProvider {
   dispose(): void {
     this.running = false;
     this.generation++;
+    if (this.firstDecodeTimer !== null) {
+      clearTimeout(this.firstDecodeTimer);
+      this.firstDecodeTimer = null;
+    }
     if (this.decodeTimer) {
       clearInterval(this.decodeTimer);
       this.decodeTimer = null;
@@ -772,7 +810,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.mediaStream.getTracks().forEach((t) => t.stop());
       this.mediaStream = null;
     }
-    this.sessionBuffer = new Float32Array(0);
+    this.sessionChunks = [];
+    this.sessionSampleCount = 0;
     this.committedSamples = 0;
     this.lastInterim = "";
     this.lastCommittedWords = [];
@@ -786,6 +825,49 @@ export class WhisperSpeechProvider implements SpeechProvider {
     if (this.audioContext) {
       try { await this.audioContext.close(); } catch { /* already closed */ }
       this.audioContext = null;
+    }
+  }
+
+  /**
+   * Concatenate all accumulated session chunks into a flat Float32Array.
+   * Call only at decode time — not on every incoming audio frame.
+   */
+  private _buildSessionBuffer(): Float32Array {
+    if (this.sessionChunks.length === 0) return new Float32Array(0);
+    if (this.sessionChunks.length === 1) return this.sessionChunks[0];
+    const result = new Float32Array(this.sessionSampleCount);
+    let offset = 0;
+    for (const chunk of this.sessionChunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return result;
+  }
+
+  /**
+   * Discard audio chunks before the overlap window to bound memory growth
+   * during long recording sessions. Called after each commit.
+   */
+  private _compactChunks(): void {
+    const keepFrom = Math.max(0, this.committedSamples - this.overlapSamples);
+    if (keepFrom <= 0) return;
+    // Walk chunks and drop those entirely before keepFrom
+    let accumulated = 0;
+    let dropCount = 0;
+    let dropSamples = 0;
+    for (const chunk of this.sessionChunks) {
+      if (accumulated + chunk.length <= keepFrom) {
+        accumulated += chunk.length;
+        dropCount++;
+        dropSamples += chunk.length;
+      } else {
+        break;
+      }
+    }
+    if (dropCount > 0) {
+      this.sessionChunks.splice(0, dropCount);
+      this.sessionSampleCount -= dropSamples;
+      this.committedSamples -= dropSamples;
     }
   }
 

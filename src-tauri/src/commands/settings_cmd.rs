@@ -43,6 +43,10 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
         return Err("MCP timeout must be between 10 and 3600 seconds, or 0 to disable it.".into());
     }
 
+    if settings.mcp_enabled && !(1024..=65535).contains(&settings.mcp_port) {
+        return Err("MCP port must be between 1024 and 65535.".into());
+    }
+
     // Snapshot old MCP settings before persisting so we can detect changes
     let old_settings = settings::load_settings(&app);
     let mcp_changed = old_settings.mcp_enabled != settings.mcp_enabled

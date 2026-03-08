@@ -7,7 +7,9 @@ use crate::mcp::{McpState, McpServerHandle};
 pub fn mcp_submit_result(text: String, state: State<McpState>) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| format!("Lock error: {e}"))?;
     if let Some(pending) = guard.take() {
-        let _ = pending.tx.send(Ok(text));
+        if pending.tx.send(Ok(text)).is_err() {
+            tracing::warn!("MCP submit: receiver already dropped");
+        }
         Ok(())
     } else {
         Err("No pending MCP dictation request".into())
@@ -20,7 +22,9 @@ pub fn mcp_submit_result(text: String, state: State<McpState>) -> Result<(), Str
 pub fn mcp_cancel(state: State<McpState>) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| format!("Lock error: {e}"))?;
     if let Some(pending) = guard.take() {
-        let _ = pending.tx.send(Err("cancelled".into()));
+        if pending.tx.send(Err("cancelled".into())).is_err() {
+            tracing::warn!("MCP cancel: receiver already dropped");
+        }
     }
     Ok(())
 }
@@ -29,6 +33,12 @@ pub fn mcp_cancel(state: State<McpState>) -> Result<(), String> {
 #[tauri::command]
 pub fn is_mcp_running(app: tauri::AppHandle) -> bool {
     let handle = app.state::<McpServerHandle>();
-    let guard = handle.0.lock().unwrap();
+    let guard = match handle.0.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!("MCP server handle lock poisoned: {e}");
+            return false;
+        }
+    };
     guard.is_some()
 }
