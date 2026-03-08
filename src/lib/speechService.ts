@@ -16,6 +16,8 @@ export interface SpeechCallbacks {
   onDecodeStart?: () => void;
   /** Called after each Whisper decode with the wall-clock latency in milliseconds. */
   onDecodeLatency?: (ms: number) => void;
+  /** Called with a normalized 0–1 audio level (Whisper provider only). */
+  onAudioLevel?: (level: number) => void;
 }
 
 export interface AudioDevice {
@@ -34,7 +36,7 @@ export interface EnumerateResult {
 
 export interface SpeechProvider {
   start(callbacks: SpeechCallbacks): void;
-  stop(): Promise<void>;
+  stop(skipFlush?: boolean): Promise<void>;
   dispose(): void;
 }
 
@@ -307,6 +309,28 @@ export class AzureSpeechProvider implements SpeechProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Cached AudioWorklet blob URL — reused across all WhisperSpeechProvider instances.
+// ---------------------------------------------------------------------------
+const WORKLET_CODE = `
+  class PCMProcessor extends AudioWorkletProcessor {
+    process(inputs) {
+      const ch = inputs[0]?.[0];
+      if (ch) this.port.postMessage(ch);
+      return true;
+    }
+  }
+  registerProcessor('pcm-processor', PCMProcessor);
+`;
+let cachedWorkletUrl: string | null = null;
+function getWorkletUrl(): string {
+  if (!cachedWorkletUrl) {
+    const blob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+    cachedWorkletUrl = URL.createObjectURL(blob);
+  }
+  return cachedWorkletUrl;
+}
+
+// ---------------------------------------------------------------------------
 // Whisper (local) provider — rolling-window realtime
 // ---------------------------------------------------------------------------
 
@@ -386,21 +410,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
     this.audioContext = new AudioContext({ sampleRate: 16000 });
 
-    // Use AudioWorklet for PCM capture
-    const workletCode = `
-      class PCMProcessor extends AudioWorkletProcessor {
-        process(inputs) {
-          const ch = inputs[0]?.[0];
-          if (ch) this.port.postMessage(ch);
-          return true;
-        }
-      }
-      registerProcessor('pcm-processor', PCMProcessor);
-    `;
-    const blob = new Blob([workletCode], { type: "application/javascript" });
-    const workletUrl = URL.createObjectURL(blob);
-    await this.audioContext.audioWorklet.addModule(workletUrl);
-    URL.revokeObjectURL(workletUrl);
+    // Use cached AudioWorklet for PCM capture
+    await this.audioContext.audioWorklet.addModule(getWorkletUrl());
 
     this.workletNode = new AudioWorkletNode(this.audioContext, "pcm-processor");
     this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
@@ -410,6 +421,15 @@ export class WhisperSpeechProvider implements SpeechProvider {
       merged.set(this.sessionBuffer);
       merged.set(incoming, this.sessionBuffer.length);
       this.sessionBuffer = merged;
+
+      // Compute RMS audio level from the incoming PCM chunk and report to UI.
+      if (this.callbacks?.onAudioLevel) {
+        let sumSq = 0;
+        for (let i = 0; i < incoming.length; i++) sumSq += incoming[i] * incoming[i];
+        const rms = Math.sqrt(sumSq / incoming.length);
+        // Normalize: rms of ~0.15 ≈ moderate speech → map to ~1.0
+        this.callbacks.onAudioLevel(Math.min(rms / 0.15, 1));
+      }
     };
 
     this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
@@ -418,10 +438,19 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
     callbacks.onStatusChange("listening");
 
-    // Start decode cadence
-    this.decodeTimer = setInterval(() => {
+    // Fire an eager first decode after 500 ms so the user sees text quickly,
+    // then switch to the regular cadence.
+    const firstDecodeDelay = Math.min(500, this.decodeMs);
+    setTimeout(() => {
+      if (!this.running) return;
       this._tickDecode();
-    }, this.decodeMs);
+      // Now start the steady-state interval
+      if (this.running && !this.decodeTimer) {
+        this.decodeTimer = setInterval(() => {
+          this._tickDecode();
+        }, this.decodeMs);
+      }
+    }, firstDecodeDelay);
   }
 
   // ----- decode pipeline -----
@@ -617,16 +646,41 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
   // ----- lifecycle -----
 
-  async stop(): Promise<void> {
+  async stop(skipFlush = false): Promise<void> {
     this.running = false;
     if (this.decodeTimer) {
       clearInterval(this.decodeTimer);
       this.decodeTimer = null;
     }
-    // Final decode of any remaining audio
-    this.generation++; // stop drops stale pending results
-    await this._flushFinal();
-    this._cleanup();
+    this.generation++; // invalidate stale pending results
+
+    if (skipFlush) {
+      // Fast path for restart: don't wait for in-flight decode or flush.
+      // The generation bump ensures any in-flight decode result is discarded.
+      await this._cleanup();
+      this.callbacks?.onStatusChange("idle");
+      return;
+    }
+
+    // Normal stop: wait for any in-flight decode to finish so we don't
+    // contend on the Whisper Mutex during the final flush.
+    if (this.decoding) {
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (!this.decoding) return resolve();
+          setTimeout(check, 10);
+        };
+        check();
+      });
+    }
+
+    // Time-box the final flush to 500 ms.
+    await Promise.race([
+      this._flushFinal(),
+      new Promise<void>((r) => setTimeout(r, 500)),
+    ]);
+
+    await this._cleanup();
     this.callbacks?.onStatusChange("idle");
   }
 
@@ -692,17 +746,18 @@ export class WhisperSpeechProvider implements SpeechProvider {
       clearInterval(this.decodeTimer);
       this.decodeTimer = null;
     }
+    // Fire-and-forget cleanup — dispose is synchronous by interface contract
     this._cleanup();
     this.callbacks = null;
   }
 
-  private _cleanup(): void {
+  private async _cleanup(): Promise<void> {
     this.workletNode?.disconnect();
     this.workletNode = null;
     this.sourceNode?.disconnect();
     this.sourceNode = null;
     if (this.audioContext) {
-      this.audioContext.close().catch(() => {});
+      try { await this.audioContext.close(); } catch { /* already closed */ }
       this.audioContext = null;
     }
     if (this.mediaStream) {

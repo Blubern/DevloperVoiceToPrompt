@@ -520,17 +520,19 @@
     }
   }
 
-  async function stopAndRecordUsage() {
+  async function stopAndRecordUsage(skipFlush = false) {
     if (activeProvider) {
-      await activeProvider.stop();
+      await activeProvider.stop(skipFlush);
       activeProvider.dispose();
       activeProvider = null;
     }
     status = "idle";
     clearSilenceTimer();
     clearMaxRecordingTimer();
-    levelMeter?.stop();
-    levelMeter = null;
+    if (levelMeter) {
+      await levelMeter.stop();
+      levelMeter = null;
+    }
     audioLevel = 0;
     if (sessionStartTime !== null) {
       const elapsed = (Date.now() - sessionStartTime) / 1000;
@@ -542,7 +544,9 @@
   async function toggleMic() {
     if (enhancing) return;
     if (status === "listening") {
-      await stopAndRecordUsage();
+      // Skip the final flush when the user is explicitly toggling off
+      // (they may immediately restart), so stop returns faster.
+      await stopAndRecordUsage(/* skipFlush */ true);
       return;
     }
 
@@ -624,14 +628,19 @@
         if (decodeFadeTimer) clearTimeout(decodeFadeTimer);
         decodeFadeTimer = setTimeout(() => { decodeActive = false; }, 2000);
       },
+      // Whisper provider computes audio level inline — no separate AudioLevelMeter needed.
+      onAudioLevel: (level: number) => { audioLevel = level; },
     };
 
     activeProvider = provider;
     provider.start(callbacks);
 
-    // Start audio level meter (non-critical, runs independently)
-    levelMeter = new AudioLevelMeter();
-    levelMeter.start((level) => { audioLevel = level; }, settings.microphone_device_id || undefined);
+    // For non-Whisper providers, start a standalone audio level meter.
+    // Whisper reports audio level via the onAudioLevel callback above.
+    if (settings.speech_provider !== PROVIDER_WHISPER) {
+      levelMeter = new AudioLevelMeter();
+      levelMeter.start((level) => { audioLevel = level; }, settings.microphone_device_id || undefined);
+    }
   }
 
   function clearText() {

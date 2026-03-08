@@ -2,24 +2,42 @@
  * Lightweight audio level meter using Web Audio AnalyserNode.
  * Opens its own mic stream (shared with the OS audio subsystem)
  * and reports a normalized 0–1 volume level via a callback.
+ *
+ * Used by OS Speech and Azure providers. The Whisper provider computes
+ * audio level inline via its AudioWorklet and does NOT use this class.
  */
 export class AudioLevelMeter {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private stream: MediaStream | null = null;
+  private ownsStream = false;
   private animFrameId: number | null = null;
   private dataArray: Uint8Array<ArrayBuffer> | null = null;
 
+  /**
+   * @param onLevel  Callback receiving a normalized 0–1 volume level.
+   * @param deviceId Optional microphone device ID.
+   * @param existingStream If provided, reuse this MediaStream instead of
+   *                       opening a new one. The caller retains ownership —
+   *                       `stop()` will NOT close the stream tracks.
+   */
   async start(
     onLevel: (level: number) => void,
     deviceId?: string,
+    existingStream?: MediaStream,
   ): Promise<void> {
     try {
-      const constraints: MediaStreamConstraints = {
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-      };
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (existingStream) {
+        this.stream = existingStream;
+        this.ownsStream = false;
+      } else {
+        const constraints: MediaStreamConstraints = {
+          audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        };
+        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+        this.ownsStream = true;
+      }
       this.audioContext = new AudioContext();
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
@@ -51,7 +69,7 @@ export class AudioLevelMeter {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;
@@ -61,13 +79,14 @@ export class AudioLevelMeter {
     this.analyser?.disconnect();
     this.analyser = null;
     if (this.audioContext) {
-      this.audioContext.close().catch(() => {});
+      try { await this.audioContext.close(); } catch { /* already closed */ }
       this.audioContext = null;
     }
-    if (this.stream) {
+    if (this.stream && this.ownsStream) {
       this.stream.getTracks().forEach((t) => t.stop());
-      this.stream = null;
     }
+    this.stream = null;
+    this.ownsStream = false;
     this.dataArray = null;
   }
 }
