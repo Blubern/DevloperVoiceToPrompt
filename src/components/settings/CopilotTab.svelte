@@ -4,6 +4,7 @@
   import { EVENT_ENHANCER_TEMPLATES_UPDATED } from "../../lib/constants";
   import { emit } from "@tauri-apps/api/event";
   import ShortcutRecorder from "../ShortcutRecorder.svelte";
+  import TemplateEditorModal from "./TemplateEditorModal.svelte";
   import { onMount } from "svelte";
 
   let {
@@ -35,10 +36,9 @@
 
   // Modal state for add/edit
   let modalOpen = $state(false);
-  let modalEditId = $state<string | null>(null); // null = adding new, string = editing existing
+  let modalEditId = $state<string | null>(null);
   let modalName = $state("");
   let modalText = $state("");
-  let modalCanSave = $derived(modalName.trim().length > 0 && modalText.trim().length > 0);
 
   let sortedModels = $derived([...copilotModels].sort((a, b) => a.name.localeCompare(b.name)));
 
@@ -117,25 +117,17 @@
   }
 
   async function handleModalSave() {
-    if (!modalCanSave) return;
+    const trimmedName = modalName.trim();
+    const trimmedText = modalText.trim();
+    if (!trimmedName || !trimmedText) return;
     if (modalEditId) {
-      await updateEnhancerTemplate(modalEditId, modalName, modalText);
+      await updateEnhancerTemplate(modalEditId, trimmedName, trimmedText);
     } else {
-      await addEnhancerTemplate(modalName, modalText);
+      await addEnhancerTemplate(trimmedName, trimmedText);
     }
     enhancerTemplates = await getEnhancerTemplates();
     closeModal();
     await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
-  }
-
-  function handleModalKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeModal();
-    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && modalCanSave) {
-      e.preventDefault();
-      handleModalSave();
-    }
   }
 
   async function confirmDelete(id: string) {
@@ -303,48 +295,18 @@
     {/if}
   </div>
 
-  <!-- Template Editor Modal -->
-  {#if modalOpen}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="template-modal-backdrop" onclick={closeModal}>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="template-modal" onclick={(e) => e.stopPropagation()} onkeydown={handleModalKeydown}>
-        <div class="template-modal-header">
-          <h3>{modalEditId ? 'Edit Template' : 'New Template'}</h3>
-          <button type="button" class="template-modal-close" onclick={closeModal}>✕</button>
-        </div>
-        <div class="template-modal-body">
-          <div class="field">
-            <span class="label">Template Name</span>
-            <input
-              type="text"
-              placeholder="e.g. Developer Prompt Optimizer"
-              bind:value={modalName}
-            />
-          </div>
-          <div class="field">
-            <span class="label">Instructions</span>
-            <textarea
-              class="template-modal-textarea"
-              placeholder="Write the instructions for how the AI should enhance the transcribed text..."
-              bind:value={modalText}
-              rows="10"
-            ></textarea>
-            <span class="hint">These instructions are sent as the system prompt to the AI model when enhancing your transcribed text.</span>
-          </div>
-        </div>
-        <div class="template-modal-footer">
-          <span class="template-modal-shortcut">Ctrl+Enter to save</span>
-          <button type="button" class="toggle-btn" onclick={closeModal}>Cancel</button>
-          <button type="button" class="toggle-btn primary" onclick={handleModalSave} disabled={!modalCanSave}>
-            {modalEditId ? 'Save Changes' : 'Add Template'}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <TemplateEditorModal
+    bind:open={modalOpen}
+    editId={modalEditId}
+    bind:name={modalName}
+    bind:text={modalText}
+    namePlaceholder="e.g. Developer Prompt Optimizer"
+    textPlaceholder="Write the instructions for how the AI should enhance the transcribed text..."
+    textLabel="Instructions"
+    textHint="These instructions are sent as the system prompt to the AI model when enhancing your transcribed text."
+    onSave={handleModalSave}
+    onClose={closeModal}
+  />
 
   <!-- Shortcut section -->
   <div class="section" style="margin-top: 12px;">
@@ -371,110 +333,6 @@
 {/if}
 
 <style>
-  .template-modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    backdrop-filter: blur(2px);
-  }
-
-  .template-modal {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    width: 560px;
-    max-width: 90vw;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
-  }
-
-  .template-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .template-modal-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .template-modal-close {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 16px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-  .template-modal-close:hover {
-    background: var(--surface);
-    color: var(--text-primary);
-  }
-
-  .template-modal-body {
-    padding: 16px 20px;
-    flex: 1;
-    overflow-y: auto;
-  }
-
-  .template-modal-textarea {
-    width: 100%;
-    padding: 10px 12px;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: inherit;
-    resize: vertical;
-    outline: none;
-    line-height: 1.6;
-    min-height: 180px;
-  }
-  .template-modal-textarea:focus {
-    border-color: var(--accent);
-  }
-
-  .template-modal-footer {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px 16px;
-    border-top: 1px solid var(--border);
-    justify-content: flex-end;
-  }
-
-  .template-modal-shortcut {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-right: auto;
-  }
-
-  .toggle-btn.primary {
-    background: var(--accent);
-    color: var(--bg-primary);
-    border-color: var(--accent);
-  }
-  .toggle-btn.primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-  .toggle-btn.primary:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
   .toggle-btn.danger {
     color: var(--error);
     border-color: var(--error);

@@ -67,9 +67,17 @@ pub async fn whisper_transcribe(
         return Err("Invalid sample rate: must be greater than 0".into());
     }
 
+    if audio_b64.is_empty() {
+        return Ok(String::new());
+    }
+
     // Decode base64 → raw bytes → f32 PCM samples (little-endian)
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &audio_b64)
         .map_err(|e| format!("Invalid base64 audio data: {e}"))?;
+
+    if bytes.len() < 4 {
+        return Ok(String::new());
+    }
 
     if bytes.len() % 4 != 0 {
         tracing::warn!(

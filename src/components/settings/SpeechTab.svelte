@@ -3,7 +3,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { testAzureConnection, webSpeechAvailable, type AudioDevice } from "../../lib/speechService";
-  import { EVENT_WHISPER_DOWNLOAD_PROGRESS } from "../../lib/constants";
+  import { EVENT_WHISPER_DOWNLOAD_PROGRESS, PROVIDER_AZURE, PROVIDER_WHISPER } from "../../lib/constants";
+  import { onMount } from "svelte";
 
   let {
     speechProvider = $bindable(),
@@ -137,7 +138,7 @@
   }
 
   // Load models on mount
-  $effect(() => { refreshWhisperModels(); });
+  onMount(() => { refreshWhisperModels(); });
 </script>
 
 <div class="section">

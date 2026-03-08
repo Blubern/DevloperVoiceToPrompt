@@ -3,7 +3,6 @@ use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
-use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
 /// A running copilot-bridge.mjs process with its I/O handles.
@@ -11,7 +10,7 @@ struct BridgeProcess {
     _child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    next_id: AtomicU64,
+    next_id: u64,
 }
 
 pub struct CopilotState {
@@ -68,7 +67,8 @@ async fn bridge_call_with_params(
 ) -> Result<serde_json::Value, String> {
     use tokio::time::{timeout, Duration};
 
-    let id = bridge.next_id.fetch_add(1, Ordering::Relaxed);
+    let id = bridge.next_id;
+    bridge.next_id += 1;
     let mut req = serde_json::json!({ "id": id, "method": method });
     if let Some(p) = params {
         req["params"] = p;
@@ -177,13 +177,17 @@ pub async fn copilot_init(
     app: tauri::AppHandle,
     state: tauri::State<'_, CopilotState>,
 ) -> Result<(), String> {
-    let mut guard = state.bridge.lock().await;
+    // Take the old bridge out of the lock first, then tear it down outside the lock.
+    // This minimizes lock duration so concurrent commands aren't blocked during teardown.
+    let old_bridge = {
+        let mut guard = state.bridge.lock().await;
+        guard.take()
+    };
 
-    // If already running, tear down the old bridge
-    if let Some(mut old) = guard.take() {
+    // Tear down old bridge outside the lock
+    if let Some(mut old) = old_bridge {
         let _ = old.stdin.shutdown().await;
         let _ = old._child.kill().await;
-        // Wait for the process to actually exit (up to 5s) to avoid orphans
         let _ = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             old._child.wait(),
@@ -264,13 +268,16 @@ pub async fn copilot_init(
         _child: child,
         stdin,
         stdout: BufReader::new(stdout),
-        next_id: AtomicU64::new(1),
+        next_id: 1,
     };
 
     // Send "init" to have the bridge create a CopilotClient and verify the connection
     bridge_call(&mut bridge, "init").await?;
 
     tracing::info!("Copilot bridge initialized");
+
+    // Only hold the lock briefly to insert the new bridge
+    let mut guard = state.bridge.lock().await;
     *guard = Some(bridge);
     Ok(())
 }

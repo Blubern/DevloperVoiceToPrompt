@@ -10,6 +10,7 @@ fn is_log_file(entry: &fs::DirEntry) -> bool {
 }
 
 /// Read log file contents, returning the most recent `max_lines` lines.
+/// Reads files from newest to oldest and stops early once enough lines are collected.
 #[tauri::command]
 pub async fn get_logs(app: tauri::AppHandle, max_lines: Option<usize>) -> Result<String, String> {
     let dir = crate::logging::log_dir(&app);
@@ -24,29 +25,36 @@ pub async fn get_logs(app: tauri::AppHandle, max_lines: Option<usize>) -> Result
 
     log_files.sort_by_key(|e| e.file_name());
 
-    // Read files in reverse, collecting only the last `max` lines via a bounded ring
-    use std::collections::VecDeque;
+    // Read from newest file backward, collecting lines in reverse.
+    // Stop early once we have enough lines.
     use std::io::{BufRead, BufReader};
 
-    let mut ring: VecDeque<String> = VecDeque::with_capacity(max);
-    for entry in &log_files {
+    let mut collected: Vec<String> = Vec::with_capacity(max);
+
+    for entry in log_files.iter().rev() {
+        if collected.len() >= max {
+            break;
+        }
         let file = match fs::File::open(entry.path()) {
             Ok(f) => f,
             Err(_) => continue,
         };
-        for line in BufReader::new(file).lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-            if ring.len() == max {
-                ring.pop_front();
-            }
-            ring.push_back(line);
-        }
+        // Read all lines from this file, then take the tail we still need.
+        let file_lines: Vec<String> = BufReader::new(file)
+            .lines()
+            .filter_map(|l| l.ok())
+            .collect();
+
+        let remaining = max - collected.len();
+        let start = file_lines.len().saturating_sub(remaining);
+        // Prepend this file's lines (they go before what we already have since
+        // we're iterating newest-first but want chronological output).
+        let mut batch: Vec<String> = file_lines[start..].to_vec();
+        batch.append(&mut collected);
+        collected = batch;
     }
 
-    Ok(ring.into_iter().collect::<Vec<_>>().join("\n"))
+    Ok(collected.join("\n"))
 }
 
 /// Delete all log files.

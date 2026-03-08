@@ -1,6 +1,7 @@
 <script lang="ts">
   import ShortcutRecorder from "../ShortcutRecorder.svelte";
   import { DEFAULT_SETTINGS } from "../../lib/settingsStore";
+  import { FONT_OPTIONS } from "../../lib/constants";
 
   let {
     theme = $bindable(),
@@ -50,22 +51,7 @@
     mcpRunning: boolean;
   } = $props();
 
-  const FONT_OPTIONS = [
-    { value: "mono", label: "Monospace (Default)", preview: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace" },
-    { value: "cascadia", label: "Cascadia Code", preview: "'Cascadia Code', 'Cascadia Mono', monospace" },
-    { value: "firacode", label: "Fira Code", preview: "'Fira Code', 'Fira Mono', monospace" },
-    { value: "jetbrains", label: "JetBrains Mono", preview: "'JetBrains Mono', monospace" },
-    { value: "consolas", label: "Consolas", preview: "'Consolas', monospace" },
-    { value: "courier", label: "Courier New", preview: "'Courier New', monospace" },
-    { value: "ubuntu", label: "Ubuntu Mono", preview: "'Ubuntu Mono', monospace" },
-    { value: "system", label: "System Sans-Serif", preview: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
-    { value: "georgia", label: "Georgia", preview: "'Georgia', serif" },
-    { value: "palatino", label: "Palatino", preview: "'Palatino Linotype', 'Book Antiqua', Palatino, serif" },
-    { value: "garamond", label: "Garamond", preview: "'Garamond', 'EB Garamond', serif" },
-    { value: "serif", label: "Serif", preview: "'Georgia', 'Times New Roman', serif" },
-  ];
-
-  let fontPreviewFamily = $derived(FONT_OPTIONS.find(o => o.value === popupFont)?.preview ?? "inherit");
+  let fontPreviewFamily = $derived(FONT_OPTIONS.find(o => o.value === popupFont)?.family ?? "inherit");
 
   function toggleTheme() {
     theme = theme === "dark" ? "light" : "dark";

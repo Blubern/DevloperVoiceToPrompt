@@ -3,6 +3,7 @@
   import { getTemplates, addTemplate, updateTemplate, deleteTemplate, type PromptTemplate } from "../../lib/templateStore";
   import { EVENT_TEMPLATES_UPDATED } from "../../lib/constants";
   import { onMount } from "svelte";
+  import TemplateEditorModal from "./TemplateEditorModal.svelte";
 
   let templates = $state<PromptTemplate[]>([]);
   let deleteConfirmId = $state<string | null>(null);
@@ -12,7 +13,6 @@
   let modalEditId = $state<string | null>(null);
   let modalName = $state("");
   let modalText = $state("");
-  let modalCanSave = $derived(modalName.trim().length > 0 && modalText.trim().length > 0);
 
   onMount(async () => {
     templates = await getTemplates();
@@ -41,25 +41,17 @@
   }
 
   async function handleModalSave() {
-    if (!modalCanSave) return;
+    const trimmedName = modalName.trim();
+    const trimmedText = modalText.trim();
+    if (!trimmedName || !trimmedText) return;
     if (modalEditId) {
-      await updateTemplate(modalEditId, modalName.trim(), modalText.trim());
+      await updateTemplate(modalEditId, trimmedName, trimmedText);
     } else {
-      await addTemplate(modalName.trim(), modalText.trim());
+      await addTemplate(trimmedName, trimmedText);
     }
     templates = await getTemplates();
     closeModal();
     await emit(EVENT_TEMPLATES_UPDATED);
-  }
-
-  function handleModalKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeModal();
-    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && modalCanSave) {
-      e.preventDefault();
-      handleModalSave();
-    }
   }
 
   async function handleDeleteTemplate(id: string) {
@@ -109,127 +101,14 @@
   </div>
 </div>
 
-<!-- Template Editor Modal -->
-{#if modalOpen}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="template-modal-backdrop" onclick={closeModal}>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="template-modal" onclick={(e) => e.stopPropagation()} onkeydown={handleModalKeydown}>
-      <div class="template-modal-header">
-        <h3>{modalEditId ? 'Edit Template' : 'New Template'}</h3>
-        <button type="button" class="template-modal-close" onclick={closeModal}>✕</button>
-      </div>
-      <div class="template-modal-body">
-        <div class="field">
-          <span class="label">Template Name</span>
-          <input type="text" placeholder="e.g. Stand-up notes, Bug report, Feature request…" bind:value={modalName} />
-        </div>
-        <div class="field">
-          <span class="label">Template Text</span>
-          <textarea class="template-modal-textarea" placeholder="Write the reusable prompt or template text that will be loaded into the popup…" bind:value={modalText} rows="10"></textarea>
-          <span class="hint">This text will replace the current content in the popup when the template is selected.</span>
-        </div>
-      </div>
-      <div class="template-modal-footer">
-        <span class="template-modal-shortcut">Ctrl+Enter to save</span>
-        <button type="button" class="toggle-btn" onclick={closeModal}>Cancel</button>
-        <button type="button" class="toggle-btn primary" onclick={handleModalSave} disabled={!modalCanSave}>
-          {modalEditId ? 'Save Changes' : 'Add Template'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<style>
-  .template-modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    backdrop-filter: blur(2px);
-  }
-  .template-modal {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    width: 560px;
-    max-width: 90vw;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
-  }
-  .template-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  .template-modal-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .template-modal-close {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 16px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-  .template-modal-close:hover {
-    background: var(--surface);
-    color: var(--text-primary);
-  }
-  .template-modal-body {
-    padding: 16px 20px;
-    flex: 1;
-    overflow-y: auto;
-  }
-  .template-modal-textarea {
-    width: 100%;
-    padding: 10px 12px;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: inherit;
-    resize: vertical;
-    outline: none;
-    line-height: 1.6;
-    min-height: 180px;
-    box-sizing: border-box;
-  }
-  .template-modal-textarea:focus { border-color: var(--accent); }
-  .template-modal-footer {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px 16px;
-    border-top: 1px solid var(--border);
-    justify-content: flex-end;
-  }
-  .template-modal-shortcut {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-right: auto;
-  }
-  .toggle-btn.primary {
-    background: var(--accent);
-    color: var(--bg-primary);
-    border-color: var(--accent);
-  }
-  .toggle-btn.primary:hover:not(:disabled) { opacity: 0.9; }
-  .toggle-btn.primary:disabled { opacity: 0.4; cursor: not-allowed; }
-</style>
+<TemplateEditorModal
+  bind:open={modalOpen}
+  editId={modalEditId}
+  bind:name={modalName}
+  bind:text={modalText}
+  namePlaceholder="e.g. Stand-up notes, Bug report, Feature request…"
+  textPlaceholder="Write the reusable prompt or template text that will be loaded into the popup…"
+  textHint="This text will replace the current content in the popup when the template is selected."
+  onSave={handleModalSave}
+  onClose={closeModal}
+/>

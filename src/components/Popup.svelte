@@ -38,6 +38,7 @@
     EVENT_ENHANCER_TEMPLATES_UPDATED,
     EVENT_MCP_VOICE_REQUEST,
     ENHANCE_SYSTEM_PROMPT_WRAPPER,
+    FONT_FAMILIES,
     type RecordingStatus,
     type McpVoiceRequest,
   } from "../lib/constants";
@@ -177,7 +178,7 @@
   let micDropdownOpen = $state(false);
   let audioDevices = $state<AudioDevice[]>([]);
   let micWarning = $state("");
-  let selectedMicLabel = $derived(() => {
+  let selectedMicLabel = $derived.by(() => {
     if (!settings.microphone_device_id) return "Default Mic";
     const dev = audioDevices.find(d => d.deviceId === settings.microphone_device_id);
     return dev ? dev.label : "Default Mic";
@@ -192,31 +193,16 @@
   );
 
   // OS language display label
-  let osLanguageDisplayLabel = $derived(() => {
+  let osLanguageDisplayLabel = $derived.by(() => {
     const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.os_language);
     return lang ? `${lang.label.split(" ")[0]} (${settings.os_language})` : settings.os_language;
   });
 
-  let whisperLanguageDisplayLabel = $derived(() => {
+  let whisperLanguageDisplayLabel = $derived.by(() => {
     const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.whisper_language);
     return lang ? `${lang.label.split(" ")[0]} (${settings.whisper_language})` : settings.whisper_language;
   });
 
-  // Map font setting to CSS font-family
-  const FONT_FAMILIES: Record<string, string> = {
-    mono: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace",
-    cascadia: "'Cascadia Code', 'Cascadia Mono', monospace",
-    firacode: "'Fira Code', 'Fira Mono', monospace",
-    jetbrains: "'JetBrains Mono', monospace",
-    consolas: "'Consolas', monospace",
-    courier: "'Courier New', monospace",
-    ubuntu: "'Ubuntu Mono', monospace",
-    system: "system-ui, -apple-system, 'Segoe UI', sans-serif",
-    georgia: "'Georgia', serif",
-    palatino: "'Palatino Linotype', 'Book Antiqua', Palatino, serif",
-    garamond: "'Garamond', 'EB Garamond', serif",
-    serif: "'Georgia', 'Times New Roman', serif",
-  };
   let popupFontFamily = $derived(FONT_FAMILIES[settings.popup_font] ?? FONT_FAMILIES.mono);
 
   // Context-aware button label
@@ -361,13 +347,20 @@
     win.onResized(() => debouncedSave()).then((u) => unlisteners.push(u));
     win.onMoved(() => debouncedSave()).then((u) => unlisteners.push(u));
 
-    // Refresh history when window regains focus
+    // Consolidate all focus-related logic in one listener to avoid stacking
     win.onFocusChanged(({ payload: focused }) => {
-      if (focused && historyOpen && settings.history_enabled) {
-        getHistory().then(entries => {
-          historyEntries = entries;
-          historyCount = entries.length;
-        }).catch(e => console.error("Failed to refresh history on focus:", e));
+      if (focused) {
+        // Refresh history when window regains focus
+        if (historyOpen && settings.history_enabled) {
+          getHistory().then(entries => {
+            historyEntries = entries;
+            historyCount = entries.length;
+          }).catch(e => console.error("Failed to refresh history on focus:", e));
+        }
+        // Reset auto-start flag when popup regains focus
+        if (settings.auto_start_recording && status === "idle" && !editedText) {
+          autoStartDone = false;
+        }
       }
     }).then((u) => unlisteners.push(u));
 
@@ -388,18 +381,6 @@
 
   // Auto-start recording when popup opens / regains focus
   let autoStartDone = $state(false);
-
-  // Reset auto-start flag when popup regains focus (popup is show/hide, not recreated)
-  $effect(() => {
-    const win = getCurrentWindow();
-    let unlisten: (() => void) | null = null;
-    win.onFocusChanged(({ payload: focused }) => {
-      if (focused && settings.auto_start_recording && status === "idle" && !editedText) {
-        autoStartDone = false;
-      }
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  });
 
   $effect(() => {
     if (settings.auto_start_recording && status === "idle" && !editedText && !autoStartDone) {
@@ -460,6 +441,11 @@
     editedText = target.value;
     userHasEdited = true;
     cursorPosition = target.selectionStart;
+    // Typing counts as user activity — reset the silence timer so it
+    // doesn't auto-stop recording while the user is actively editing.
+    if (status === "listening") {
+      resetSilenceTimer();
+    }
   }
 
   function handleCursorChange() {
@@ -921,9 +907,23 @@
     return () => { listenPromise.then((fn) => fn()); };
   });
 
-  // Release the cached AudioWorklet Blob URL when the popup is destroyed.
+  // Global cleanup when the popup component is destroyed.
+  // Clears all pending timers and releases shared resources.
   $effect(() => {
-    return () => { revokeWorkletUrl(); };
+    return () => {
+      revokeWorkletUrl();
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      if (maxRecordingTimer) { clearTimeout(maxRecordingTimer); maxRecordingTimer = null; }
+      if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
+      if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+      if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
+      if (decodeFadeTimer) { clearTimeout(decodeFadeTimer); decodeFadeTimer = null; }
+      if (resizeDebounce) { clearTimeout(resizeDebounce); resizeDebounce = null; }
+      if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+      stopDecodeRaf();
+      if (levelMeter) { levelMeter.stop(); levelMeter = null; }
+      if (activeProvider) { activeProvider.dispose(); activeProvider = null; }
+    };
   });
 
   // Listen to enhancer-templates-updated from Settings
@@ -938,13 +938,13 @@
   $effect(() => {
     const listenPromise = listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
       mcpRequest = event.payload;
-      // Always start MCP requests with an empty editor so the ask is clear.
+      // Start with context_input pre-filled, or empty editor if none provided.
       finalSegments = [];
       interimText = "";
-      editedText = "";
-      userHasEdited = false;
+      editedText = event.payload.context_input ?? "";
+      userHasEdited = !!event.payload.context_input;
       lastSyncedSegmentCount = 0;
-      cursorPosition = 0;
+      cursorPosition = editedText.length;
 
       focusTextareaAtEnd();
     });
@@ -1105,20 +1105,20 @@
         {/if}
       {:else if settings.speech_provider === PROVIDER_OS}
         {#if status === "listening"}
-          <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel()}</span>
+          <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel}</span>
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
-            {osLanguageDisplayLabel()} ▾
+            {osLanguageDisplayLabel} ▾
           </button>
         {/if}
       {:else if settings.speech_provider === PROVIDER_WHISPER}
         {#if status === "listening"}
-          <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel()}</span>
+          <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel}</span>
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
-            {whisperLanguageDisplayLabel()} ▾
+            {whisperLanguageDisplayLabel} ▾
           </button>
         {/if}
       {/if}
@@ -1168,10 +1168,10 @@
           class="mic-selector-btn"
           onclick={() => { micDropdownOpen = !micDropdownOpen; }}
           disabled={status === "listening" || enhancing}
-          title={`Microphone: ${selectedMicLabel()}`}
+          title={`Microphone: ${selectedMicLabel}`}
         >
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-          <span class="mic-selector-label">{selectedMicLabel()}</span>
+          <span class="mic-selector-label">{selectedMicLabel}</span>
           <span class="mic-selector-chevron">▾</span>
         </button>
         {#if micDropdownOpen && status !== "listening"}

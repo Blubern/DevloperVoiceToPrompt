@@ -60,6 +60,33 @@ export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | ty
 export type RecordingStatus = "idle" | "listening" | "error";
 export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP;
 
+// Font options for the popup editor textarea
+export interface FontOption {
+  value: string;
+  label: string;
+  family: string;
+}
+
+export const FONT_OPTIONS: FontOption[] = [
+  { value: "mono", label: "Monospace (Default)", family: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace" },
+  { value: "cascadia", label: "Cascadia Code", family: "'Cascadia Code', 'Cascadia Mono', monospace" },
+  { value: "firacode", label: "Fira Code", family: "'Fira Code', 'Fira Mono', monospace" },
+  { value: "jetbrains", label: "JetBrains Mono", family: "'JetBrains Mono', monospace" },
+  { value: "consolas", label: "Consolas", family: "'Consolas', monospace" },
+  { value: "courier", label: "Courier New", family: "'Courier New', monospace" },
+  { value: "ubuntu", label: "Ubuntu Mono", family: "'Ubuntu Mono', monospace" },
+  { value: "system", label: "System Sans-Serif", family: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
+  { value: "georgia", label: "Georgia", family: "'Georgia', serif" },
+  { value: "palatino", label: "Palatino", family: "'Palatino Linotype', 'Book Antiqua', Palatino, serif" },
+  { value: "garamond", label: "Garamond", family: "'Garamond', 'EB Garamond', serif" },
+  { value: "serif", label: "Serif", family: "'Georgia', 'Times New Roman', serif" },
+];
+
+/** Lookup map: font setting value → CSS font-family string. */
+export const FONT_FAMILIES: Record<string, string> = Object.fromEntries(
+  FONT_OPTIONS.map((o) => [o.value, o.family]),
+);
+
 export interface McpVoiceRequest {
   input_reason: string;
   context_input: string | null;

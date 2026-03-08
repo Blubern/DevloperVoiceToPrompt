@@ -352,6 +352,18 @@ export function revokeWorkletUrl(): void {
 // Whisper (local) provider — rolling-window realtime
 // ---------------------------------------------------------------------------
 
+/** Encode a Uint8Array to base64 using chunked conversion to avoid
+ *  O(n) string concatenation per byte. */
+function uint8ToBase64(bytes: Uint8Array): string {
+  const CHUNK = 8192;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, Math.min(i + CHUNK, bytes.length));
+    parts.push(String.fromCharCode(...slice));
+  }
+  return btoa(parts.join(""));
+}
+
 export class WhisperSpeechProvider implements SpeechProvider {
   private callbacks: SpeechCallbacks | null = null;
   private audioContext: AudioContext | null = null;
@@ -534,11 +546,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
     // Encode float32 PCM to base64
     const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const audioB64 = btoa(binary);
+    const audioB64 = uint8ToBase64(bytes);
 
     const initialPrompt =
       this.phraseList && this.phraseList.length > 0
@@ -739,9 +747,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return;
 
     const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const audioB64 = btoa(binary);
+    const audioB64 = uint8ToBase64(bytes);
 
     const initialPrompt =
       this.phraseList && this.phraseList.length > 0 ? this.phraseList.join(", ") : undefined;
@@ -881,8 +887,10 @@ export class WhisperSpeechProvider implements SpeechProvider {
 // Factory
 // ---------------------------------------------------------------------------
 
+import { PROVIDER_AZURE, PROVIDER_WHISPER } from "./constants";
+
 export function createSpeechProvider(settings: AppSettings): SpeechProvider {
-  if (settings.speech_provider === "azure") {
+  if (settings.speech_provider === PROVIDER_AZURE) {
     return new AzureSpeechProvider(
       settings.azure_speech_key,
       settings.azure_region,
@@ -892,7 +900,7 @@ export function createSpeechProvider(settings: AppSettings): SpeechProvider {
       settings.auto_punctuation,
     );
   }
-  if (settings.speech_provider === "whisper") {
+  if (settings.speech_provider === PROVIDER_WHISPER) {
     return new WhisperSpeechProvider(
       settings.whisper_model,
       settings.whisper_language,

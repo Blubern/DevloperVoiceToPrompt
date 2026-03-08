@@ -25,8 +25,7 @@ pub fn set_dock_visibility(app: &tauri::AppHandle, visible: bool) {
         let _ = app;
         use objc2::MainThreadMarker;
         use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
-        unsafe {
-            let mtm = MainThreadMarker::new_unchecked();
+        if let Some(mtm) = MainThreadMarker::new() {
             let ns_app = NSApplication::sharedApplication(mtm);
             let policy = if visible {
                 NSApplicationActivationPolicy::Regular
@@ -34,6 +33,8 @@ pub fn set_dock_visibility(app: &tauri::AppHandle, visible: bool) {
                 NSApplicationActivationPolicy::Accessory
             };
             ns_app.setActivationPolicy(policy);
+        } else {
+            tracing::warn!("set_dock_visibility called off main thread; skipping");
         }
     }
     #[cfg(target_os = "windows")]
