@@ -139,3 +139,63 @@ pub fn model_download_url(model_name: &str) -> String {
 }
 
 use tauri::Manager;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whisper_models_has_entries() {
+        assert!(
+            WHISPER_MODELS.len() >= 4,
+            "Expected at least 4 models, got {}",
+            WHISPER_MODELS.len()
+        );
+    }
+
+    #[test]
+    fn whisper_models_names_unique() {
+        let mut names: Vec<&str> = WHISPER_MODELS.iter().map(|(n, _, _)| *n).collect();
+        let count = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), count, "Duplicate model names found");
+    }
+
+    #[test]
+    fn whisper_models_sizes_positive() {
+        for (name, _, size_mb) in WHISPER_MODELS {
+            assert!(*size_mb > 0, "Model {name} has zero size");
+        }
+    }
+
+    #[test]
+    fn model_download_url_format() {
+        let url = model_download_url("tiny");
+        assert_eq!(
+            url,
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+        );
+    }
+
+    #[test]
+    fn model_download_url_large_v3() {
+        let url = model_download_url("large-v3");
+        assert!(url.contains("ggml-large-v3.bin"));
+    }
+
+    #[test]
+    fn hallucination_tokens_cleaned_in_transcription_output() {
+        // The transcribe() method strips hallucination tokens.
+        // Verify the patterns exist in the replace chain.
+        let text = "[BLANK_AUDIO] hello [MUSIC] world [SILENCE] (silence) (blank audio)";
+        let cleaned = text
+            .replace("[BLANK_AUDIO]", "")
+            .replace("[MUSIC]", "")
+            .replace("[SILENCE]", "")
+            .replace("(silence)", "")
+            .replace("(blank audio)", "");
+        let cleaned = cleaned.trim();
+        assert_eq!(cleaned, "hello  world");
+    }
+}

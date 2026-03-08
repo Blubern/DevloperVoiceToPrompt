@@ -420,3 +420,65 @@ pub async fn copilot_enhance(
             "Unexpected response format from enhance".to_string()
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- is_transport_error ---
+
+    #[test]
+    fn transport_error_matches_transport_tag() {
+        assert!(is_transport_error("Bridge process exited unexpectedly (transport)"));
+    }
+
+    #[test]
+    fn transport_error_matches_write_failure() {
+        assert!(is_transport_error("Failed to write to bridge: broken pipe"));
+    }
+
+    #[test]
+    fn transport_error_matches_flush_failure() {
+        assert!(is_transport_error("Failed to flush bridge stdin: broken pipe"));
+    }
+
+    #[test]
+    fn transport_error_matches_read_failure() {
+        assert!(is_transport_error("Failed to read from bridge: eof"));
+    }
+
+    #[test]
+    fn transport_error_matches_timeout() {
+        assert!(is_transport_error("Copilot bridge did not respond within 30 seconds"));
+    }
+
+    #[test]
+    fn transport_error_rejects_normal_errors() {
+        assert!(!is_transport_error("Authentication failed"));
+        assert!(!is_transport_error("Invalid JSON"));
+        assert!(!is_transport_error("Model not found"));
+    }
+
+    // --- clean_path ---
+
+    #[test]
+    fn clean_path_strips_extended_prefix() {
+        let p = std::path::PathBuf::from(r"\\?\C:\Users\test\file.txt");
+        let cleaned = clean_path(p);
+        assert_eq!(cleaned, std::path::PathBuf::from(r"C:\Users\test\file.txt"));
+    }
+
+    #[test]
+    fn clean_path_leaves_normal_path_unchanged() {
+        let p = std::path::PathBuf::from(r"C:\Users\test\file.txt");
+        let cleaned = clean_path(p.clone());
+        assert_eq!(cleaned, p);
+    }
+
+    #[test]
+    fn clean_path_handles_unix_style_path() {
+        let p = std::path::PathBuf::from("/home/user/file.txt");
+        let cleaned = clean_path(p.clone());
+        assert_eq!(cleaned, p);
+    }
+}

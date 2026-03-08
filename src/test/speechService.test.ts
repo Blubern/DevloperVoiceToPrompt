@@ -1,0 +1,266 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Mock the Azure Speech SDK before importing speechService
+vi.mock("microsoft-cognitiveservices-speech-sdk", () => ({
+  SpeechConfig: { fromSubscription: vi.fn() },
+  AudioConfig: {
+    fromMicrophoneInput: vi.fn(),
+    fromDefaultMicrophoneInput: vi.fn(),
+  },
+  SpeechRecognizer: vi.fn(),
+  AutoDetectSourceLanguageConfig: { fromLanguages: vi.fn() },
+  PhraseListGrammar: { fromRecognizer: vi.fn(() => ({ addPhrase: vi.fn() })) },
+  PropertyId: { SpeechServiceConnection_InitialSilenceTimeoutMs: "a", SpeechServiceConnection_EndSilenceTimeoutMs: "b" },
+  ResultReason: { RecognizedSpeech: 1 },
+  CancellationReason: { Error: 1 },
+}));
+
+import {
+  checkMicrophonePermission,
+  enumerateAudioDevices,
+  testAzureConnection,
+  createSpeechProvider,
+  OsSpeechProvider,
+  AzureSpeechProvider,
+  WhisperSpeechProvider,
+} from "../lib/speechService";
+import type { AppSettings } from "../lib/settingsStore";
+
+// ---------------------------------------------------------------------------
+// checkMicrophonePermission
+// ---------------------------------------------------------------------------
+
+describe("checkMicrophonePermission", () => {
+  beforeEach(() => {
+    // jsdom doesn't provide navigator.permissions — stub it
+    Object.defineProperty(navigator, "permissions", {
+      value: { query: vi.fn() },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns 'granted' when permission is granted", async () => {
+    vi.mocked(navigator.permissions.query).mockResolvedValue({
+      state: "granted",
+    } as PermissionStatus);
+    expect(await checkMicrophonePermission()).toBe("granted");
+  });
+
+  it("returns 'denied' when permission is denied", async () => {
+    vi.mocked(navigator.permissions.query).mockResolvedValue({
+      state: "denied",
+    } as PermissionStatus);
+    expect(await checkMicrophonePermission()).toBe("denied");
+  });
+
+  it("returns 'prompt' when permission is prompt", async () => {
+    vi.mocked(navigator.permissions.query).mockResolvedValue({
+      state: "prompt",
+    } as PermissionStatus);
+    expect(await checkMicrophonePermission()).toBe("prompt");
+  });
+
+  it("returns 'unknown' when permissions API throws", async () => {
+    vi.mocked(navigator.permissions.query).mockRejectedValue(new Error("not supported"));
+    expect(await checkMicrophonePermission()).toBe("unknown");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enumerateAudioDevices
+// ---------------------------------------------------------------------------
+
+describe("enumerateAudioDevices", () => {
+  const mockTrack = { stop: vi.fn() };
+  const mockStream = { getTracks: () => [mockTrack] };
+
+  beforeEach(() => {
+    mockTrack.stop.mockClear();
+    // jsdom doesn't provide navigator.mediaDevices — stub it
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: {
+        getUserMedia: vi.fn(),
+        enumerateDevices: vi.fn(),
+      },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns audio input devices on success", async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as unknown as MediaStream);
+    vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([
+      { kind: "audioinput", deviceId: "mic1", label: "Built-in Mic", groupId: "g1", toJSON: vi.fn() },
+      { kind: "videoinput", deviceId: "cam1", label: "Camera", groupId: "g2", toJSON: vi.fn() },
+      { kind: "audioinput", deviceId: "mic2", label: "", groupId: "g3", toJSON: vi.fn() },
+    ] as MediaDeviceInfo[]);
+
+    const result = await enumerateAudioDevices();
+    expect(result.devices).toHaveLength(2);
+    expect(result.devices[0]).toEqual({ deviceId: "mic1", label: "Built-in Mic" });
+    // Empty label gets a fallback
+    expect(result.devices[1].label).toMatch(/^Microphone \(/);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("stops tracks after getUserMedia", async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as unknown as MediaStream);
+    vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([]);
+
+    await enumerateAudioDevices();
+    expect(mockTrack.stop).toHaveBeenCalled();
+  });
+
+  it("returns NotAllowedError message when mic access denied", async () => {
+    const err = new DOMException("Permission denied", "NotAllowedError");
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(err);
+
+    const result = await enumerateAudioDevices();
+    expect(result.devices).toEqual([]);
+    expect(result.error).toContain("denied");
+  });
+
+  it("returns NotFoundError message when no mic found", async () => {
+    const err = new DOMException("No device", "NotFoundError");
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(err);
+
+    const result = await enumerateAudioDevices();
+    expect(result.devices).toEqual([]);
+    expect(result.error).toContain("No microphone found");
+  });
+
+  it("returns generic error for other exceptions", async () => {
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(new Error("boom"));
+
+    const result = await enumerateAudioDevices();
+    expect(result.devices).toEqual([]);
+    expect(result.error).toContain("Could not access microphone");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// testAzureConnection
+// ---------------------------------------------------------------------------
+
+describe("testAzureConnection", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns error when key is empty", async () => {
+    const result = await testAzureConnection("", "westus");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("required");
+  });
+
+  it("returns error when region is empty", async () => {
+    const result = await testAzureConnection("key123", "");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("required");
+  });
+
+  it("returns ok on successful token response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    const result = await testAzureConnection("validkey", "westus");
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("builds correct URL with encoded region", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    await testAzureConnection("key", "eastus2");
+    expect(spy).toHaveBeenCalledWith(
+      "https://eastus2.api.cognitive.microsoft.com/sts/v1.0/issueToken",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Ocp-Apim-Subscription-Key": "key" }),
+      }),
+    );
+  });
+
+  it("returns 'Invalid API key' on 401", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 401 } as Response);
+
+    const result = await testAzureConnection("badkey", "westus");
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Invalid API key.");
+  });
+
+  it("returns 'not authorized' on 403", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 403 } as Response);
+
+    const result = await testAzureConnection("key", "wrongregion");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("not authorized");
+  });
+
+  it("returns status code on other errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 500 } as Response);
+
+    const result = await testAzureConnection("key", "westus");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("500");
+  });
+
+  it("returns network error when fetch throws", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const result = await testAzureConnection("key", "westus");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Could not reach Azure");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createSpeechProvider (factory)
+// ---------------------------------------------------------------------------
+
+describe("createSpeechProvider", () => {
+  const baseSettings = {
+    speech_provider: "os",
+    os_language: "en-US",
+    os_auto_restart: true,
+    os_max_restarts: 3,
+    azure_speech_key: "testkey",
+    azure_region: "westus",
+    languages: ["en-US"],
+    microphone_device_id: "",
+    phrase_list: [],
+    auto_punctuation: true,
+    whisper_model: "tiny",
+    whisper_language: "en",
+    whisper_decode_interval: 3,
+    whisper_context_overlap: 1,
+  } as unknown as AppSettings;
+
+  it("returns OsSpeechProvider for 'os' provider", () => {
+    const provider = createSpeechProvider({ ...baseSettings, speech_provider: "os" } as AppSettings);
+    expect(provider).toBeInstanceOf(OsSpeechProvider);
+  });
+
+  it("returns AzureSpeechProvider for 'azure' provider", () => {
+    const provider = createSpeechProvider({ ...baseSettings, speech_provider: "azure" } as AppSettings);
+    expect(provider).toBeInstanceOf(AzureSpeechProvider);
+  });
+
+  it("returns WhisperSpeechProvider for 'whisper' provider", () => {
+    const provider = createSpeechProvider({ ...baseSettings, speech_provider: "whisper" } as AppSettings);
+    expect(provider).toBeInstanceOf(WhisperSpeechProvider);
+  });
+
+  it("defaults to OsSpeechProvider for unknown provider", () => {
+    const provider = createSpeechProvider({ ...baseSettings, speech_provider: "unknown" } as AppSettings);
+    expect(provider).toBeInstanceOf(OsSpeechProvider);
+  });
+});

@@ -139,3 +139,46 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     }
     output
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resample_same_rate_passthrough() {
+        let input = vec![1.0, 2.0, 3.0];
+        let out = resample(&input, 16000, 16000);
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn resample_empty_input() {
+        let out = resample(&[], 48000, 16000);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn resample_48k_to_16k_length() {
+        // 48 kHz → 16 kHz is a 3:1 ratio, so output should be ~1/3 the input length.
+        let input: Vec<f32> = (0..4800).map(|i| (i as f32).sin()).collect();
+        let out = resample(&input, 48000, 16000);
+        assert_eq!(out.len(), 1600);
+    }
+
+    #[test]
+    fn resample_preserves_dc_signal() {
+        // A constant signal should remain constant after resampling.
+        let input = vec![0.5_f32; 4800];
+        let out = resample(&input, 48000, 16000);
+        for &s in &out {
+            assert!((s - 0.5).abs() < 1e-6, "sample {} deviates from 0.5", s);
+        }
+    }
+
+    #[test]
+    fn resample_upsample_16k_to_48k() {
+        let input: Vec<f32> = (0..1600).map(|i| i as f32 / 1600.0).collect();
+        let out = resample(&input, 16000, 48000);
+        assert_eq!(out.len(), 4800);
+    }
+}
