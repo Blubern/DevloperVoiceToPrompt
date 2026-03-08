@@ -696,7 +696,7 @@
     if (text) {
       await writeText(text);
       if (settings.history_enabled) {
-        await addHistoryEntry(text, settings.history_max_entries);
+        await addHistoryEntry(text, settings.history_max_entries, mcpRequest?.input_reason ?? undefined);
         // Refresh history if panel is open
         if (historyOpen) {
           historyEntries = await getHistory();

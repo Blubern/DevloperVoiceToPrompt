@@ -3,6 +3,7 @@ import { load, type Store } from "@tauri-apps/plugin-store";
 export interface HistoryEntry {
   timestamp: string; // ISO 8601
   text: string;
+  input_reason?: string;
 }
 
 let store: Store | null = null;
@@ -16,14 +17,17 @@ async function getStore(): Promise<Store> {
 
 export async function addHistoryEntry(
   text: string,
-  maxEntries: number
+  maxEntries: number,
+  inputReason?: string
 ): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
   const s = await getStore();
   const raw = await s.get<HistoryEntry[]>("entries");
   const entries: HistoryEntry[] = raw ?? [];
-  entries.unshift({ timestamp: new Date().toISOString(), text: trimmed });
+  const entry: HistoryEntry = { timestamp: new Date().toISOString(), text: trimmed };
+  if (inputReason) entry.input_reason = inputReason;
+  entries.unshift(entry);
   if (entries.length > maxEntries) {
     entries.length = maxEntries;
   }

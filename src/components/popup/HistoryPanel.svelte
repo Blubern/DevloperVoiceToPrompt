@@ -18,7 +18,10 @@
 
   let filteredEntries = $derived(
     search.trim()
-      ? entries.filter(e => e.text.toLowerCase().includes(search.trim().toLowerCase()))
+      ? entries.filter(e => {
+          const q = search.trim().toLowerCase();
+          return e.text.toLowerCase().includes(q) || (e.input_reason?.toLowerCase().includes(q) ?? false);
+        })
       : entries
   );
 
@@ -46,7 +49,13 @@
       {:else}
         {#each filteredEntries as entry}
           <div class="history-entry">
-            <button class="history-entry-body" onclick={() => onInsert(entry.text)} title={entry.text}>
+            <button class="history-entry-body" onclick={() => onInsert(entry.text)} title={entry.input_reason ? `[MCP] ${entry.input_reason}\n\n${entry.text}` : entry.text}>
+              {#if entry.input_reason}
+                <span class="history-mcp-row">
+                  <span class="history-mcp-badge">MCP</span>
+                  <span class="history-mcp-reason" title={entry.input_reason}>{entry.input_reason}</span>
+                </span>
+              {/if}
               <span class="history-text">{entry.text.length > 80 ? entry.text.slice(0, 80) + '…' : entry.text}</span>
               <span class="history-time">{formatRelativeTime(entry.timestamp)}</span>
             </button>
