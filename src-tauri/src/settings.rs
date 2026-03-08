@@ -90,7 +90,7 @@ impl Default for AppSettings {
             mcp_enabled: false,
             mcp_port: 31337,
             mcp_timeout_seconds: 300,
-            show_in_dock: true,
+            show_in_dock: false,
         }
     }
 }

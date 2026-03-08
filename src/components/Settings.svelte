@@ -26,48 +26,15 @@
 
   let { initialSettings, onSaved }: Props = $props();
 
-  // All settings state (two-way bound into tab sub-components)
-  let speechProvider = $state<"os" | "azure" | "whisper">(DEFAULT_SETTINGS.speech_provider);
-  let osLanguage = $state(DEFAULT_SETTINGS.os_language);
-  let osAutoRestart = $state(DEFAULT_SETTINGS.os_auto_restart);
-  let osMaxRestarts = $state(DEFAULT_SETTINGS.os_max_restarts);
-  let key = $state("");
-  let region = $state(DEFAULT_SETTINGS.azure_region);
-  let languages = $state<string[]>([...DEFAULT_SETTINGS.languages]);
-  let shortcut = $state(DEFAULT_SETTINGS.shortcut);
-  let microphoneDeviceId = $state("");
-  let theme = $state(DEFAULT_SETTINGS.theme);
-  let phraseList = $state<string[]>([]);
-  let alwaysOnTop = $state(DEFAULT_SETTINGS.always_on_top);
-  let autoPunctuation = $state(DEFAULT_SETTINGS.auto_punctuation);
-  let autoStartRecording = $state(DEFAULT_SETTINGS.auto_start_recording);
-  let autostartEnabled = $state(DEFAULT_SETTINGS.autostart_enabled);
+  // Single reactive settings object — child tabs bind directly to its properties.
+  // Adding a new setting only requires updating AppSettings + DEFAULT_SETTINGS + the
+  // relevant tab binding. No separate hydrate/build sync needed.
+  let s = $state<AppSettings>({ ...DEFAULT_SETTINGS });
+
+  // UI-only derived toggles (not part of AppSettings — the actual timeout value of 0
+  // means "disabled", but the UI shows a separate checkbox + number input)
   let silenceTimeoutEnabled = $state(true);
-  let silenceTimeoutSeconds = $state(DEFAULT_SETTINGS.silence_timeout_seconds);
-  let maxRecordingEnabled = $state(DEFAULT_SETTINGS.max_recording_enabled);
-  let maxRecordingSeconds = $state(DEFAULT_SETTINGS.max_recording_seconds);
-  let historyEnabled = $state(DEFAULT_SETTINGS.history_enabled);
-  let historyMaxEntries = $state(DEFAULT_SETTINGS.history_max_entries);
-  let popupCopyShortcut = $state(DEFAULT_SETTINGS.popup_copy_shortcut);
-  let popupVoiceShortcut = $state(DEFAULT_SETTINGS.popup_voice_shortcut);
-  let providerSwitchShortcut = $state(DEFAULT_SETTINGS.provider_switch_shortcut);
-  let whisperModel = $state(DEFAULT_SETTINGS.whisper_model);
-  let whisperLanguage = $state(DEFAULT_SETTINGS.whisper_language);
-  let whisperChunkSeconds = $state(DEFAULT_SETTINGS.whisper_chunk_seconds);
-  let whisperDecodeInterval = $state(DEFAULT_SETTINGS.whisper_decode_interval);
-  let whisperContextOverlap = $state(DEFAULT_SETTINGS.whisper_context_overlap);
-  let copilotEnabled = $state(DEFAULT_SETTINGS.copilot_enabled);
-  let copilotSelectedModel = $state(DEFAULT_SETTINGS.copilot_selected_model);
-  let copilotSelectedEnhancer = $state(DEFAULT_SETTINGS.copilot_selected_enhancer);
-  let copilotDeleteSessions = $state(DEFAULT_SETTINGS.copilot_delete_sessions);
-  let promptEnhancerShortcut = $state(DEFAULT_SETTINGS.prompt_enhancer_shortcut);
-  let popupFont = $state(DEFAULT_SETTINGS.popup_font);
-  let openPopupOnStart = $state(DEFAULT_SETTINGS.open_popup_on_start);
-  let mcpEnabled = $state(DEFAULT_SETTINGS.mcp_enabled);
-  let mcpPort = $state(DEFAULT_SETTINGS.mcp_port);
   let mcpTimeoutEnabled = $state(true);
-  let mcpTimeoutSeconds = $state(DEFAULT_SETTINGS.mcp_timeout_seconds);
-  let showInDock = $state(DEFAULT_SETTINGS.show_in_dock);
   let isMac = $state(false);
   let isWindows = $state(false);
 
@@ -80,52 +47,21 @@
   let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "copilot" | "logs">("general");
   let mcpRunning = $state(false);
 
-  /** Hydrate all local $state fields from a settings object. */
-  function hydrateFromSettings(s: AppSettings) {
-    speechProvider = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
-    osLanguage = s.os_language ?? DEFAULT_SETTINGS.os_language;
-    osAutoRestart = s.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
-    osMaxRestarts = s.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
-    key = s.azure_speech_key ?? "";
-    region = s.azure_region ?? DEFAULT_SETTINGS.azure_region;
-    languages = s.languages ? [...s.languages] : [...DEFAULT_SETTINGS.languages];
-    shortcut = s.shortcut ?? DEFAULT_SETTINGS.shortcut;
-    microphoneDeviceId = s.microphone_device_id ?? "";
-    phraseList = s.phrase_list ? [...s.phrase_list] : [];
-    alwaysOnTop = s.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
-    autoPunctuation = s.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
-    autoStartRecording = s.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording;
-    autostartEnabled = s.autostart_enabled ?? DEFAULT_SETTINGS.autostart_enabled;
-    const savedTimeout = s.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
-    silenceTimeoutEnabled = savedTimeout > 0;
-    silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
-    maxRecordingEnabled = s.max_recording_enabled ?? DEFAULT_SETTINGS.max_recording_enabled;
-    maxRecordingSeconds = s.max_recording_seconds ?? DEFAULT_SETTINGS.max_recording_seconds;
-    historyEnabled = s.history_enabled ?? DEFAULT_SETTINGS.history_enabled;
-    historyMaxEntries = s.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
-    popupCopyShortcut = s.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
-    popupVoiceShortcut = s.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
-    providerSwitchShortcut = s.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut;
-    whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
-    whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
-    whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
-    whisperDecodeInterval = s.whisper_decode_interval ?? DEFAULT_SETTINGS.whisper_decode_interval;
-    whisperContextOverlap = s.whisper_context_overlap ?? DEFAULT_SETTINGS.whisper_context_overlap;
-    copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
-    copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
-    copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
-    copilotDeleteSessions = s.copilot_delete_sessions ?? DEFAULT_SETTINGS.copilot_delete_sessions;
-    promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
-    popupFont = s.popup_font ?? DEFAULT_SETTINGS.popup_font;
-    openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
-    mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
-    mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
-    const savedMcpTimeout = s.mcp_timeout_seconds ?? DEFAULT_SETTINGS.mcp_timeout_seconds;
-    mcpTimeoutEnabled = savedMcpTimeout > 0;
-    mcpTimeoutSeconds = savedMcpTimeout > 0 ? savedMcpTimeout : DEFAULT_SETTINGS.mcp_timeout_seconds;
-    showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
-    theme = s.theme ?? DEFAULT_SETTINGS.theme;
-    document.documentElement.dataset.theme = theme;
+  /** Hydrate form state from a settings object. */
+  function hydrateFromSettings(src: AppSettings) {
+    s = {
+      ...DEFAULT_SETTINGS,
+      ...src,
+      // Deep-copy arrays so form edits don't mutate the source
+      languages: src.languages ? [...src.languages] : [...DEFAULT_SETTINGS.languages],
+      phrase_list: src.phrase_list ? [...src.phrase_list] : [],
+    };
+    // Derive UI-only timeout toggles
+    silenceTimeoutEnabled = s.silence_timeout_seconds > 0;
+    if (!silenceTimeoutEnabled) s.silence_timeout_seconds = 30;
+    mcpTimeoutEnabled = s.mcp_timeout_seconds > 0;
+    if (!mcpTimeoutEnabled) s.mcp_timeout_seconds = DEFAULT_SETTINGS.mcp_timeout_seconds;
+    document.documentElement.dataset.theme = s.theme;
   }
 
   // Sync local state from initialSettings prop
@@ -134,48 +70,12 @@
     hydrateFromSettings(initialSettings);
   });
 
-  // isDirty: compare current state to saved settings via JSON snapshot
+  /** Build the settings object to save, applying timeout toggle semantics. */
   function buildSettingsObject(): AppSettings {
     return {
-      speech_provider: speechProvider,
-      os_language: osLanguage,
-      os_auto_restart: osAutoRestart,
-      os_max_restarts: osMaxRestarts,
-      azure_speech_key: key,
-      azure_region: region,
-      whisper_model: whisperModel,
-      whisper_language: whisperLanguage,
-      whisper_chunk_seconds: whisperChunkSeconds,
-      whisper_decode_interval: whisperDecodeInterval,
-      whisper_context_overlap: whisperContextOverlap,
-      languages,
-      shortcut,
-      microphone_device_id: microphoneDeviceId,
-      theme,
-      phrase_list: phraseList,
-      always_on_top: alwaysOnTop,
-      auto_punctuation: autoPunctuation,
-      auto_start_recording: autoStartRecording,
-      silence_timeout_seconds: silenceTimeoutEnabled ? silenceTimeoutSeconds : 0,
-      history_enabled: historyEnabled,
-      history_max_entries: historyMaxEntries,
-      popup_copy_shortcut: popupCopyShortcut,
-      popup_voice_shortcut: popupVoiceShortcut,
-      provider_switch_shortcut: providerSwitchShortcut,
-      max_recording_enabled: maxRecordingEnabled,
-      max_recording_seconds: maxRecordingSeconds,
-      autostart_enabled: autostartEnabled,
-      copilot_enabled: copilotEnabled,
-      copilot_selected_model: copilotSelectedModel,
-      copilot_selected_enhancer: copilotSelectedEnhancer,
-      copilot_delete_sessions: copilotDeleteSessions,
-      prompt_enhancer_shortcut: promptEnhancerShortcut,
-      popup_font: popupFont,
-      open_popup_on_start: openPopupOnStart,
-      mcp_enabled: mcpEnabled,
-      mcp_port: mcpPort,
-      mcp_timeout_seconds: mcpTimeoutEnabled ? mcpTimeoutSeconds : 0,
-      show_in_dock: showInDock,
+      ...s,
+      silence_timeout_seconds: silenceTimeoutEnabled ? s.silence_timeout_seconds : 0,
+      mcp_timeout_seconds: mcpTimeoutEnabled ? s.mcp_timeout_seconds : 0,
     };
   }
 
@@ -193,8 +93,8 @@
   }
 
   function toggleTheme() {
-    theme = theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = theme;
+    s.theme = s.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = s.theme;
   }
 
   async function refreshMcpStatus() {
@@ -206,7 +106,6 @@
   }
 
   onMount(async () => {
-    // Detect platform for platform-specific UI
     isMac = navigator.userAgent.includes("Macintosh") || navigator.platform === "MacIntel";
     isWindows = navigator.userAgent.includes("Windows");
 
@@ -218,11 +117,10 @@
   });
 
   async function handleSave() {
-    // Warn if MCP server is being disabled or port changed (drops active connections)
     if (initialSettings) {
       const wasMcpOn = initialSettings.mcp_enabled;
-      const isDisabling = wasMcpOn && !mcpEnabled;
-      const isPortChanging = wasMcpOn && mcpEnabled && mcpPort !== initialSettings.mcp_port;
+      const isDisabling = wasMcpOn && !s.mcp_enabled;
+      const isPortChanging = wasMcpOn && s.mcp_enabled && s.mcp_port !== initialSettings.mcp_port;
       if (isDisabling || isPortChanging) {
         const msg = isDisabling
           ? "Disabling the MCP server will drop all active connections. AI tools using this server will need to reconnect. Continue?"
@@ -239,7 +137,6 @@
       success = true;
       onSaved?.();
       await emit(EVENT_SETTINGS_UPDATED);
-      // Refresh MCP status after save (server may have started/stopped)
       setTimeout(refreshMcpStatus, 500);
       setTimeout(() => (success = false), 2000);
     } catch (e) {
@@ -255,8 +152,8 @@
     <div class="header">
       <h1>Settings</h1>
       <button type="button" class="theme-toggle" onclick={toggleTheme}
-        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-        {#if theme === 'dark'}
+        title={s.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+        {#if s.theme === 'dark'}
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
         {:else}
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -276,28 +173,28 @@
   <form onsubmit={(e) => { e.preventDefault(); handleSave(); }}>
     <div class="settings-body">
       {#if activeTab === 'general'}
-        <GeneralTab bind:theme bind:autostartEnabled bind:shortcut bind:popupCopyShortcut
-          bind:popupVoiceShortcut bind:providerSwitchShortcut bind:alwaysOnTop
-          bind:autoStartRecording bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds
-          bind:maxRecordingEnabled bind:maxRecordingSeconds bind:popupFont bind:openPopupOnStart
-          bind:mcpEnabled bind:mcpPort bind:mcpTimeoutEnabled bind:mcpTimeoutSeconds
-          bind:showInDock {isMac} {isWindows} {mcpRunning} />
+        <GeneralTab bind:theme={s.theme} bind:autostartEnabled={s.autostart_enabled} bind:shortcut={s.shortcut} bind:popupCopyShortcut={s.popup_copy_shortcut}
+          bind:popupVoiceShortcut={s.popup_voice_shortcut} bind:providerSwitchShortcut={s.provider_switch_shortcut} bind:alwaysOnTop={s.always_on_top}
+          bind:autoStartRecording={s.auto_start_recording} bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds={s.silence_timeout_seconds}
+          bind:maxRecordingEnabled={s.max_recording_enabled} bind:maxRecordingSeconds={s.max_recording_seconds} bind:popupFont={s.popup_font} bind:openPopupOnStart={s.open_popup_on_start}
+          bind:mcpEnabled={s.mcp_enabled} bind:mcpPort={s.mcp_port} bind:mcpTimeoutEnabled bind:mcpTimeoutSeconds={s.mcp_timeout_seconds}
+          bind:showInDock={s.show_in_dock} {isMac} {isWindows} {mcpRunning} />
       {:else if activeTab === 'speech'}
-        <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
-          bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation
-          bind:whisperModel bind:whisperLanguage bind:whisperChunkSeconds
-          bind:whisperDecodeInterval bind:whisperContextOverlap
+        <SpeechTab bind:speechProvider={s.speech_provider} bind:osLanguage={s.os_language} bind:osAutoRestart={s.os_auto_restart} bind:osMaxRestarts={s.os_max_restarts}
+          bind:key={s.azure_speech_key} bind:region={s.azure_region} bind:languages={s.languages} bind:microphoneDeviceId={s.microphone_device_id} bind:autoPunctuation={s.auto_punctuation}
+          bind:whisperModel={s.whisper_model} bind:whisperLanguage={s.whisper_language} bind:whisperChunkSeconds={s.whisper_chunk_seconds}
+          bind:whisperDecodeInterval={s.whisper_decode_interval} bind:whisperContextOverlap={s.whisper_context_overlap}
           {audioDevices} {micWarning} bind:error />
       {:else if activeTab === 'phrases'}
-        <PhrasesTab bind:phraseList />
+        <PhrasesTab bind:phraseList={s.phrase_list} />
       {:else if activeTab === 'templates'}
         <TemplatesTab />
       {:else if activeTab === 'history'}
-        <HistoryTab bind:historyEnabled bind:historyMaxEntries />
+        <HistoryTab bind:historyEnabled={s.history_enabled} bind:historyMaxEntries={s.history_max_entries} />
       {:else if activeTab === 'usage'}
         <UsageTab />
       {:else if activeTab === 'copilot'}
-        <CopilotTab bind:copilotEnabled bind:copilotSelectedModel bind:copilotSelectedEnhancer bind:copilotDeleteSessions bind:promptEnhancerShortcut />
+        <CopilotTab bind:copilotEnabled={s.copilot_enabled} bind:copilotSelectedModel={s.copilot_selected_model} bind:copilotSelectedEnhancer={s.copilot_selected_enhancer} bind:copilotDeleteSessions={s.copilot_delete_sessions} bind:promptEnhancerShortcut={s.prompt_enhancer_shortcut} />
       {:else if activeTab === 'logs'}
         <LogsTab />
       {/if}

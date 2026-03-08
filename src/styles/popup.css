@@ -458,3 +458,102 @@
     opacity: 0;
   }
 }
+
+/* ---- Copilot Enhance Bar (shared between Popup and CopilotEnhanceBar) ---- */
+.copilot-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 64px;
+  flex-wrap: wrap;
+}
+
+.copilot-select {
+  padding: 3px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  field-sizing: content;
+}
+.copilot-select:focus { border-color: var(--accent); }
+.copilot-select option { background: var(--input-bg); color: var(--text-primary); }
+
+.copilot-enhance-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 4px;
+  transition: all 0.15s;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+}
+.copilot-enhance-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.copilot-enhance-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.copilot-undo-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 4px;
+  transition: all 0.15s;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+}
+.copilot-undo-btn:hover {
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+  color: var(--text-primary);
+}
+.copilot-enhance-label {
+  line-height: 1;
+}
+.copilot-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--red);
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-radius: 4px;
+  margin-right: 64px;
+}
+.copilot-error-dismiss {
+  background: none;
+  border: none;
+  color: var(--red);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: auto;
+}
+.copilot-error-dismiss:hover {
+  opacity: 1;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

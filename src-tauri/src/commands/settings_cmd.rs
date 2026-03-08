@@ -47,6 +47,10 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
         return Err("MCP port must be between 1024 and 65535.".into());
     }
 
+    // Register the global shortcut BEFORE persisting, so a rejected shortcut
+    // is never written to disk (which would break the app on next launch).
+    register_shortcut(&app, settings.shortcut.as_str())?;
+
     // Snapshot old MCP settings before persisting so we can detect changes
     let old_settings = settings::load_settings(&app);
     let mcp_changed = old_settings.mcp_enabled != settings.mcp_enabled
@@ -78,9 +82,6 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
             crate::mcp::start_mcp_server(app.clone(), settings.mcp_port);
         }
     }
-
-    // Re-register the global shortcut with the new key combo
-    register_shortcut(&app, settings.shortcut.as_str())?;
 
     Ok(())
 }

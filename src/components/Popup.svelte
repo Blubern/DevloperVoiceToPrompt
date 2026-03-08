@@ -27,6 +27,7 @@
   import AboutOverlay from "./popup/AboutOverlay.svelte";
   import TemplatesPanel from "./popup/TemplatesPanel.svelte";
   import HistoryPanel from "./popup/HistoryPanel.svelte";
+  import CopilotEnhanceBar from "./popup/CopilotEnhanceBar.svelte";
   import {
     PROVIDER_AZURE,
     PROVIDER_OS,
@@ -35,7 +36,6 @@
     providerLabel,
     EVENT_SETTINGS_UPDATED,
     EVENT_TEMPLATES_UPDATED,
-    EVENT_ENHANCER_TEMPLATES_UPDATED,
     EVENT_MCP_VOICE_REQUEST,
     ENHANCE_SYSTEM_PROMPT_WRAPPER,
     FONT_FAMILIES,
@@ -44,8 +44,7 @@
   } from "../lib/constants";
   import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
   import { AudioLevelMeter } from "../lib/audioLevelMeter";
-  import { copilotInit, copilotAuthStatus, copilotListModels, copilotStop, copilotEnhance, type CopilotAuthStatus, type CopilotModel } from "../lib/copilotStore";
-  import { getEnhancerTemplates, type EnhancerTemplate } from "../lib/enhancerTemplateStore";
+  import { copilotEnhance, type CopilotAuthStatus } from "../lib/copilotStore";
 
   interface Props {
     settings: AppSettings;
@@ -60,6 +59,7 @@
   let interimText = $state("");
   let errorMessage = $state("");
   let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let copilotEnhanceBar: CopilotEnhanceBar | undefined = $state();
 
   // Track user's edited text separately from speech output
   let editedText = $state("");
@@ -115,14 +115,9 @@
   let showUndoToast = $state(false);
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Copilot state
-  let copilotStatus = $state<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  // Copilot state (connection managed by CopilotEnhanceBar, enhance orchestration kept here)
   let copilotAuth = $state<CopilotAuthStatus | null>(null);
-  let copilotModels = $state<CopilotModel[]>([]);
-  let copilotError = $state("");
-  let copilotSelectedModel = $state("");
-  let enhancerTemplates = $state<EnhancerTemplate[]>([]);
-  let selectedEnhancerId = $state("");
+  let copilotConnected = $state(false);
   let enhancing = $state(false);
 
   // Whisper model download check
@@ -135,8 +130,6 @@
 
   // MCP mode: set when the popup was opened by an MCP tool call
   let mcpRequest = $state<McpVoiceRequest | null>(null);
-
-  let sortedCopilotModels = $derived([...copilotModels].sort((a, b) => a.name.localeCompare(b.name)));
 
   let isMcpMode = $derived(mcpRequest !== null);
   let showEmptyState = $derived(!editedText && status === "idle");
@@ -218,13 +211,6 @@
     if (status === "listening" && !hasText) return "Stop Mic";
     if (hasText) return "Copy & Close";
     return "Copy & Close";
-  });
-
-  // Enhance button label: context-aware based on mic state
-  let enhanceButtonLabel = $derived.by(() => {
-    if (enhancing) return "Enhancing...";
-    if (status === "listening") return "Stop Mic & Enhance";
-    return "Enhance";
   });
 
   // Format elapsed time as m:ss
@@ -646,6 +632,8 @@
 
     // For non-Whisper providers, start a standalone audio level meter.
     // Whisper reports audio level via the onAudioLevel callback above.
+    // TODO: Refactor OS/Azure providers to expose their MediaStream so it can be
+    // passed here via existingStream, avoiding a second getUserMedia call.
     if (settings.speech_provider !== PROVIDER_WHISPER) {
       levelMeter = new AudioLevelMeter();
       levelMeter.start((level) => { audioLevel = level; }, settings.microphone_device_id || undefined);
@@ -709,16 +697,21 @@
 
   async function copyAndClose() {
     const text = editedText.trim();
-    if (text) {
-      await writeText(text);
-      if (settings.history_enabled) {
-        await addHistoryEntry(text, settings.history_max_entries, mcpRequest?.input_reason ?? undefined);
-        // Refresh history if panel is open
-        if (historyOpen) {
-          historyEntries = await getHistory();
+    // Clipboard and history operations must not prevent MCP submission or popup close
+    try {
+      if (text) {
+        await writeText(text);
+        if (settings.history_enabled) {
+          await addHistoryEntry(text, settings.history_max_entries, mcpRequest?.input_reason ?? undefined);
+          // Refresh history if panel is open
+          if (historyOpen) {
+            historyEntries = await getHistory();
+          }
+          historyCount = Math.min(historyCount + 1, settings.history_max_entries);
         }
-        historyCount = Math.min(historyCount + 1, settings.history_max_entries);
       }
+    } catch (e) {
+      console.error("Failed to copy or save history:", e);
     }
     // Clear enhancement undo stack before clearText (which also clears it)
     enhanceUndoStack = [];
@@ -782,7 +775,9 @@
       }
     } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
       e.preventDefault();
-      executeEnhance();
+      // Delegate to CopilotEnhanceBar click — the bar handles model/template selection
+      const enhanceBtn = document.querySelector('.copilot-enhance-btn:not(:disabled)') as HTMLButtonElement;
+      enhanceBtn?.click();
     } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && enhanceUndoStack.length > 0) {
       e.preventDefault();
       undoEnhance();
@@ -904,7 +899,7 @@
         templateEntries = await getTemplates();
       }
     });
-    return () => { listenPromise.then((fn) => fn()); };
+    return () => { listenPromise.then((fn) => fn()).catch(() => {}); };
   });
 
   // Global cleanup when the popup component is destroyed.
@@ -923,15 +918,12 @@
       stopDecodeRaf();
       if (levelMeter) { levelMeter.stop(); levelMeter = null; }
       if (activeProvider) { activeProvider.dispose(); activeProvider = null; }
+      // Cancel any pending MCP request so the caller isn't left hanging
+      if (mcpRequest !== null) {
+        mcpRequest = null;
+        invoke("mcp_cancel").catch(() => {});
+      }
     };
-  });
-
-  // Listen to enhancer-templates-updated from Settings
-  $effect(() => {
-    const listenPromise = listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
-      enhancerTemplates = await getEnhancerTemplates();
-    });
-    return () => { listenPromise.then((fn) => fn()); };
   });
 
   // Listen for MCP voice requests from the Rust backend
@@ -948,80 +940,18 @@
 
       focusTextareaAtEnd();
     });
-    return () => { listenPromise.then((fn) => fn()); };
+    return () => { listenPromise.then((fn) => fn()).catch(() => {}); };
   });
 
-  // Auto-connect to Copilot when enabled
-  $effect(() => {
-    const enabled = settings.copilot_enabled;
-    if (enabled && copilotStatus === 'disconnected') {
-      copilotStatus = 'connecting';
-      copilotError = '';
-      (async () => {
-        try {
-          await copilotInit();
-          const auth = await copilotAuthStatus();
-          copilotAuth = auth;
-          if (auth?.authenticated) {
-            copilotModels = await copilotListModels();
-            copilotStatus = 'connected';
-            // Restore saved model selection
-            if (settings.copilot_selected_model && copilotModels.some(m => m.id === settings.copilot_selected_model)) {
-              copilotSelectedModel = settings.copilot_selected_model;
-            }
-          } else {
-            copilotStatus = 'error';
-            copilotError = 'Not signed in to GitHub Copilot';
-          }
-        } catch (e: any) {
-          copilotStatus = 'error';
-          copilotError = String(e);
-        }
-        // Load enhancer templates regardless of connection status
-        enhancerTemplates = await getEnhancerTemplates();
-        // Restore saved enhancer selection (or use default from settings)
-        const savedEnhancer = settings.copilot_selected_enhancer;
-        if (savedEnhancer && enhancerTemplates.some(t => t.id === savedEnhancer)) {
-          selectedEnhancerId = savedEnhancer;
-        } else if (enhancerTemplates.length > 0) {
-          selectedEnhancerId = enhancerTemplates[0].id;
-        }
-      })();
-    } else if (!enabled && copilotStatus !== 'disconnected') {
-      copilotStop().catch(e => console.error("Failed to stop Copilot:", e));
-      copilotStatus = 'disconnected';
-      copilotAuth = null;
-      copilotModels = [];
-      copilotError = '';
-    }
-  });
-
-  // Persist selected model change
-  async function handleModelChange(modelId: string) {
-    copilotSelectedModel = modelId;
-    settings = { ...settings, copilot_selected_model: modelId };
-    // Blur select so it doesn't capture keyboard shortcuts
-    (document.activeElement as HTMLElement)?.blur();
-    try {
-      await saveSettings(settings);
-      await emit(EVENT_SETTINGS_UPDATED);
-    } catch (e) {
-      console.error("Failed to persist model selection:", e);
-    }
+  // Copilot status callback — used for titlebar avatar display
+  function handleCopilotStatusUpdate(newStatus: string, auth: CopilotAuthStatus | null) {
+    copilotConnected = newStatus === 'connected';
+    copilotAuth = auth;
   }
 
-  // Persist selected enhancer change
-  async function handleEnhancerChange(enhancerId: string) {
-    selectedEnhancerId = enhancerId;
-    settings = { ...settings, copilot_selected_enhancer: enhancerId };
-    // Blur select so it doesn't capture keyboard shortcuts
-    (document.activeElement as HTMLElement)?.blur();
-    try {
-      await saveSettings(settings);
-      await emit(EVENT_SETTINGS_UPDATED);
-    } catch (e) {
-      console.error("Failed to persist enhancer selection:", e);
-    }
+  // Persist settings changes from CopilotEnhanceBar
+  function handleCopilotSettingsChanged(updated: AppSettings) {
+    settings = updated;
   }
 
   // Undo last enhancement (multi-level)
@@ -1034,24 +964,22 @@
     if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
   }
 
-  // Execute prompt enhancement
-  async function executeEnhance() {
+  // Execute prompt enhancement — called by CopilotEnhanceBar with selected model and template
+  async function executeEnhance(modelId?: string, templateText?: string) {
     if (enhancing) return;
+    // When called from keyboard shortcut (no args), use copilotEnhanceBar reference
+    if (!modelId || !templateText) return;
     enhancing = true;
-    copilotError = '';
     try {
       // Stop mic first if recording
       if (status === 'listening') {
         await stopAndRecordUsage();
       }
       const text = editedText.trim();
-      if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected') return;
-      const template = enhancerTemplates.find(t => t.id === selectedEnhancerId);
-      if (!template) return;
-      const systemPrompt = ENHANCE_SYSTEM_PROMPT_WRAPPER + template.text;
-      const result = await copilotEnhance(copilotSelectedModel, systemPrompt, text, settings.copilot_delete_sessions);
+      if (!text) return;
+      const systemPrompt = ENHANCE_SYSTEM_PROMPT_WRAPPER + templateText;
+      const result = await copilotEnhance(modelId, systemPrompt, text, settings.copilot_delete_sessions);
       if (!result || !result.trim()) {
-        copilotError = 'Enhancement returned empty result';
         return;
       }
       // Push current text to undo stack before replacing
@@ -1063,7 +991,7 @@
       if (enhanceToastTimer) clearTimeout(enhanceToastTimer);
       enhanceToastTimer = setTimeout(() => { showEnhanceToast = false; enhanceToastTimer = null; }, 4000);
     } catch (e: any) {
-      copilotError = String(e);
+      console.error("Enhancement failed:", e);
     } finally {
       enhancing = false;
     }
@@ -1226,7 +1154,7 @@
       <button class="titlebar-btn" onclick={() => { helpOpen = !helpOpen; aboutOpen = false; }} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </button>
-      {#if settings.copilot_enabled && copilotStatus === 'connected' && copilotAuth?.login}
+      {#if settings.copilot_enabled && copilotConnected && copilotAuth?.login}
         <img class="copilot-titlebar-avatar" src="https://github.com/{copilotAuth.login}.png?size=40" alt={copilotAuth.login} title={`Signed in as ${copilotAuth.login}`} />
       {/if}
       <button class="titlebar-btn" onclick={() => invoke('show_settings')} aria-label="Settings" title="Settings">
@@ -1406,53 +1334,19 @@
           {/if}
         {/if}
 
-        <!-- Copilot enhancer (inline, after action buttons) -->
-        {#if settings.copilot_enabled && copilotStatus === 'connected' && enhancerTemplates.length > 0}
-          <div class="copilot-inline">
-            <select class="copilot-select" value={copilotSelectedModel} onchange={(e) => handleModelChange((e.target as HTMLSelectElement).value)} disabled={enhancing} title="Select Copilot model">
-              <option value="">Model...</option>
-              {#each sortedCopilotModels as model}
-                <option value={model.id}>{model.name}{model.is_premium ? ` (${model.multiplier}x)` : ' (Included)'}</option>
-              {/each}
-            </select>
-            <select class="copilot-select" value={selectedEnhancerId} onchange={(e) => handleEnhancerChange((e.target as HTMLSelectElement).value)} disabled={enhancing} title="Select prompt enhancer template">
-              <option value="">Enhancer...</option>
-              {#each enhancerTemplates as t}
-                <option value={t.id}>{t.name}</option>
-              {/each}
-            </select>
-            {#if enhanceUndoStack.length > 0}
-              <button
-                class="copilot-undo-btn"
-                onclick={undoEnhance}
-                title="Undo enhancement (Ctrl+Z)"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                <span class="copilot-enhance-label">Undo</span>
-              </button>
-            {/if}
-            <button
-              class="copilot-enhance-btn"
-              onclick={executeEnhance}
-              disabled={enhancing || !editedText.trim() || !copilotSelectedModel || !selectedEnhancerId}
-              title={enhancing ? 'Enhancing...' : status === 'listening' ? 'Stop microphone and enhance prompt' : 'Enhance prompt with AI'}
-            >
-              {#if enhancing}
-                <svg class="spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-              {:else}
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2L19 5"/><path d="M11 6.2L9.8 5"/><path d="M6.87 20.13l-2-2"/><path d="M12.07 14.93l-6.6 6.6"/><path d="M5.47 19.53l2-2"/></svg>
-              {/if}
-              <span class="copilot-enhance-label">{enhanceButtonLabel}</span>
-            </button>
-          </div>
-          {#if copilotError}
-            <div class="copilot-error">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              {copilotError}
-              <button class="copilot-error-dismiss" onclick={() => copilotError = ''}>✕</button>
-            </div>
-          {/if}
-        {/if}
+        <!-- Copilot enhancer (delegated to sub-component) -->
+        <CopilotEnhanceBar
+          bind:this={copilotEnhanceBar}
+          {settings}
+          {status}
+          {editedText}
+          {enhancing}
+          enhanceUndoStackSize={enhanceUndoStack.length}
+          onEnhance={executeEnhance}
+          onUndo={undoEnhance}
+          onSettingsChanged={handleCopilotSettingsChanged}
+          onStatusUpdate={handleCopilotStatusUpdate}
+        />
       </div>
 
       <!-- Copied toast -->
@@ -2360,15 +2254,6 @@
     font-size: 10px;
   }
 
-  /* ---- Copilot Inline (inside actions) ---- */
-  .copilot-inline {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-right: 64px;
-    flex-wrap: wrap;
-  }
-
   .copilot-titlebar-avatar {
     width: 18px;
     height: 18px;
@@ -2377,97 +2262,7 @@
     margin: 0 -1px;
   }
 
-  .copilot-select {
-    padding: 3px 6px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 11px;
-    cursor: pointer;
-    outline: none;
-    field-sizing: content;
-  }
-  .copilot-select:focus { border-color: var(--accent); }
-  .copilot-select option { background: var(--input-bg); color: var(--text-primary); }
-
-  .copilot-enhance-btn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    cursor: pointer;
-    padding: 3px 10px;
-    border-radius: 4px;
-    transition: all 0.15s;
-    white-space: nowrap;
-    font-size: 11px;
-    font-weight: 500;
-  }
-  .copilot-enhance-btn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 30%, transparent);
-  }
-  .copilot-enhance-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .copilot-undo-btn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 3px 10px;
-    border-radius: 4px;
-    transition: all 0.15s;
-    white-space: nowrap;
-    font-size: 11px;
-    font-weight: 500;
-  }
-  .copilot-undo-btn:hover {
-    background: color-mix(in srgb, var(--text-muted) 20%, transparent);
-    color: var(--text-primary);
-  }
-  .copilot-enhance-label {
-    line-height: 1;
-  }
-  .copilot-error {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    color: var(--red);
-    padding: 4px 8px;
-    background: color-mix(in srgb, var(--red) 8%, transparent);
-    border-radius: 4px;
-    margin-right: 64px;
-  }
-  .copilot-error-dismiss {
-    background: none;
-    border: none;
-    color: var(--red);
-    cursor: pointer;
-    padding: 0 2px;
-    font-size: 12px;
-    opacity: 0.7;
-    margin-left: auto;
-  }
-  .copilot-error-dismiss:hover {
-    opacity: 1;
-  }
   .enhance-toast {
     bottom: 72px;
-  }
-
-  .spin {
-    animation: spin 1s linear infinite;
-  }
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
   }
 </style>

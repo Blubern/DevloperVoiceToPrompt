@@ -29,8 +29,9 @@ pub async fn whisper_download_model(
     let total_size = resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
 
-    // Write to a temp file first, then rename on success
-    let tmp_path = path.with_extension("bin.tmp");
+    // Write to a uniquely-named temp file to avoid corruption from concurrent downloads
+    let tmp_name = format!("ggml-{}.{}.bin.tmp", model_name, std::process::id());
+    let tmp_path = path.parent().unwrap().join(tmp_name);
     let mut file = std::fs::File::create(&tmp_path)
         .map_err(|e| format!("Failed to create temp file: {e}"))?;
 

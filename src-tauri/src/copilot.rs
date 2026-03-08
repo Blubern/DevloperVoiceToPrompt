@@ -99,7 +99,7 @@ async fn bridge_call_with_params(
 
     if buf.is_empty() {
         tracing::error!("Bridge process exited unexpectedly (empty stdout)");
-        return Err("Bridge process exited unexpectedly".into());
+        return Err("Bridge process exited unexpectedly (transport)".into());
     }
 
     let resp: BridgeResponse =
@@ -114,6 +114,16 @@ async fn bridge_call_with_params(
     }
 
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
+}
+
+/// Returns true when the error indicates the bridge process is dead and should
+/// be cleared from shared state so the next call doesn't repeat the failure.
+fn is_transport_error(err: &str) -> bool {
+    err.contains("(transport)")
+        || err.contains("Failed to write to bridge")
+        || err.contains("Failed to flush bridge stdin")
+        || err.contains("Failed to read from bridge")
+        || err.contains("did not respond within")
 }
 
 /// Strip the \\?\ extended-length prefix that canonicalize() adds on Windows.
@@ -292,7 +302,16 @@ pub async fn copilot_auth_status(
         .as_mut()
         .ok_or("Copilot not connected. Click Connect first.")?;
 
-    let val = bridge_call(bridge, "auth_status").await?;
+    let val = match bridge_call(bridge, "auth_status").await {
+        Ok(v) => v,
+        Err(e) => {
+            if is_transport_error(&e) {
+                tracing::warn!("Clearing dead Copilot bridge after transport error");
+                *guard = None;
+            }
+            return Err(e);
+        }
+    };
 
     Ok(CopilotAuthStatus {
         authenticated: val
@@ -324,7 +343,16 @@ pub async fn copilot_list_models(
         .as_mut()
         .ok_or("Copilot not connected. Click Connect first.")?;
 
-    let val = bridge_call(bridge, "list_models").await?;
+    let val = match bridge_call(bridge, "list_models").await {
+        Ok(v) => v,
+        Err(e) => {
+            if is_transport_error(&e) {
+                tracing::warn!("Clearing dead Copilot bridge after transport error");
+                *guard = None;
+            }
+            return Err(e);
+        }
+    };
 
     let models: Vec<CopilotModel> =
         serde_json::from_value(val).map_err(|e| format!("Failed to parse models: {}", e))?;
@@ -371,7 +399,16 @@ pub async fn copilot_enhance(
         "delete_session": delete_session,
     });
 
-    let val = bridge_call_with_params(bridge, "enhance", Some(params)).await?;
+    let val = match bridge_call_with_params(bridge, "enhance", Some(params)).await {
+        Ok(v) => v,
+        Err(e) => {
+            if is_transport_error(&e) {
+                tracing::warn!("Clearing dead Copilot bridge after transport error");
+                *guard = None;
+            }
+            return Err(e);
+        }
+    };
 
     val.as_str()
         .map(|s| {
