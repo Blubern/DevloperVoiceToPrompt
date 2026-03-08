@@ -80,17 +80,15 @@
   let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "copilot" | "logs">("general");
   let mcpRunning = $state(false);
 
-  // Sync local state from initialSettings prop
-  $effect(() => {
-    if (!initialSettings) return;
-    const s = initialSettings;
+  /** Hydrate all local $state fields from a settings object. */
+  function hydrateFromSettings(s: AppSettings) {
     speechProvider = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
     osLanguage = s.os_language ?? DEFAULT_SETTINGS.os_language;
     osAutoRestart = s.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
     osMaxRestarts = s.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
     key = s.azure_speech_key ?? "";
     region = s.azure_region ?? DEFAULT_SETTINGS.azure_region;
-    languages = s.languages ?? [...DEFAULT_SETTINGS.languages];
+    languages = s.languages ? [...s.languages] : [...DEFAULT_SETTINGS.languages];
     shortcut = s.shortcut ?? DEFAULT_SETTINGS.shortcut;
     microphoneDeviceId = s.microphone_device_id ?? "";
     phraseList = s.phrase_list ? [...s.phrase_list] : [];
@@ -126,9 +124,14 @@
     mcpTimeoutEnabled = savedMcpTimeout > 0;
     mcpTimeoutSeconds = savedMcpTimeout > 0 ? savedMcpTimeout : DEFAULT_SETTINGS.mcp_timeout_seconds;
     showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
-    const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
-    theme = savedTheme;
-    document.documentElement.dataset.theme = savedTheme;
+    theme = s.theme ?? DEFAULT_SETTINGS.theme;
+    document.documentElement.dataset.theme = theme;
+  }
+
+  // Sync local state from initialSettings prop
+  $effect(() => {
+    if (!initialSettings) return;
+    hydrateFromSettings(initialSettings);
   });
 
   // isDirty: compare current state to saved settings via JSON snapshot
@@ -184,53 +187,7 @@
 
   function revertChanges() {
     if (!initialSettings) return;
-    // Re-trigger the sync effect by reassigning (the $effect above handles it)
-    const s = initialSettings;
-    speechProvider = s.speech_provider ?? DEFAULT_SETTINGS.speech_provider;
-    osLanguage = s.os_language ?? DEFAULT_SETTINGS.os_language;
-    osAutoRestart = s.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart;
-    osMaxRestarts = s.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts;
-    key = s.azure_speech_key ?? "";
-    region = s.azure_region ?? DEFAULT_SETTINGS.azure_region;
-    languages = s.languages ? [...s.languages] : [...DEFAULT_SETTINGS.languages];
-    shortcut = s.shortcut ?? DEFAULT_SETTINGS.shortcut;
-    microphoneDeviceId = s.microphone_device_id ?? "";
-    phraseList = s.phrase_list ? [...s.phrase_list] : [];
-    alwaysOnTop = s.always_on_top ?? DEFAULT_SETTINGS.always_on_top;
-    autoPunctuation = s.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation;
-    autoStartRecording = s.auto_start_recording ?? DEFAULT_SETTINGS.auto_start_recording;
-    autostartEnabled = s.autostart_enabled ?? DEFAULT_SETTINGS.autostart_enabled;
-    const savedTimeout = s.silence_timeout_seconds ?? DEFAULT_SETTINGS.silence_timeout_seconds;
-    silenceTimeoutEnabled = savedTimeout > 0;
-    silenceTimeoutSeconds = savedTimeout > 0 ? savedTimeout : 30;
-    maxRecordingEnabled = s.max_recording_enabled ?? DEFAULT_SETTINGS.max_recording_enabled;
-    maxRecordingSeconds = s.max_recording_seconds ?? DEFAULT_SETTINGS.max_recording_seconds;
-    historyEnabled = s.history_enabled ?? DEFAULT_SETTINGS.history_enabled;
-    historyMaxEntries = s.history_max_entries ?? DEFAULT_SETTINGS.history_max_entries;
-    popupCopyShortcut = s.popup_copy_shortcut ?? DEFAULT_SETTINGS.popup_copy_shortcut;
-    popupVoiceShortcut = s.popup_voice_shortcut ?? DEFAULT_SETTINGS.popup_voice_shortcut;
-    providerSwitchShortcut = s.provider_switch_shortcut ?? DEFAULT_SETTINGS.provider_switch_shortcut;
-    whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
-    whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
-    whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
-    whisperDecodeInterval = s.whisper_decode_interval ?? DEFAULT_SETTINGS.whisper_decode_interval;
-    whisperContextOverlap = s.whisper_context_overlap ?? DEFAULT_SETTINGS.whisper_context_overlap;
-    copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
-    copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
-    copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
-    copilotDeleteSessions = s.copilot_delete_sessions ?? DEFAULT_SETTINGS.copilot_delete_sessions;
-    promptEnhancerShortcut = s.prompt_enhancer_shortcut ?? DEFAULT_SETTINGS.prompt_enhancer_shortcut;
-    popupFont = s.popup_font ?? DEFAULT_SETTINGS.popup_font;
-    openPopupOnStart = s.open_popup_on_start ?? DEFAULT_SETTINGS.open_popup_on_start;
-    mcpEnabled = s.mcp_enabled ?? DEFAULT_SETTINGS.mcp_enabled;
-    mcpPort = s.mcp_port ?? DEFAULT_SETTINGS.mcp_port;
-    const savedMcpTimeout = s.mcp_timeout_seconds ?? DEFAULT_SETTINGS.mcp_timeout_seconds;
-    mcpTimeoutEnabled = savedMcpTimeout > 0;
-    mcpTimeoutSeconds = savedMcpTimeout > 0 ? savedMcpTimeout : DEFAULT_SETTINGS.mcp_timeout_seconds;
-    showInDock = s.show_in_dock ?? DEFAULT_SETTINGS.show_in_dock;
-    const savedTheme = s.theme ?? DEFAULT_SETTINGS.theme;
-    theme = savedTheme;
-    document.documentElement.dataset.theme = savedTheme;
+    hydrateFromSettings(initialSettings);
     error = "";
     success = false;
   }

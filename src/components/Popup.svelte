@@ -86,6 +86,9 @@
   // Window resize/move debounce
   let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
 
+  // Auto-start timer
+  let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
+
   // History panel
   let historyOpen = $state(false);
   let historyEntries = $state<HistoryEntry[]>([]);
@@ -344,7 +347,9 @@
         await s.set("popup_height", size.height / sf);
         await s.set("popup_x", pos.x / sf);
         await s.set("popup_y", pos.y / sf);
-      } catch {}
+      } catch (e) {
+        console.error("Failed to save popup geometry:", e);
+      }
     }
 
     function debouncedSave() {
@@ -361,7 +366,7 @@
         getHistory().then(entries => {
           historyEntries = entries;
           historyCount = entries.length;
-        });
+        }).catch(e => console.error("Failed to refresh history on focus:", e));
       }
     }).then((u) => unlisteners.push(u));
 
@@ -374,7 +379,7 @@
   // Load history count for badge
   $effect(() => {
     if (settings.history_enabled) {
-      getHistory().then(entries => { historyCount = entries.length; });
+      getHistory().then(entries => { historyCount = entries.length; }).catch(e => console.error("Failed to load history count:", e));
     } else {
       historyCount = 0;
     }
@@ -405,15 +410,20 @@
       if (canStart) {
         autoStartDone = true;
         // Slight delay to let the popup fully render
-        setTimeout(() => toggleMic(), 150);
+        autoStartTimer = setTimeout(() => toggleMic(), 150);
       }
     }
+    return () => {
+      if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
+    };
   });
 
   // Check if selected Whisper model is downloaded; auto-select a downloaded one if not.
   $effect(() => {
     if (settings.speech_provider === PROVIDER_WHISPER) {
+      let stale = false;
       invoke<{ name: string; downloaded: boolean }[]>("whisper_list_models").then((models) => {
+        if (stale) return;
         const selected = models.find((m) => m.name === settings.whisper_model);
         if (selected?.downloaded) {
           whisperModelMissing = false;
@@ -423,14 +433,15 @@
         const available = models.find((m) => m.downloaded);
         if (available) {
           settings = { ...settings, whisper_model: available.name };
-          saveSettings(settings).catch(() => {});
+          saveSettings(settings).catch(e => console.error("Failed to save whisper model fallback:", e));
           whisperModelMissing = false;
         } else {
           whisperModelMissing = !!settings.whisper_model;
         }
       }).catch(() => {
-        whisperModelMissing = false;
+        if (!stale) whisperModelMissing = false;
       });
+      return () => { stale = true; };
     } else {
       whisperModelMissing = false;
     }
@@ -732,7 +743,7 @@
     // If open via MCP, send the result back to the caller
     if (mcpRequest !== null) {
       mcpRequest = null;
-      await invoke("mcp_submit_result", { text: text || "" }).catch(() => {});
+      await invoke("mcp_submit_result", { text: text || "" }).catch(e => console.error("Failed to submit MCP result:", e));
     }
     clearText();
     errorMessage = "";
@@ -749,7 +760,7 @@
     // If we were opened by an MCP call, cancel it so the caller gets an error
     if (mcpRequest !== null) {
       mcpRequest = null;
-      await invoke("mcp_cancel").catch(() => {});
+      await invoke("mcp_cancel").catch(e => console.error("Failed to cancel MCP request:", e));
     }
     clearText();
     errorMessage = "";
@@ -971,7 +982,7 @@
         }
       })();
     } else if (!enabled && copilotStatus !== 'disconnected') {
-      copilotStop().catch(() => {});
+      copilotStop().catch(e => console.error("Failed to stop Copilot:", e));
       copilotStatus = 'disconnected';
       copilotAuth = null;
       copilotModels = [];

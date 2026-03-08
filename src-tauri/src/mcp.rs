@@ -65,15 +65,13 @@ pub struct VoiceToTextServer {
     app: AppHandle,
     state: McpState,
     tool_router: ToolRouter<Self>,
+    timeout_seconds: u32,
 }
 
 impl VoiceToTextServer {
     fn new(app: AppHandle, state: McpState) -> Self {
-        Self { app, state, tool_router: Self::tool_router() }
-    }
-
-    fn request_timeout_seconds(&self) -> u32 {
-        crate::settings::load_settings(&self.app).mcp_timeout_seconds
+        let timeout_seconds = crate::settings::load_settings(&app).mcp_timeout_seconds;
+        Self { app, state, tool_router: Self::tool_router(), timeout_seconds }
     }
 }
 
@@ -90,7 +88,10 @@ impl VoiceToTextServer {
 
         // Reject concurrent requests
         {
-            let guard = self.state.0.lock().unwrap();
+            let guard = self.state.0.lock().map_err(|e| {
+                tracing::error!("MCP state lock poisoned: {e}");
+                ErrorData::internal_error("Internal lock error", None)
+            })?;
             if guard.is_some() {
                 return Ok(CallToolResult::error(vec![Content::text(
                     "Another dictation is already in progress. Please wait for it to complete.",
@@ -103,7 +104,10 @@ impl VoiceToTextServer {
 
         // Store the sender so the Tauri command can resolve it
         {
-            let mut guard = self.state.0.lock().unwrap();
+            let mut guard = self.state.0.lock().map_err(|e| {
+                tracing::error!("MCP state lock poisoned: {e}");
+                ErrorData::internal_error("Internal lock error", None)
+            })?;
             *guard = Some(PendingRequest { tx });
         }
 
@@ -115,8 +119,9 @@ impl VoiceToTextServer {
 
         if let Err(e) = self.app.emit("mcp-voice-request", &payload) {
             // Remove pending request on emit failure
-            let mut guard = self.state.0.lock().unwrap();
-            *guard = None;
+            if let Ok(mut guard) = self.state.0.lock() {
+                *guard = None;
+            }
             return Ok(CallToolResult::error(vec![Content::text(format!("Failed to open popup: {e}"))]));
         }
 
@@ -124,7 +129,7 @@ impl VoiceToTextServer {
         crate::create_or_show_popup(&self.app);
 
         // Wait for the user to submit or cancel. A timeout of 0 disables the limit.
-        let timeout_seconds = self.request_timeout_seconds();
+        let timeout_seconds = self.timeout_seconds;
 
         if timeout_seconds == 0 {
             match rx.await {
@@ -139,8 +144,9 @@ impl VoiceToTextServer {
                 Ok(Err(_)) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).") ])),
                 Err(_) => {
                     // Timeout — clean up state
-                    let mut guard = self.state.0.lock().unwrap();
-                    *guard = None;
+                    if let Ok(mut guard) = self.state.0.lock() {
+                        *guard = None;
+                    }
                     Ok(CallToolResult::error(vec![Content::text(format!(
                         "Dictation timed out after {timeout_seconds} seconds with no submission.",
                     ))]))
@@ -171,10 +177,13 @@ impl ServerHandler for VoiceToTextServer {
 // ---------------------------------------------------------------------------
 
 pub fn stop_mcp_server(handle: &McpServerHandle) {
-    let mut guard = handle.0.lock().unwrap();
-    if let Some(tx) = guard.take() {
-        let _ = tx.send(true);
-        tracing::info!("MCP server shutdown signal sent");
+    if let Ok(mut guard) = handle.0.lock() {
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(true);
+            tracing::info!("MCP server shutdown signal sent");
+        }
+    } else {
+        tracing::error!("MCP server handle lock poisoned during shutdown");
     }
 }
 
@@ -191,9 +200,11 @@ pub fn start_mcp_server(app: AppHandle, port: u16) {
 
     // Create shutdown channel
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    {
-        let mut guard = server_handle.0.lock().unwrap();
+    if let Ok(mut guard) = server_handle.0.lock() {
         *guard = Some(shutdown_tx);
+    } else {
+        tracing::error!("MCP server handle lock poisoned; cannot start server");
+        return;
     }
 
     tauri::async_runtime::spawn(async move {

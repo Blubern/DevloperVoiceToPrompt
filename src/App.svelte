@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { listen } from "@tauri-apps/api/event";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { getSettings, type AppSettings } from "./lib/settingsStore";
   import { WINDOW_MAIN, EVENT_CHECK_FIRST_RUN, EVENT_SETTINGS_UPDATED, PROVIDER_AZURE } from "./lib/constants";
   import Popup from "./components/Popup.svelte";
   import Settings from "./components/Settings.svelte";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
 
   let view = $state<"popup" | "settings">("popup");
   let settings = $state<AppSettings | null>(null);
+  let unlisteners: UnlistenFn[] = [];
 
   function applyTheme(theme: string) {
     document.documentElement.dataset.theme = theme || "dark";
@@ -34,7 +35,7 @@
     }
 
     // Listen for first-run check: if using Azure with no key, show settings
-    listen(EVENT_CHECK_FIRST_RUN, async () => {
+    unlisteners.push(await listen(EVENT_CHECK_FIRST_RUN, async () => {
       if (settings?.speech_provider === PROVIDER_AZURE && !settings?.azure_speech_key) {
         const mainWin = getCurrentWindow();
         if (mainWin.label === "main") {
@@ -42,13 +43,18 @@
           await mainWin.setFocus();
         }
       }
-    });
+    }));
 
     // Listen for settings updates from the settings window
-    listen(EVENT_SETTINGS_UPDATED, async () => {
+    unlisteners.push(await listen(EVENT_SETTINGS_UPDATED, async () => {
       settings = await getSettings();
       applyTheme(settings.theme);
-    });
+    }));
+  });
+
+  onDestroy(() => {
+    unlisteners.forEach((fn) => fn());
+    unlisteners = [];
   });
 
   function handleSettingsSaved() {

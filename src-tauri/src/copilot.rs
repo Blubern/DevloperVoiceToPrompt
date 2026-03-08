@@ -103,7 +103,10 @@ async fn bridge_call_with_params(
     }
 
     let resp: BridgeResponse =
-        serde_json::from_str(&buf).map_err(|e| format!("Invalid bridge response: {}", e))?;
+        serde_json::from_str(&buf).map_err(|e| {
+            let preview: String = buf.chars().take(200).collect();
+            format!("Invalid bridge response: {e} — raw: {preview}")
+        })?;
 
     if let Some(err) = resp.error {
         tracing::error!(method, error = %err, "Bridge returned error");
@@ -135,7 +138,11 @@ fn bridge_paths(app: &tauri::AppHandle) -> Result<(std::path::PathBuf, std::path
         .join("copilot-bridge.mjs");
     if resource.exists() {
         let resource = clean_path(resource);
-        let project_root = resource.parent().unwrap().parent().unwrap().to_path_buf();
+        let project_root = resource
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or_else(|| "Cannot resolve project root from resource path".to_string())?
+            .to_path_buf();
         return Ok((resource, project_root));
     }
 
@@ -152,9 +159,10 @@ fn bridge_paths(app: &tauri::AppHandle) -> Result<(std::path::PathBuf, std::path
         if dev_path.exists() {
             // Project root is src-tauri/../ (i.e. two levels up from scripts/)
             let project_root = dev_path
-                .parent().unwrap() // scripts/
-                .parent().unwrap() // src-tauri/
-                .parent().unwrap() // project root
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .ok_or_else(|| "Cannot resolve project root from dev path".to_string())?
                 .to_path_buf();
             return Ok((dev_path, project_root));
         }
@@ -175,6 +183,11 @@ pub async fn copilot_init(
     if let Some(mut old) = guard.take() {
         let _ = old.stdin.shutdown().await;
         let _ = old._child.kill().await;
+        // Wait for the process to actually exit (up to 5s) to avoid orphans
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            old._child.wait(),
+        ).await;
     }
 
     let (script, project_root) = bridge_paths(&app)?;
@@ -311,6 +324,11 @@ pub async fn copilot_stop(state: tauri::State<'_, CopilotState>) -> Result<(), S
         let _ = bridge_call(&mut bridge, "stop").await;
         let _ = bridge.stdin.shutdown().await;
         let _ = bridge._child.kill().await;
+        // Wait for the process to actually exit (up to 5s) to avoid orphans
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            bridge._child.wait(),
+        ).await;
     }
     Ok(())
 }

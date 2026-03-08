@@ -39,7 +39,13 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
         let show_in_dock = user_settings.show_in_dock;
 
         // Read saved popup geometry from store
-        let store = app.store("settings.json").ok();
+        let store = match app.store("settings.json") {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!("Failed to open settings store for popup geometry: {e}");
+                None
+            }
+        };
         let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(926.0);
         let popup_h = store.as_ref().and_then(|s| s.get("popup_height").and_then(|v| v.as_f64())).unwrap_or(582.0);
         let popup_x = store.as_ref().and_then(|s| s.get("popup_x").and_then(|v| v.as_f64()));
@@ -228,7 +234,9 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let _ = app_handle.emit("check-first-run", ());
+                if let Err(e) = app_handle.emit("check-first-run", ()) {
+                    tracing::warn!("Failed to emit check-first-run: {e}");
+                }
             });
 
             Ok(())

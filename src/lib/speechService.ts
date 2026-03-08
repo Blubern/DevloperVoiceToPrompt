@@ -330,6 +330,14 @@ function getWorkletUrl(): string {
   return cachedWorkletUrl;
 }
 
+/** Revoke the cached worklet Blob URL. Call during app teardown to release memory. */
+export function revokeWorkletUrl(): void {
+  if (cachedWorkletUrl) {
+    URL.revokeObjectURL(cachedWorkletUrl);
+    cachedWorkletUrl = null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Whisper (local) provider — rolling-window realtime
 // ---------------------------------------------------------------------------
