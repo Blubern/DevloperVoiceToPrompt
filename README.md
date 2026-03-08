@@ -1,4 +1,4 @@
-# Developer Voice to Prompt
+# Developer Voice to Prompt (with MCP Support)
 
 Turn spoken developer thoughts into structured prompts, reusable templates, and voice input for MCP-enabled tools.
 
