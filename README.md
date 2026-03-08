@@ -4,7 +4,7 @@ Turn spoken developer thoughts into structured prompts, reusable templates, and 
 
 Developer Voice to Prompt is a desktop tray app for developers who think faster than they type. It gives you one consistent voice workflow across AI tools: capture an idea, edit it live, drop it into a reusable prompt template, optionally enhance it, and send it wherever you work.
 
-The base experience works immediately with Web Speech. No developer account, no API key, and no subscription are required to start dictating.
+The base experience works immediately with Web Speech or Whisper. No developer account, no API key, and no subscription are required to start dictating.
 
 ![Developer Voice to Prompt overview](doc/images/OverviewHowItWorkInfo.png)
 

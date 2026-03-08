@@ -40,6 +40,12 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
             .and_then(|store| store.get("always_on_top").and_then(|v| v.as_bool()))
             .unwrap_or(true);
 
+        let show_in_dock = app
+            .store("settings.json")
+            .ok()
+            .and_then(|store| store.get("show_in_dock").and_then(|v| v.as_bool()))
+            .unwrap_or(true);
+
         // Read saved popup geometry from store
         let store = app.store("settings.json").ok();
         let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(926.0);
@@ -53,7 +59,7 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
             .min_inner_size(350.0, 280.0)
             .decorations(false)
             .resizable(true)
-            .skip_taskbar(true)
+            .skip_taskbar(!show_in_dock)
             .always_on_top(on_top)
             .visible(true);
 

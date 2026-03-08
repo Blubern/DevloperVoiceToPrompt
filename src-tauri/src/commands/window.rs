@@ -38,8 +38,10 @@ pub fn set_dock_visibility(app: &tauri::AppHandle, visible: bool) {
     }
     #[cfg(target_os = "windows")]
     {
-        if let Some(win) = app.get_webview_window("main") {
-            let _ = win.set_skip_taskbar(!visible);
+        for label in ["main", "popup"] {
+            if let Some(win) = app.get_webview_window(label) {
+                let _ = win.set_skip_taskbar(!visible);
+            }
         }
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
