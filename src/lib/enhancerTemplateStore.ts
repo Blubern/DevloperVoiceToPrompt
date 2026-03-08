@@ -10,6 +10,27 @@ export interface EnhancerTemplate {
 
 let store: Store | null = null;
 
+const DICTATION_CLEANUP_NAME = "Dictation Cleanup";
+const LEGACY_DICTATION_CLEANUP_TEXT = `Clean up the raw dictated text without changing its meaning. Fix grammar, punctuation, and sentence structure. Remove filler words, false starts, and repetitions. Keep the original tone, intent, and all technical terms exactly as intended. Do not rephrase, summarize, or add anything new. Leave the Language like it is no translations.`;
+const DEFAULT_DICTATION_CLEANUP_TEXT = `Correct the transcript without changing its meaning or wording.
+
+Only fix:
+- grammar
+- punctuation
+- obvious transcription errors
+
+Remove only clear speech fillers (e.g., "um", "uh") and false starts.
+
+Do NOT:
+- rephrase sentences
+- change wording or tone
+- summarize or shorten the text
+- add any new information
+- translate the text
+
+Keep all technical terms exactly as they appear.
+Preserve the original language.`;
+
 async function getStore(): Promise<Store> {
   if (!store) {
     store = await load("enhancer-templates.json");
@@ -23,15 +44,39 @@ export const DEFAULT_ENHANCER_TEMPLATES = [
     text: `Take the raw dictated text and transform it into a clear, well-structured developer prompt. Fix grammar, remove filler words, and organize the intent into actionable instructions. Preserve all technical terms, code references, and specific requirements. Use concise professional language suitable for AI coding assistants. Leave the Language like it is no translations.`,
   },
   {
-    name: "Dictation Cleanup",
-    text: `Clean up the raw dictated text without changing its meaning. Fix grammar, punctuation, and sentence structure. Remove filler words, false starts, and repetitions. Keep the original tone, intent, and all technical terms exactly as intended. Do not rephrase, summarize, or add anything new. Leave the Language like it is no translations.`,
+    name: DICTATION_CLEANUP_NAME,
+    text: DEFAULT_DICTATION_CLEANUP_TEXT,
   },
 ];
 
 export async function getEnhancerTemplates(): Promise<EnhancerTemplate[]> {
   const s = await getStore();
   const raw = await s.get<EnhancerTemplate[]>("templates");
-  if (raw && raw.length > 0) return raw;
+  if (raw && raw.length > 0) {
+    const migrated = raw.map((template) => {
+      if (
+        template.name === DICTATION_CLEANUP_NAME &&
+        template.text === LEGACY_DICTATION_CLEANUP_TEXT
+      ) {
+        return {
+          ...template,
+          text: DEFAULT_DICTATION_CLEANUP_TEXT,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      return template;
+    });
+
+    const changed = migrated.some((template, index) => template !== raw[index]);
+    if (changed) {
+      await s.set("templates", migrated);
+      await s.save();
+      return migrated;
+    }
+
+    return raw;
+  }
 
   // Seed default templates on first use
   const now = new Date().toISOString();
