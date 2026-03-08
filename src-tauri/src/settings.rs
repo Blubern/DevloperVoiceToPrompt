@@ -31,6 +31,8 @@ pub struct AppSettings {
     pub whisper_model: String,
     pub whisper_language: String,
     pub whisper_chunk_seconds: u32,
+    pub whisper_decode_interval: f64,
+    pub whisper_context_overlap: f64,
     pub max_recording_enabled: bool,
     pub max_recording_seconds: u32,
     pub autostart_enabled: bool,
@@ -73,6 +75,8 @@ impl Default for AppSettings {
             whisper_model: "base".into(),
             whisper_language: "en-US".into(),
             whisper_chunk_seconds: 3,
+            whisper_decode_interval: 1.0,
+            whisper_context_overlap: 1.0,
             max_recording_enabled: true,
             max_recording_seconds: 180,
             autostart_enabled: false,
@@ -172,6 +176,13 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
             .unwrap_or(default as u64) as u32
     };
 
+    let get_f64 = |key: &str, default: f64| -> f64 {
+        store
+            .get(key)
+            .and_then(|v: serde_json::Value| v.as_f64())
+            .unwrap_or(default)
+    };
+
     let get_str_vec = |key: &str, default: &[String]| -> Vec<String> {
         store
             .get(key)
@@ -206,6 +217,8 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         whisper_model: get_str("whisper_model", &defaults.whisper_model),
         whisper_language: get_str("whisper_language", &defaults.whisper_language),
         whisper_chunk_seconds: get_u32("whisper_chunk_seconds", defaults.whisper_chunk_seconds),
+        whisper_decode_interval: get_f64("whisper_decode_interval", defaults.whisper_decode_interval),
+        whisper_context_overlap: get_f64("whisper_context_overlap", defaults.whisper_context_overlap),
         max_recording_enabled: get_bool("max_recording_enabled", defaults.max_recording_enabled),
         max_recording_seconds: get_u32("max_recording_seconds", defaults.max_recording_seconds),
         autostart_enabled: get_bool("autostart_enabled", defaults.autostart_enabled),

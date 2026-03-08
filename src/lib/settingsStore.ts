@@ -10,6 +10,8 @@ export interface AppSettings {
   whisper_model: string;
   whisper_language: string;
   whisper_chunk_seconds: number;
+  whisper_decode_interval: number;
+  whisper_context_overlap: number;
   languages: string[];
   shortcut: string;
   microphone_device_id: string;
@@ -50,6 +52,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   whisper_model: "base",
   whisper_language: "en-US",
   whisper_chunk_seconds: 3,
+  whisper_decode_interval: 1,
+  whisper_context_overlap: 1,
   languages: ["en-US"],
   shortcut: "CommandOrControl+Alt+V",
   microphone_device_id: "",

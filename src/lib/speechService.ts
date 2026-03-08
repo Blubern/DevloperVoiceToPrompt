@@ -1,7 +1,7 @@
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "./settingsStore";
-import { WHISPER_SILENCE_RMS_THRESHOLD } from "./constants";
+import { WHISPER_SILENCE_RMS_THRESHOLD, WHISPER_STABILITY_COUNT } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -12,8 +12,10 @@ export interface SpeechCallbacks {
   onFinal: (text: string) => void;
   onError: (error: string) => void;
   onStatusChange: (status: "idle" | "listening" | "error") => void;
-  /** Called by the Whisper provider each time a new audio chunk starts processing. */
-  onChunkStart?: () => void;
+  /** Called by the Whisper provider each time a new decode cycle starts. */
+  onDecodeStart?: () => void;
+  /** Called after each Whisper decode with the wall-clock latency in milliseconds. */
+  onDecodeLatency?: (ms: number) => void;
 }
 
 export interface AudioDevice {
@@ -305,7 +307,7 @@ export class AzureSpeechProvider implements SpeechProvider {
 }
 
 // ---------------------------------------------------------------------------
-// Whisper (local) provider
+// Whisper (local) provider — rolling-window realtime
 // ---------------------------------------------------------------------------
 
 export class WhisperSpeechProvider implements SpeechProvider {
@@ -314,21 +316,53 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private mediaStream: MediaStream | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private pcmBuffer: Float32Array = new Float32Array(0);
-  private chunkTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Continuously growing session PCM buffer at 16 kHz. */
+  private sessionBuffer: Float32Array = new Float32Array(0);
+
+  /** How many samples have already been committed as final text.
+   *  The next decode window starts from `committedSamples - overlapSamples`. */
+  private committedSamples = 0;
+
+  private decodeTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+
+  /** Backpressure: true while a decode invoke is in-flight. */
+  private decoding = false;
+  /** When a tick fires during an in-flight decode, set this to request one more decode after. */
+  private pendingDecode = false;
+
+  /** Generation counter — results from older generations are silently dropped. */
+  private generation = 0;
+
+  /** Last interim text emitted — used for stability detection. */
+  private lastInterim = "";
+  /** How many consecutive decodes returned the same interim suffix. */
+  private stabilityHits = 0;
+  /** Last few words committed as final — used for overlap matching. */
+  private lastCommittedWords: string[] = [];
+
+  /** Number of overlap samples to retain for context. */
+  private readonly overlapSamples: number;
+  /** Decode cadence in ms. */
+  private readonly decodeMs: number;
 
   constructor(
     private modelName: string,
     private language: string,
-    private chunkSeconds: number,
+    private decodeIntervalSeconds: number,
+    private contextOverlapSeconds: number,
     private microphoneDeviceId?: string,
     private phraseList?: string[],
-  ) {}
+  ) {
+    this.overlapSamples = Math.round(contextOverlapSeconds * 16000);
+    this.decodeMs = Math.max(250, decodeIntervalSeconds * 1000);
+  }
 
   start(callbacks: SpeechCallbacks): void {
     this.callbacks = callbacks;
     this.running = true;
+    this.generation++;
     this._startAsync(callbacks).catch((err) => {
       callbacks.onError(String(err));
       callbacks.onStatusChange("error");
@@ -372,10 +406,10 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
       if (!this.running) return;
       const incoming = e.data;
-      const merged = new Float32Array(this.pcmBuffer.length + incoming.length);
-      merged.set(this.pcmBuffer);
-      merged.set(incoming, this.pcmBuffer.length);
-      this.pcmBuffer = merged;
+      const merged = new Float32Array(this.sessionBuffer.length + incoming.length);
+      merged.set(this.sessionBuffer);
+      merged.set(incoming, this.sessionBuffer.length);
+      this.sessionBuffer = merged;
     };
 
     this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
@@ -384,31 +418,52 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
     callbacks.onStatusChange("listening");
 
-    // Periodically flush buffer and transcribe
-    const chunkMs = this.chunkSeconds * 1000;
-    this.chunkTimer = setInterval(() => {
-      this._flushAndTranscribe();
-    }, chunkMs);
+    // Start decode cadence
+    this.decodeTimer = setInterval(() => {
+      this._tickDecode();
+    }, this.decodeMs);
   }
 
-  private async _flushAndTranscribe(): Promise<void> {
-    if (!this.running || !this.callbacks) return;
-    if (this.pcmBuffer.length === 0) return;
+  // ----- decode pipeline -----
 
-    const samples = this.pcmBuffer;
-    this.pcmBuffer = new Float32Array(0);
-
-    // Notify UI that a new chunk is starting so it can reset the chunk timer.
-    this.callbacks.onChunkStart?.();
-
-    // Skip silent chunks — compute RMS energy and discard if below threshold.
-    // This prevents Whisper from hallucinating phrase-list text on silence.
-    let sumSq = 0;
-    for (let i = 0; i < samples.length; i++) {
-      sumSq += samples[i] * samples[i];
+  private _tickDecode(): void {
+    if (!this.running) return;
+    if (this.decoding) {
+      // Another decode in-flight — just mark that we want one more after it finishes.
+      this.pendingDecode = true;
+      return;
     }
-    const rms = Math.sqrt(sumSq / samples.length);
-    if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return; // ~-40 dB, effectively silence
+    this._runDecode();
+  }
+
+  private async _runDecode(): Promise<void> {
+    if (!this.running || !this.callbacks) return;
+
+    // Determine the window to decode: from (committedSamples - overlap) to end of buffer.
+    const windowStart = Math.max(0, this.committedSamples - this.overlapSamples);
+    const windowEnd = this.sessionBuffer.length;
+    if (windowEnd - windowStart < 1600) return; // < 0.1s of audio, skip
+
+    // Only check silence on the NEW audio portion (after committedSamples).
+    // The overlap region always contains old speech and would falsely pass the RMS check.
+    const newAudioStart = this.committedSamples;
+    if (windowEnd > newAudioStart) {
+      const newSamples = this.sessionBuffer.slice(newAudioStart, windowEnd);
+      if (newSamples.length < 800) return; // < 50ms of new audio, skip
+      let sumSq = 0;
+      for (let i = 0; i < newSamples.length; i++) {
+        sumSq += newSamples[i] * newSamples[i];
+      }
+      const rms = Math.sqrt(sumSq / newSamples.length);
+      if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return;
+    } else {
+      return; // no new audio beyond what's committed
+    }
+
+    const samples = this.sessionBuffer.slice(windowStart, windowEnd);
+
+    // Notify UI that a new decode cycle is starting.
+    this.callbacks.onDecodeStart?.();
 
     // Encode float32 PCM to base64
     const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
@@ -423,6 +478,178 @@ export class WhisperSpeechProvider implements SpeechProvider {
         ? this.phraseList.join(", ")
         : undefined;
 
+    this.decoding = true;
+    const gen = this.generation;
+    const t0 = performance.now();
+
+    try {
+      const fullText = await invoke<string>("whisper_transcribe", {
+        audioB64,
+        sampleRate: 16000,
+        language: this.language,
+        initialPrompt,
+      });
+
+      // Report decode latency to UI.
+      if (gen === this.generation && this.running) {
+        this.callbacks?.onDecodeLatency?.(performance.now() - t0);
+      }
+
+      // Drop result if generation changed (user stopped / restarted).
+      if (gen !== this.generation || !this.running) return;
+
+      if (fullText) {
+        this._reconcile(fullText, windowEnd);
+      }
+    } catch (err) {
+      if (gen === this.generation && this.running) {
+        this.callbacks?.onError(`Whisper transcription error: ${err}`);
+      }
+    } finally {
+      this.decoding = false;
+      // If a tick fired while we were busy, run one more decode now.
+      if (this.pendingDecode && this.running) {
+        this.pendingDecode = false;
+        this._runDecode();
+      }
+    }
+  }
+
+  // ----- overlap reconciliation -----
+
+  /** Whisper hallucination tokens to strip from results. */
+  private static readonly HALLUCINATION_RE =
+    /\[BLANK_AUDIO\]|\[MUSIC\]|\[SILENCE\]|\(silence\)|\(blank audio\)/gi;
+
+  /** Strip hallucination tokens and collapse whitespace. */
+  private _clean(text: string): string {
+    return text.replace(WhisperSpeechProvider.HALLUCINATION_RE, " ").replace(/\s+/g, " ").trim();
+  }
+
+  /**
+   * Given the full text Whisper returned for the current rolling window,
+   * separate it into already-committed (overlap region) and new content.
+   *
+   * Strategy: match `lastCommittedWords` at the start of the new transcription
+   * to find where the overlap ends. This is robust to pauses and bursty speech
+   * (unlike the old word-fraction heuristic).
+   */
+  private _reconcile(windowText: string, windowEndSample: number): void {
+    if (!this.callbacks) return;
+
+    const trimmed = this._clean(windowText);
+    if (!trimmed) return;
+
+    // If nothing was committed yet, everything is new.
+    if (this.lastCommittedWords.length === 0) {
+      this._emitInterimOrCommit(trimmed, windowEndSample);
+      return;
+    }
+
+    // Try to find lastCommittedWords at the beginning of the new transcription.
+    // We look for the longest suffix of lastCommittedWords that matches a prefix
+    // of the new text (case-insensitive), then take everything after it.
+    const words = trimmed.split(/\s+/);
+    const committed = this.lastCommittedWords;
+
+    let bestMatchLen = 0; // how many words from `committed` matched at the start of `words`
+
+    // Try matching the full committed phrase, then progressively shorter suffixes.
+    // e.g., committed=["hello","world"], try matching "hello world" then just "world".
+    for (let startIdx = 0; startIdx < committed.length; startIdx++) {
+      const suffix = committed.slice(startIdx);
+      if (suffix.length > words.length) continue;
+
+      let match = true;
+      for (let j = 0; j < suffix.length; j++) {
+        if (suffix[j].toLowerCase() !== words[j].toLowerCase()) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        bestMatchLen = suffix.length;
+        break; // longest matching suffix wins
+      }
+    }
+
+    const newWords = words.slice(bestMatchLen);
+
+    if (newWords.length === 0) {
+      // All words matched committed text — nothing truly new.
+      // Clear interim so we don't duplicate the already-committed final text.
+      this.callbacks.onInterim("");
+      return;
+    }
+
+    const newText = newWords.join(" ");
+    this._emitInterimOrCommit(newText, windowEndSample);
+  }
+
+  /**
+   * Emit text as interim. If the same text appears across multiple consecutive
+   * decode cycles (stability), commit it as final.
+   */
+  private _emitInterimOrCommit(text: string, windowEndSample: number): void {
+    if (!this.callbacks) return;
+
+    if (text === this.lastInterim) {
+      this.stabilityHits++;
+    } else {
+      this.lastInterim = text;
+      this.stabilityHits = 1;
+    }
+
+    if (this.stabilityHits >= WHISPER_STABILITY_COUNT) {
+      // Stable — commit as final.
+      this.callbacks.onFinal(text);
+      this.callbacks.onInterim?.("");
+      this.committedSamples = windowEndSample;
+      // Remember committed words for overlap matching in next decode.
+      this.lastCommittedWords = text.split(/\s+/).slice(-10); // keep last 10 words
+      this.lastInterim = "";
+      this.stabilityHits = 0;
+    } else {
+      // Still changing — show as interim.
+      this.callbacks.onInterim(text);
+    }
+  }
+
+  // ----- lifecycle -----
+
+  async stop(): Promise<void> {
+    this.running = false;
+    if (this.decodeTimer) {
+      clearInterval(this.decodeTimer);
+      this.decodeTimer = null;
+    }
+    // Final decode of any remaining audio
+    this.generation++; // stop drops stale pending results
+    await this._flushFinal();
+    this._cleanup();
+    this.callbacks?.onStatusChange("idle");
+  }
+
+  /** Flush whatever is in the session buffer as a final transcription. */
+  private async _flushFinal(): Promise<void> {
+    if (!this.callbacks) return;
+    const start = Math.max(0, this.committedSamples - this.overlapSamples);
+    if (this.sessionBuffer.length - start < 1600) return;
+
+    const samples = this.sessionBuffer.slice(start);
+    let sumSq = 0;
+    for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
+    const rms = Math.sqrt(sumSq / samples.length);
+    if (rms < WHISPER_SILENCE_RMS_THRESHOLD) return;
+
+    const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const audioB64 = btoa(binary);
+
+    const initialPrompt =
+      this.phraseList && this.phraseList.length > 0 ? this.phraseList.join(", ") : undefined;
+
     try {
       const text = await invoke<string>("whisper_transcribe", {
         audioB64,
@@ -430,33 +657,40 @@ export class WhisperSpeechProvider implements SpeechProvider {
         language: this.language,
         initialPrompt,
       });
-      if (text && this.running) {
-        this.callbacks.onFinal(text);
-      }
-    } catch (err) {
-      if (this.running) {
-        this.callbacks?.onError(`Whisper transcription error: ${err}`);
-      }
-    }
-  }
+      const cleaned = text ? this._clean(text) : "";
+      if (cleaned) {
+        // Match committed words at the start and strip them.
+        const words = cleaned.split(/\s+/);
+        const committed = this.lastCommittedWords;
+        let bestMatchLen = 0;
+        for (let startIdx = 0; startIdx < committed.length; startIdx++) {
+          const suffix = committed.slice(startIdx);
+          if (suffix.length > words.length) continue;
+          let match = true;
+          for (let j = 0; j < suffix.length; j++) {
+            if (suffix[j].toLowerCase() !== words[j].toLowerCase()) { match = false; break; }
+          }
+          if (match) { bestMatchLen = suffix.length; break; }
+        }
+        const newWords = words.slice(bestMatchLen);
+        const newText = newWords.length > 0 ? newWords.join(" ") : cleaned;
 
-  async stop(): Promise<void> {
-    this.running = false;
-    if (this.chunkTimer) {
-      clearInterval(this.chunkTimer);
-      this.chunkTimer = null;
+        if (newText) {
+          this.callbacks.onFinal(newText);
+          this.callbacks.onInterim?.("");
+        }
+      }
+    } catch {
+      // Swallow errors on final flush — we're stopping anyway.
     }
-    // Transcribe any remaining audio
-    await this._flushAndTranscribe();
-    this._cleanup();
-    this.callbacks?.onStatusChange("idle");
   }
 
   dispose(): void {
     this.running = false;
-    if (this.chunkTimer) {
-      clearInterval(this.chunkTimer);
-      this.chunkTimer = null;
+    this.generation++;
+    if (this.decodeTimer) {
+      clearInterval(this.decodeTimer);
+      this.decodeTimer = null;
     }
     this._cleanup();
     this.callbacks = null;
@@ -475,7 +709,13 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.mediaStream.getTracks().forEach((t) => t.stop());
       this.mediaStream = null;
     }
-    this.pcmBuffer = new Float32Array(0);
+    this.sessionBuffer = new Float32Array(0);
+    this.committedSamples = 0;
+    this.lastInterim = "";
+    this.lastCommittedWords = [];
+    this.stabilityHits = 0;
+    this.decoding = false;
+    this.pendingDecode = false;
   }
 }
 
@@ -498,7 +738,8 @@ export function createSpeechProvider(settings: AppSettings): SpeechProvider {
     return new WhisperSpeechProvider(
       settings.whisper_model,
       settings.whisper_language,
-      settings.whisper_chunk_seconds,
+      settings.whisper_decode_interval,
+      settings.whisper_context_overlap,
       settings.microphone_device_id || undefined,
       settings.phrase_list.length > 0 ? settings.phrase_list : undefined,
     );

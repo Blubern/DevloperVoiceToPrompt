@@ -37,6 +37,18 @@ export const DEFAULT_MAX_RECORDING_SECONDS = 180;
 // Whisper silence detection threshold (RMS energy)
 export const WHISPER_SILENCE_RMS_THRESHOLD = 0.01;
 
+// Whisper realtime defaults
+/** Default decode cadence in seconds (how often we send audio to Whisper). */
+export const WHISPER_DEFAULT_DECODE_INTERVAL = 1;
+/** Minimum allowed decode interval in seconds. */
+export const WHISPER_MIN_DECODE_INTERVAL = 0.5;
+/** Maximum allowed decode interval in seconds. */
+export const WHISPER_MAX_DECODE_INTERVAL = 10;
+/** Default overlap window in seconds kept from previous decode for context. */
+export const WHISPER_DEFAULT_CONTEXT_OVERLAP = 1;
+/** How many consecutive stable decode results before committing interim to final. */
+export const WHISPER_STABILITY_COUNT = 2;
+
 // Prompt enhancer system prompt wrapper
 export const ENHANCE_SYSTEM_PROMPT_WRAPPER = `You are a text-only prompt enhancer. You have no access to files, tools, or external resources. Your sole task is to process the raw dictated text provided by the user. Apply the following enhancement instructions, then output ONLY the final enhanced text with no explanations, commentary, or markdown formatting.
 

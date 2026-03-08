@@ -18,6 +18,8 @@
     whisperModel = $bindable(),
     whisperLanguage = $bindable(),
     whisperChunkSeconds = $bindable(),
+    whisperDecodeInterval = $bindable(),
+    whisperContextOverlap = $bindable(),
     audioDevices,
     micWarning,
     error = $bindable(),
@@ -34,6 +36,8 @@
     whisperModel: string;
     whisperLanguage: string;
     whisperChunkSeconds: number;
+    whisperDecodeInterval: number;
+    whisperContextOverlap: number;
     audioDevices: AudioDevice[];
     micWarning: string;
     error: string;
@@ -316,9 +320,14 @@
     <span class="hint">Select the language you will be speaking. This improves transcription speed and accuracy.</span>
   </label>
   <label class="field">
-    <span class="label">Chunk Duration: {whisperChunkSeconds}s</span>
-    <input type="range" min="3" max="15" step="1" bind:value={whisperChunkSeconds} />
-    <span class="hint">Audio is buffered in chunks and sent to Whisper for transcription. Shorter chunks give faster feedback; longer chunks may be more accurate.</span>
+    <span class="label">Decode Interval: {whisperDecodeInterval}s</span>
+    <input type="range" min="0.5" max="10" step="0.5" bind:value={whisperDecodeInterval} />
+    <span class="hint">How often audio is sent to Whisper for transcription. Lower values give faster interim results but use more CPU.</span>
+  </label>
+  <label class="field">
+    <span class="label">Context Overlap: {whisperContextOverlap}s</span>
+    <input type="range" min="0" max="3" step="0.5" bind:value={whisperContextOverlap} />
+    <span class="hint">Seconds of already-transcribed audio re-sent for context. Helps avoid cut-off words at boundaries.</span>
   </label>
   <label class="field">
     <span class="label">Microphone</span>

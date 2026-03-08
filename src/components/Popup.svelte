@@ -140,9 +140,14 @@
   let elapsedSeconds = $state(0);
   let elapsedInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Whisper chunk elapsed timer
-  let chunkElapsedMs = $state(0);
-  let chunkTickInterval: ReturnType<typeof setInterval> | null = null;
+  // Whisper decode ring + latency badge
+  let decodeLatencyMs = $state(0);
+  let decodeProgress = $state(0);
+  let decodeCycleDuration = $state(1000);
+  let decodeActive = $state(false);
+  let decodeRafId: number | null = null;
+  let decodeCycleStart = 0;
+  let decodeFadeTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Language dropdown state
   let langDropdownOpen = $state(false);
@@ -467,6 +472,23 @@
     }
   }
 
+  // ----- Decode ring rAF loop -----
+  function startDecodeRaf() {
+    stopDecodeRaf();
+    function tick() {
+      const elapsed = performance.now() - decodeCycleStart;
+      decodeProgress = Math.min(1, elapsed / decodeCycleDuration);
+      decodeRafId = requestAnimationFrame(tick);
+    }
+    decodeRafId = requestAnimationFrame(tick);
+  }
+
+  function stopDecodeRaf() {
+    if (decodeRafId !== null) { cancelAnimationFrame(decodeRafId); decodeRafId = null; }
+    decodeProgress = 0;
+    if (decodeFadeTimer) { clearTimeout(decodeFadeTimer); decodeFadeTimer = null; }
+  }
+
   function startMaxRecordingTimer() {
     clearMaxRecordingTimer();
     if (settings.max_recording_enabled && settings.max_recording_seconds > 0) {
@@ -580,14 +602,28 @@
           resetSilenceTimer();
           startMaxRecordingTimer();
           if (settings.speech_provider === PROVIDER_WHISPER) {
-            chunkElapsedMs = 0;
-            chunkTickInterval = setInterval(() => { chunkElapsedMs += 100; }, 100);
+            decodeCycleDuration = settings.whisper_decode_interval * 1000;
+            decodeCycleStart = performance.now();
+            decodeActive = true;
+            startDecodeRaf();
           }
         } else {
-          if (chunkTickInterval) { clearInterval(chunkTickInterval); chunkTickInterval = null; }
+          stopDecodeRaf();
+          decodeActive = false;
         }
       },
-      onChunkStart: () => { chunkElapsedMs = 0; },
+      onDecodeStart: () => {
+        decodeCycleStart = performance.now();
+        decodeProgress = 0;
+        decodeActive = true;
+        if (decodeFadeTimer) { clearTimeout(decodeFadeTimer); decodeFadeTimer = null; }
+      },
+      onDecodeLatency: (ms: number) => {
+        decodeLatencyMs = Math.round(ms);
+        // Start fade timer — after 2s of no new decode, dim the ring
+        if (decodeFadeTimer) clearTimeout(decodeFadeTimer);
+        decodeFadeTimer = setTimeout(() => { decodeActive = false; }, 2000);
+      },
     };
 
     activeProvider = provider;
@@ -1186,12 +1222,6 @@
           <div class="level-meter">
             <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
           </div>
-          {#if settings.speech_provider === PROVIDER_WHISPER}
-            <div class="chunk-timer" title="Chunk progress: {(chunkElapsedMs / 1000).toFixed(1)}s / {settings.whisper_chunk_seconds}s">
-              <div class="chunk-bar" style="width: {Math.min(100, (chunkElapsedMs / (settings.whisper_chunk_seconds * 1000)) * 100)}%"></div>
-            </div>
-            <span class="chunk-elapsed">{(chunkElapsedMs / 1000).toFixed(1)}s</span>
-          {/if}
           <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
         </div>
       {/if}
@@ -1272,7 +1302,23 @@
 
         <!-- Floating mic button anchored to textarea -->
         <div class="mic-float">
+          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening"}
+            <div
+              class="decode-ring"
+              class:faded={!decodeActive}
+              style="--progress: {decodeProgress}"
+            ></div>
+          {/if}
           <MicButton {status} onToggle={toggleMic} disabled={enhancing || !!micWarning} />
+          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && decodeLatencyMs > 0}
+            <span
+              class="latency-badge"
+              class:fast={decodeLatencyMs < 300}
+              class:medium={decodeLatencyMs >= 300 && decodeLatencyMs < 800}
+              class:slow={decodeLatencyMs >= 800}
+              class:faded={!decodeActive}
+            >{decodeLatencyMs}ms</span>
+          {/if}
         </div>
       </div>
 
@@ -1781,29 +1827,6 @@
     margin-left: auto;
   }
 
-  .chunk-timer {
-    width: 40px;
-    height: 6px;
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
-    border-radius: 3px;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .chunk-bar {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 3px;
-    transition: width 0.1s linear;
-  }
-
-  .chunk-elapsed {
-    font-size: 11px;
-    color: var(--accent);
-    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
-    min-width: 30px;
-  }
-
   /* ---- Text Area ---- */
   .text-area {
     flex: 1;
@@ -2131,17 +2154,79 @@
     right: 3px;
     bottom: -21px;
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
 
   .mic-float :global(.mic-button) {
     width: 56px;
     height: 56px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+    position: relative;
+    z-index: 2;
   }
 
   .mic-float :global(.mic-button svg) {
     width: 26px;
     height: 26px;
+  }
+
+  /* ---- Decode Ring ---- */
+  .decode-ring {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    z-index: 1;
+    pointer-events: none;
+    background: conic-gradient(
+      var(--accent) calc(var(--progress) * 360deg),
+      transparent calc(var(--progress) * 360deg)
+    );
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px));
+    opacity: 0.85;
+    transition: opacity 0.4s ease;
+  }
+
+  .decode-ring.faded {
+    opacity: 0.15;
+  }
+
+  /* ---- Latency Badge ---- */
+  .latency-badge {
+    margin-top: 2px;
+    font-size: 10px;
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.4;
+    white-space: nowrap;
+    transition: opacity 0.4s ease, background 0.3s ease, color 0.3s ease;
+    z-index: 2;
+  }
+
+  .latency-badge.fast {
+    background: color-mix(in srgb, var(--green) 20%, transparent);
+    color: var(--green);
+  }
+
+  .latency-badge.medium {
+    background: color-mix(in srgb, var(--yellow) 20%, transparent);
+    color: var(--yellow);
+  }
+
+  .latency-badge.slow {
+    background: color-mix(in srgb, var(--peach) 20%, transparent);
+    color: var(--peach);
+  }
+
+  .latency-badge.faded {
+    opacity: 0.4;
   }
 
   /* Empty state hint for provider switch shortcut */

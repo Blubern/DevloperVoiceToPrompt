@@ -78,7 +78,15 @@ impl WhisperEngine {
             text.push_str(&segment.to_string());
         }
 
-        Ok(text.trim().to_string())
+        // Strip common Whisper hallucination tokens
+        let cleaned = text
+            .replace("[BLANK_AUDIO]", "")
+            .replace("[MUSIC]", "")
+            .replace("[SILENCE]", "")
+            .replace("(silence)", "")
+            .replace("(blank audio)", "");
+
+        Ok(cleaned.trim().to_string())
     }
 }
 

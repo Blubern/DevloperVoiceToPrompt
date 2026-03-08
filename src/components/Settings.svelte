@@ -54,6 +54,8 @@
   let whisperModel = $state(DEFAULT_SETTINGS.whisper_model);
   let whisperLanguage = $state(DEFAULT_SETTINGS.whisper_language);
   let whisperChunkSeconds = $state(DEFAULT_SETTINGS.whisper_chunk_seconds);
+  let whisperDecodeInterval = $state(DEFAULT_SETTINGS.whisper_decode_interval);
+  let whisperContextOverlap = $state(DEFAULT_SETTINGS.whisper_context_overlap);
   let copilotEnabled = $state(DEFAULT_SETTINGS.copilot_enabled);
   let copilotSelectedModel = $state(DEFAULT_SETTINGS.copilot_selected_model);
   let copilotSelectedEnhancer = $state(DEFAULT_SETTINGS.copilot_selected_enhancer);
@@ -109,6 +111,8 @@
     whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
     whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
     whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
+    whisperDecodeInterval = s.whisper_decode_interval ?? DEFAULT_SETTINGS.whisper_decode_interval;
+    whisperContextOverlap = s.whisper_context_overlap ?? DEFAULT_SETTINGS.whisper_context_overlap;
     copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
     copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
     copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
@@ -139,6 +143,8 @@
       whisper_model: whisperModel,
       whisper_language: whisperLanguage,
       whisper_chunk_seconds: whisperChunkSeconds,
+      whisper_decode_interval: whisperDecodeInterval,
+      whisper_context_overlap: whisperContextOverlap,
       languages,
       shortcut,
       microphone_device_id: microphoneDeviceId,
@@ -207,6 +213,8 @@
     whisperModel = s.whisper_model ?? DEFAULT_SETTINGS.whisper_model;
     whisperLanguage = s.whisper_language ?? DEFAULT_SETTINGS.whisper_language;
     whisperChunkSeconds = s.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds;
+    whisperDecodeInterval = s.whisper_decode_interval ?? DEFAULT_SETTINGS.whisper_decode_interval;
+    whisperContextOverlap = s.whisper_context_overlap ?? DEFAULT_SETTINGS.whisper_context_overlap;
     copilotEnabled = s.copilot_enabled ?? DEFAULT_SETTINGS.copilot_enabled;
     copilotSelectedModel = s.copilot_selected_model ?? DEFAULT_SETTINGS.copilot_selected_model;
     copilotSelectedEnhancer = s.copilot_selected_enhancer ?? DEFAULT_SETTINGS.copilot_selected_enhancer;
@@ -321,6 +329,7 @@
         <SpeechTab bind:speechProvider bind:osLanguage bind:osAutoRestart bind:osMaxRestarts
           bind:key bind:region bind:languages bind:microphoneDeviceId bind:autoPunctuation
           bind:whisperModel bind:whisperLanguage bind:whisperChunkSeconds
+          bind:whisperDecodeInterval bind:whisperContextOverlap
           {audioDevices} {micWarning} bind:error />
       {:else if activeTab === 'phrases'}
         <PhrasesTab bind:phraseList />
