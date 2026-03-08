@@ -140,11 +140,6 @@ pub fn save_settings(app: &tauri::AppHandle, settings: &AppSettings) -> Result<(
 
     store.set(SETTINGS_STORE_KEY, val);
 
-    // Also write individual keys that lib.rs reads directly (shortcut, always_on_top, show_in_dock, popup geometry)
-    store.set("shortcut", serde_json::json!(settings.shortcut));
-    store.set("always_on_top", serde_json::json!(settings.always_on_top));
-    store.set("show_in_dock", serde_json::json!(settings.show_in_dock));
-
     store
         .save()
         .map_err(|e| format!("Failed to save settings to disk: {e}"))?;

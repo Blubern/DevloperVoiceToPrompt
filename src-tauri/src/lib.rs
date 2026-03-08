@@ -34,17 +34,9 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
             let _ = win.set_focus();
         }
     } else {
-        let on_top = app
-            .store("settings.json")
-            .ok()
-            .and_then(|store| store.get("always_on_top").and_then(|v| v.as_bool()))
-            .unwrap_or(true);
-
-        let show_in_dock = app
-            .store("settings.json")
-            .ok()
-            .and_then(|store| store.get("show_in_dock").and_then(|v| v.as_bool()))
-            .unwrap_or(true);
+        let user_settings = settings::load_settings(app);
+        let on_top = user_settings.always_on_top;
+        let show_in_dock = user_settings.show_in_dock;
 
         // Read saved popup geometry from store
         let store = app.store("settings.json").ok();
@@ -135,18 +127,8 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 
 fn setup_global_shortcut(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-    use tauri_plugin_store::StoreExt;
 
-    // Read saved shortcut from store, fall back to default
-    let shortcut_str = app
-        .store("settings.json")
-        .ok()
-        .and_then(|store| {
-            store
-                .get("shortcut")
-                .and_then(|v: serde_json::Value| v.as_str().map(String::from))
-        })
-        .unwrap_or_else(|| "CommandOrControl+Alt+V".into());
+    let shortcut_str = settings::load_settings(app).shortcut;
 
     let app_handle = app.clone();
     if shortcut_str.is_empty() {
@@ -206,11 +188,7 @@ pub fn run() {
                     // Restore popup's always_on_top from the stored setting
                     let app = window.app_handle();
                     if let Some(popup) = app.get_webview_window("popup") {
-                        let on_top = app
-                            .store("settings.json")
-                            .ok()
-                            .and_then(|store| store.get("always_on_top").and_then(|v| v.as_bool()))
-                            .unwrap_or(true);
+                        let on_top = settings::load_settings(app).always_on_top;
                         let _ = popup.set_always_on_top(on_top);
                     }
                 }
@@ -248,9 +226,8 @@ pub fn run() {
 
             // On first run, if no settings exist, show the settings window
             let app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                // Small delay to let the store plugin initialize
-                std::thread::sleep(std::time::Duration::from_millis(500));
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 let _ = app_handle.emit("check-first-run", ());
             });
 

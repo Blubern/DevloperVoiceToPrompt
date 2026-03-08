@@ -24,24 +24,29 @@ pub async fn get_logs(app: tauri::AppHandle, max_lines: Option<usize>) -> Result
 
     log_files.sort_by_key(|e| e.file_name());
 
-    // Read all files, concatenate, then take last N lines
-    let mut all_lines: Vec<String> = Vec::new();
+    // Read files in reverse, collecting only the last `max` lines via a bounded ring
+    use std::collections::VecDeque;
+    use std::io::{BufRead, BufReader};
+
+    let mut ring: VecDeque<String> = VecDeque::with_capacity(max);
     for entry in &log_files {
-        if let Ok(content) = fs::read_to_string(entry.path()) {
-            for line in content.lines() {
-                all_lines.push(line.to_string());
+        let file = match fs::File::open(entry.path()) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        for line in BufReader::new(file).lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+            if ring.len() == max {
+                ring.pop_front();
             }
+            ring.push_back(line);
         }
     }
 
-    // Take the last `max` lines
-    let start = if all_lines.len() > max {
-        all_lines.len() - max
-    } else {
-        0
-    };
-
-    Ok(all_lines[start..].join("\n"))
+    Ok(ring.into_iter().collect::<Vec<_>>().join("\n"))
 }
 
 /// Delete all log files.

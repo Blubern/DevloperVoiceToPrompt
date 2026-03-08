@@ -746,20 +746,20 @@ export class WhisperSpeechProvider implements SpeechProvider {
       clearInterval(this.decodeTimer);
       this.decodeTimer = null;
     }
-    // Fire-and-forget cleanup — dispose is synchronous by interface contract
-    this._cleanup();
+    // Synchronous teardown: disconnect nodes and stop tracks immediately
+    // to release hardware resources without waiting for async AudioContext close.
+    this._syncTeardown();
+    // Fire-and-forget the async AudioContext close
+    this._closeAudioContext();
     this.callbacks = null;
   }
 
-  private async _cleanup(): Promise<void> {
+  /** Synchronous resource release — disconnects nodes, stops tracks, resets state. */
+  private _syncTeardown(): void {
     this.workletNode?.disconnect();
     this.workletNode = null;
     this.sourceNode?.disconnect();
     this.sourceNode = null;
-    if (this.audioContext) {
-      try { await this.audioContext.close(); } catch { /* already closed */ }
-      this.audioContext = null;
-    }
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((t) => t.stop());
       this.mediaStream = null;
@@ -771,6 +771,19 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.stabilityHits = 0;
     this.decoding = false;
     this.pendingDecode = false;
+  }
+
+  /** Async AudioContext close — fire-and-forget safe. */
+  private async _closeAudioContext(): Promise<void> {
+    if (this.audioContext) {
+      try { await this.audioContext.close(); } catch { /* already closed */ }
+      this.audioContext = null;
+    }
+  }
+
+  private async _cleanup(): Promise<void> {
+    this._syncTeardown();
+    await this._closeAudioContext();
   }
 }
 

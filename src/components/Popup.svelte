@@ -140,6 +140,9 @@
   let elapsedSeconds = $state(0);
   let elapsedInterval: ReturnType<typeof setInterval> | null = null;
 
+  // Re-entrancy guard for toggleMic
+  let toggling = false;
+
   // Whisper decode ring + latency badge
   let decodeLatencyMs = $state(0);
   let decodeProgress = $state(0);
@@ -318,6 +321,12 @@
         elapsedInterval = null;
       }
     }
+    return () => {
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
+        elapsedInterval = null;
+      }
+    };
   });
 
   // Persist window size and position on resize/move
@@ -542,7 +551,9 @@
   }
 
   async function toggleMic() {
-    if (enhancing) return;
+    if (enhancing || toggling) return;
+    toggling = true;
+    try {
     if (status === "listening") {
       // Skip the final flush when the user is explicitly toggling off
       // (they may immediately restart), so stop returns faster.
@@ -641,6 +652,9 @@
       levelMeter = new AudioLevelMeter();
       levelMeter.start((level) => { audioLevel = level; }, settings.microphone_device_id || undefined);
     }
+    } finally {
+      toggling = false;
+    }
   }
 
   function clearText() {
@@ -686,9 +700,13 @@
   async function copyToClipboard() {
     const text = editedText.trim();
     if (!text) return;
-    await writeText(text);
-    showCopiedToast = true;
-    setTimeout(() => { showCopiedToast = false; }, 1800);
+    try {
+      await writeText(text);
+      showCopiedToast = true;
+      setTimeout(() => { showCopiedToast = false; }, 1800);
+    } catch (e) {
+      errorMessage = "Failed to copy to clipboard.";
+    }
   }
 
   async function copyAndClose() {
@@ -883,28 +901,25 @@
 
   // Listen to templates-updated from Settings
   $effect(() => {
-    let unlistenFn: (() => void) | null = null;
-    listen(EVENT_TEMPLATES_UPDATED, async () => {
+    const listenPromise = listen(EVENT_TEMPLATES_UPDATED, async () => {
       if (templatesOpen) {
         templateEntries = await getTemplates();
       }
-    }).then((fn) => { unlistenFn = fn; });
-    return () => { unlistenFn?.(); };
+    });
+    return () => { listenPromise.then((fn) => fn()); };
   });
 
   // Listen to enhancer-templates-updated from Settings
   $effect(() => {
-    let unlistenFn: (() => void) | null = null;
-    listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
+    const listenPromise = listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
       enhancerTemplates = await getEnhancerTemplates();
-    }).then((fn) => { unlistenFn = fn; });
-    return () => { unlistenFn?.(); };
+    });
+    return () => { listenPromise.then((fn) => fn()); };
   });
 
   // Listen for MCP voice requests from the Rust backend
   $effect(() => {
-    let unlistenFn: (() => void) | null = null;
-    listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
+    const listenPromise = listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
       mcpRequest = event.payload;
       // Always start MCP requests with an empty editor so the ask is clear.
       finalSegments = [];
@@ -915,8 +930,8 @@
       cursorPosition = 0;
 
       focusTextareaAtEnd();
-    }).then((fn) => { unlistenFn = fn; });
-    return () => { unlistenFn?.(); };
+    });
+    return () => { listenPromise.then((fn) => fn()); };
   });
 
   // Auto-connect to Copilot when enabled
@@ -1004,17 +1019,18 @@
 
   // Execute prompt enhancement
   async function executeEnhance() {
-    // Stop mic first if recording
-    if (status === 'listening') {
-      await stopAndRecordUsage();
-    }
-    const text = editedText.trim();
-    if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected') return;
-    const template = enhancerTemplates.find(t => t.id === selectedEnhancerId);
-    if (!template) return;
+    if (enhancing) return;
     enhancing = true;
     copilotError = '';
     try {
+      // Stop mic first if recording
+      if (status === 'listening') {
+        await stopAndRecordUsage();
+      }
+      const text = editedText.trim();
+      if (!text || !copilotSelectedModel || !selectedEnhancerId || copilotStatus !== 'connected') return;
+      const template = enhancerTemplates.find(t => t.id === selectedEnhancerId);
+      if (!template) return;
       const systemPrompt = ENHANCE_SYSTEM_PROMPT_WRAPPER + template.text;
       const result = await copilotEnhance(copilotSelectedModel, systemPrompt, text, settings.copilot_delete_sessions);
       if (!result || !result.trim()) {

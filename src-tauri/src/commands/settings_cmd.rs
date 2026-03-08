@@ -4,6 +4,32 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::settings::{self, AppSettings};
 
+/// Re-register the global shortcut. Unregisters all shortcuts first, then
+/// registers the given combo (if non-empty). Returns an error message if
+/// the shortcut registration fails.
+fn register_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
+    let gs = app.global_shortcut();
+
+    if let Err(e) = gs.unregister_all() {
+        tracing::warn!(error = %e, "Failed to unregister shortcuts");
+    }
+
+    if shortcut.is_empty() {
+        return Ok(());
+    }
+
+    let app_handle = app.clone();
+    gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
+        if event.state == ShortcutState::Pressed {
+            crate::create_or_toggle_popup(&app_handle);
+        }
+    })
+    .map_err(|e| format!(
+        "Failed to register shortcut '{}'. It may already be in use by another application. Try a different key combination. ({})",
+        shortcut, e
+    ))
+}
+
 #[tauri::command]
 pub fn get_settings(app: tauri::AppHandle) -> AppSettings {
     settings::load_settings(&app)
@@ -50,51 +76,12 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     }
 
     // Re-register the global shortcut with the new key combo
-    let gs = app.global_shortcut();
-
-    // Unregister all existing shortcuts
-    if let Err(e) = gs.unregister_all() {
-        eprintln!("Failed to unregister shortcuts: {}", e);
-    }
-
-    // Only register if a shortcut is set (empty = disabled)
-    if !settings.shortcut.is_empty() {
-        let app_handle = app.clone();
-        if let Err(e) = gs.on_shortcut(settings.shortcut.as_str(), move |_app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                crate::create_or_toggle_popup(&app_handle);
-            }
-        }) {
-            return Err(format!(
-                "Failed to register shortcut '{}'. It may already be in use by another application. Try a different key combination. ({})",
-                settings.shortcut, e
-            ));
-        }
-    }
+    register_shortcut(&app, settings.shortcut.as_str())?;
 
     Ok(())
 }
 
 #[tauri::command]
 pub fn update_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<(), String> {
-    let gs = app.global_shortcut();
-
-    if let Err(e) = gs.unregister_all() {
-        eprintln!("Failed to unregister shortcuts: {}", e);
-    }
-
-    if shortcut.is_empty() {
-        return Ok(());
-    }
-
-    let app_handle = app.clone();
-    gs.on_shortcut(shortcut.as_str(), move |_app, _shortcut, event| {
-        if event.state == ShortcutState::Pressed {
-            crate::create_or_toggle_popup(&app_handle);
-        }
-    })
-    .map_err(|e| format!(
-        "Failed to register shortcut '{}'. It may already be in use by another application. Try a different key combination. ({})",
-        shortcut, e
-    ))
+    register_shortcut(&app, &shortcut)
 }

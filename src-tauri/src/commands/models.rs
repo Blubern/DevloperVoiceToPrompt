@@ -37,31 +37,40 @@ pub async fn whisper_download_model(
     let mut stream = resp.bytes_stream();
     use std::io::Write;
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
-        file.write_all(&chunk)
-            .map_err(|e| format!("Failed to write model data: {e}"))?;
-        downloaded += chunk.len() as u64;
+    let result = (|| async {
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
+            file.write_all(&chunk)
+                .map_err(|e| format!("Failed to write model data: {e}"))?;
+            downloaded += chunk.len() as u64;
 
-        // Emit progress event to frontend
-        let _ = app.emit(
-            "whisper-download-progress",
-            serde_json::json!({
-                "model": model_name,
-                "downloaded": downloaded,
-                "total": total_size,
-            }),
-        );
+            // Emit progress event to frontend
+            let _ = app.emit(
+                "whisper-download-progress",
+                serde_json::json!({
+                    "model": model_name,
+                    "downloaded": downloaded,
+                    "total": total_size,
+                }),
+            );
+        }
+
+        file.flush().map_err(|e| format!("Failed to flush file: {e}"))?;
+        drop(file);
+
+        // Rename temp file to final
+        std::fs::rename(&tmp_path, &path)
+            .map_err(|e| format!("Failed to finalize model file: {e}"))?;
+
+        Ok::<(), String>(())
+    })().await;
+
+    // Clean up temp file on error
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
     }
 
-    file.flush().map_err(|e| format!("Failed to flush file: {e}"))?;
-    drop(file);
-
-    // Rename temp file to final
-    std::fs::rename(&tmp_path, &path)
-        .map_err(|e| format!("Failed to finalize model file: {e}"))?;
-
-    Ok(())
+    result
 }
 
 #[tauri::command]

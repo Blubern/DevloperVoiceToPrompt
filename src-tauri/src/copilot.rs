@@ -73,7 +73,8 @@ async fn bridge_call_with_params(
     if let Some(p) = params {
         req["params"] = p;
     }
-    let mut line = serde_json::to_string(&req).unwrap();
+    let mut line = serde_json::to_string(&req)
+        .map_err(|e| format!("Failed to serialize bridge request: {e}"))?;
     line.push('\n');
 
     bridge
