@@ -134,6 +134,7 @@
   let sortedCopilotModels = $derived([...copilotModels].sort((a, b) => a.name.localeCompare(b.name)));
 
   let isMcpMode = $derived(mcpRequest !== null);
+  let showEmptyState = $derived(!editedText && status === "idle");
 
   // Elapsed time display
   let elapsedSeconds = $state(0);
@@ -439,6 +440,17 @@
     if (textareaEl) {
       cursorPosition = textareaEl.selectionStart;
     }
+  }
+
+  function focusTextareaAtEnd() {
+    requestAnimationFrame(() => {
+      if (!textareaEl) return;
+      textareaEl.focus();
+      const caretPosition = editedText.length;
+      textareaEl.selectionStart = caretPosition;
+      textareaEl.selectionEnd = caretPosition;
+      cursorPosition = caretPosition;
+    });
   }
 
   function clearSilenceTimer() {
@@ -863,6 +875,8 @@
         lastSyncedSegmentCount = 0;
         cursorPosition = 0;
       }
+
+      focusTextareaAtEnd();
     }).then((fn) => { unlistenFn = fn; });
     return () => { unlistenFn?.(); };
   });
@@ -1205,7 +1219,7 @@
 
       <!-- Text area for live editing -->
       <div class="text-area">
-        {#if !editedText && status === "idle"}
+        {#if showEmptyState}
           <!-- Guided empty state -->
           <div class="empty-state">
             <svg class="empty-state-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
@@ -1243,7 +1257,7 @@
           onkeyup={handleCursorChange}
           onscroll={handleTextareaScroll}
           class:recording={status === "listening"}
-          class:hidden-textarea={!editedText && status === "idle"}
+          class:empty-idle={showEmptyState}
           disabled={enhancing}
           style="font-family: {popupFontFamily}"
         ></textarea>
@@ -1845,6 +1859,10 @@
     font-size: 13px;
     color: var(--text-muted);
     text-align: center;
+    pointer-events: none;
+  }
+
+  .empty-state :global(.link-btn) {
     pointer-events: auto;
   }
 
@@ -1899,13 +1917,13 @@
     animation: recordingGlow 2s ease-in-out infinite;
   }
 
+  textarea.empty-idle {
+    caret-color: var(--text-primary);
+  }
+
   @keyframes recordingGlow {
     0%, 100% { box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 8%, transparent); }
     50% { box-shadow: 0 0 0 4px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 15%, transparent); }
-  }
-
-  textarea.hidden-textarea {
-    color: transparent;
   }
 
   textarea::placeholder {
@@ -2131,7 +2149,7 @@
     font-size: 11px;
     color: var(--text-muted);
     text-align: center;
-    pointer-events: auto;
+    pointer-events: none;
     opacity: 0.7;
   }
   .empty-state-hint kbd {
