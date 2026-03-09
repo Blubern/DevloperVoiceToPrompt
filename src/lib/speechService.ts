@@ -37,6 +37,7 @@ export function createSpeechProvider(settings: AppSettings): SpeechProvider {
       settings.azure_speech_key,
       settings.azure_region,
       settings.languages,
+      settings.silence_timeout_seconds,
       settings.microphone_device_id || undefined,
       settings.phrase_list.length > 0 ? settings.phrase_list : undefined,
       settings.auto_punctuation,
