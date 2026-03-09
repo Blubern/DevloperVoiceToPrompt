@@ -26,7 +26,11 @@
   );
 
   async function copyEntry(text: string) {
-    await writeText(text);
+    try {
+      await writeText(text);
+    } catch (e) {
+      console.error("Failed to copy to clipboard:", e);
+    }
   }
 </script>
 

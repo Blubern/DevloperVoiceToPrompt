@@ -172,18 +172,16 @@ impl ServerHandler for VoiceToTextServer {
 // Server startup / shutdown
 // ---------------------------------------------------------------------------
 
-pub fn stop_mcp_server(handle: &McpServerHandle) {
-    if let Ok(mut guard) = handle.0.lock() {
-        if let Some(tx) = guard.take() {
-            let _ = tx.send(true);
-            tracing::info!("MCP server shutdown signal sent");
-        }
-    } else {
-        tracing::error!("MCP server handle lock poisoned during shutdown");
+pub fn stop_mcp_server(handle: &McpServerHandle) -> Result<(), String> {
+    let mut guard = handle.0.lock().map_err(|e| format!("MCP server handle lock poisoned: {e}"))?;
+    if let Some(tx) = guard.take() {
+        let _ = tx.send(true);
+        tracing::info!("MCP server shutdown signal sent");
     }
+    Ok(())
 }
 
-pub fn start_mcp_server(app: AppHandle, port: u16) {
+pub fn start_mcp_server(app: AppHandle, port: u16) -> Result<(), String> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService,
         session::local::LocalSessionManager,
@@ -192,15 +190,13 @@ pub fn start_mcp_server(app: AppHandle, port: u16) {
     let server_handle = app.state::<McpServerHandle>();
 
     // Stop any existing server first
-    stop_mcp_server(&server_handle);
+    stop_mcp_server(&server_handle)?;
 
     // Create shutdown channel
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    if let Ok(mut guard) = server_handle.0.lock() {
+    {
+        let mut guard = server_handle.0.lock().map_err(|e| format!("MCP server handle lock poisoned: {e}"))?;
         *guard = Some(shutdown_tx);
-    } else {
-        tracing::error!("MCP server handle lock poisoned; cannot start server");
-        return;
     }
 
     tauri::async_runtime::spawn(async move {
@@ -241,4 +237,6 @@ pub fn start_mcp_server(app: AppHandle, port: u16) {
             tracing::info!("MCP server shut down gracefully");
         }
     });
+
+    Ok(())
 }

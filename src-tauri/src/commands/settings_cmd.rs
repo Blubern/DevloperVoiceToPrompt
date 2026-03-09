@@ -14,7 +14,15 @@ fn register_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), Strin
     let old_shortcut = settings::load_settings(app).shortcut;
     if !old_shortcut.is_empty() {
         if let Err(e) = gs.unregister(old_shortcut.as_str()) {
-            tracing::warn!(error = %e, shortcut = %old_shortcut, "Failed to unregister old shortcut");
+            // Only propagate as error if the old shortcut differs from new one;
+            // failing to unregister the same shortcut we're about to re-register is harmless.
+            if old_shortcut != shortcut {
+                return Err(format!(
+                    "Failed to unregister old shortcut '{}': {}. The old shortcut may still be active.",
+                    old_shortcut, e
+                ));
+            }
+            tracing::warn!(error = %e, shortcut = %old_shortcut, "Failed to unregister old shortcut (same as new, continuing)");
         }
     }
 
@@ -85,9 +93,9 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     // Apply MCP server changes (start/stop without requiring app restart)
     if mcp_changed {
         let server_handle = app.state::<crate::mcp::McpServerHandle>();
-        crate::mcp::stop_mcp_server(&server_handle);
+        crate::mcp::stop_mcp_server(&server_handle)?;
         if settings.mcp_enabled {
-            crate::mcp::start_mcp_server(app.clone(), settings.mcp_port);
+            crate::mcp::start_mcp_server(app.clone(), settings.mcp_port)?;
         }
     }
 

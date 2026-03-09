@@ -251,12 +251,14 @@
     const _ = editedText;
     if (textareaEl && status === "listening" && userHasEdited) {
       const savedScroll = textareaEl.scrollTop;
+      const savedCursor = cursorPosition;
+      const savedLen = editedText.length;
       requestAnimationFrame(() => {
         if (textareaEl) {
-          textareaEl.selectionStart = cursorPosition;
-          textareaEl.selectionEnd = cursorPosition;
+          textareaEl.selectionStart = savedCursor;
+          textareaEl.selectionEnd = savedCursor;
           // Keep scroll stable when cursor is not at the end
-          if (cursorPosition < editedText.length) {
+          if (savedCursor < savedLen) {
             textareaEl.scrollTop = savedScroll;
           }
         }

@@ -12,6 +12,8 @@ import { load } from "@tauri-apps/plugin-store";
 const mockedLoad = vi.mocked(load);
 
 describe("usageStore migration retry on failure", () => {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   beforeEach(() => {
     vi.resetModules();
     mockedLoad.mockClear();
@@ -31,7 +33,7 @@ describe("usageStore migration retry on failure", () => {
           // No old data to migrate on retry
           return Promise.resolve(undefined);
         }
-        if (key === "daily_web") return Promise.resolve({ "2026-03-08": 60 });
+        if (key === "daily_web") return Promise.resolve({ [todayStr]: 60 });
         if (key === "daily_azure") return Promise.resolve(undefined);
         if (key === "daily_whisper") return Promise.resolve(undefined);
         return Promise.resolve(undefined);
@@ -66,7 +68,7 @@ describe("usageStore migration retry on failure", () => {
           migrationAttempts++;
           return Promise.resolve(undefined); // no old data
         }
-        if (key === "daily_web") return Promise.resolve({ "2026-03-08": 60 });
+        if (key === "daily_web") return Promise.resolve({ [todayStr]: 60 });
         if (key === "daily_azure") return Promise.resolve(undefined);
         if (key === "daily_whisper") return Promise.resolve(undefined);
         return Promise.resolve(undefined);

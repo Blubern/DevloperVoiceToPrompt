@@ -30,6 +30,17 @@ export class AzureSpeechProvider implements SpeechProvider {
   }
 
   start(callbacks: SpeechCallbacks): void {
+    // Dispose any leftover recognizer from a previous start() to prevent resource leaks.
+    if (this.recognizer) {
+      const old = this.recognizer;
+      this.recognizer = null;
+      try { old.close(); } catch { /* ignore */ }
+    }
+    if (this.audioConfig) {
+      try { this.audioConfig.close(); } catch { /* ignore */ }
+      this.audioConfig = null;
+    }
+
     this.intentionallyStopped = false;
     this.restartCount = 0;
     this.lastResultId = null;

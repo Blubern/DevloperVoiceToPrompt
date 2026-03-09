@@ -74,16 +74,20 @@
   // Auto-connect to Copilot when enabled
   $effect(() => {
     const enabled = settings.copilot_enabled;
+    let stale = false;
     if (enabled && copilotStatus === 'disconnected') {
       copilotStatus = 'connecting';
       copilotError = '';
       (async () => {
         try {
           await copilotInit();
+          if (stale) return;
           const auth = await copilotAuthStatus();
+          if (stale) return;
           copilotAuth = auth;
           if (auth?.authenticated) {
             copilotModels = await copilotListModels();
+            if (stale) return;
             copilotStatus = 'connected';
             if (settings.copilot_selected_model && copilotModels.some(m => m.id === settings.copilot_selected_model)) {
               copilotSelectedModel = settings.copilot_selected_model;
@@ -93,10 +97,13 @@
             copilotError = 'Not signed in to GitHub Copilot';
           }
         } catch (e: any) {
+          if (stale) return;
           copilotStatus = 'error';
           copilotError = String(e);
         }
+        if (stale) return;
         enhancerTemplates = await getEnhancerTemplates();
+        if (stale) return;
         const savedEnhancer = settings.copilot_selected_enhancer;
         if (savedEnhancer && enhancerTemplates.some(t => t.id === savedEnhancer)) {
           selectedEnhancerId = savedEnhancer;
@@ -111,6 +118,7 @@
       copilotModels = [];
       copilotError = '';
     }
+    return () => { stale = true; };
   });
 
   // Listen to enhancer-templates-updated from Settings
