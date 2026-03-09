@@ -60,8 +60,8 @@
 </script>
 
 <svelte:window
-  onkeydown={handleKeydown}
-  onkeyup={handleKeyup}
+  onkeydown={(e) => { if (recording) handleKeydown(e); }}
+  onkeyup={(e) => { if (recording) handleKeyup(); }}
 />
 
 <div class="shortcut-recorder">

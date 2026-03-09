@@ -9,6 +9,9 @@ export interface EnhancerTemplate {
 }
 
 let storePromise: Promise<Store> | null = null;
+let migrationDone = false;
+
+const CURRENT_TEMPLATE_VERSION = 2;
 
 const DEVELOPER_PROMPT_OPTIMIZER_NAME = "Developer Prompt Optimizer";
 const LEGACY_DEVELOPER_PROMPT_OPTIMIZER_TEXT = `Take the raw dictated text and transform it into a clear, well-structured developer prompt. Fix grammar, remove filler words, and organize the intent into actionable instructions. Preserve all technical terms, code references, and specific requirements. Use concise professional language suitable for AI coding assistants. Leave the Language like it is no translations.`;
@@ -109,37 +112,46 @@ export async function getEnhancerTemplates(): Promise<EnhancerTemplate[]> {
   const s = await getStore();
   const raw = await s.get<EnhancerTemplate[]>("templates");
   if (raw && raw.length > 0) {
-    const migrated = raw.map((template) => {
-      if (
-        template.name === DEVELOPER_PROMPT_OPTIMIZER_NAME &&
-        template.text === LEGACY_DEVELOPER_PROMPT_OPTIMIZER_TEXT
-      ) {
-        return {
-          ...template,
-          text: DEFAULT_DEVELOPER_PROMPT_OPTIMIZER_TEXT,
-          updatedAt: new Date().toISOString(),
-        };
+    // Only run migration if we haven't already this session and no version marker exists
+    if (!migrationDone) {
+      const version = await s.get<number>("template_version");
+      if (!version || version < CURRENT_TEMPLATE_VERSION) {
+        const migrated = raw.map((template) => {
+          if (
+            template.name === DEVELOPER_PROMPT_OPTIMIZER_NAME &&
+            template.text === LEGACY_DEVELOPER_PROMPT_OPTIMIZER_TEXT
+          ) {
+            return {
+              ...template,
+              text: DEFAULT_DEVELOPER_PROMPT_OPTIMIZER_TEXT,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+
+          if (
+            template.name === DICTATION_CLEANUP_NAME &&
+            template.text === LEGACY_DICTATION_CLEANUP_TEXT
+          ) {
+            return {
+              ...template,
+              text: DEFAULT_DICTATION_CLEANUP_TEXT,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+
+          return template;
+        });
+
+        const changed = migrated.some((template, index) => template.text !== raw[index].text);
+        if (changed) {
+          await s.set("templates", migrated);
+        }
+        await s.set("template_version", CURRENT_TEMPLATE_VERSION);
+        await s.save();
+        migrationDone = true;
+        return changed ? migrated : raw;
       }
-
-      if (
-        template.name === DICTATION_CLEANUP_NAME &&
-        template.text === LEGACY_DICTATION_CLEANUP_TEXT
-      ) {
-        return {
-          ...template,
-          text: DEFAULT_DICTATION_CLEANUP_TEXT,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-
-      return template;
-    });
-
-    const changed = migrated.some((template, index) => template.text !== raw[index].text);
-    if (changed) {
-      await s.set("templates", migrated);
-      await s.save();
-      return migrated;
+      migrationDone = true;
     }
 
     return raw;

@@ -14,12 +14,13 @@ beforeEach(async () => {
 });
 
 describe("historyStore CRUD", () => {
-  it("adds and retrieves an entry", async () => {
+  it("adds entry with unique id", async () => {
     await addHistoryEntry("Hello world", 50);
     const entries = await getHistory();
     expect(entries).toHaveLength(1);
     expect(entries[0].text).toBe("Hello world");
     expect(entries[0].timestamp).toBeTruthy();
+    expect(entries[0].id).toBeTruthy();
   });
 
   it("ignores empty/whitespace-only entries", async () => {
@@ -75,7 +76,7 @@ describe("historyStore CRUD", () => {
     expect(entries).toHaveLength(0);
   });
 
-  it("deletes a specific entry by timestamp", async () => {
+  it("deletes a specific entry by id", async () => {
     await addHistoryEntry("keep", 50);
     // Small delay to ensure different timestamps
     await new Promise((r) => setTimeout(r, 5));
@@ -83,17 +84,17 @@ describe("historyStore CRUD", () => {
     const before = await getHistory();
     expect(before).toHaveLength(2);
 
-    const deleteTs = before.find((e) => e.text === "delete-me")!.timestamp;
-    await deleteHistoryEntry(deleteTs);
+    const deleteId = before.find((e) => e.text === "delete-me")!.id;
+    await deleteHistoryEntry(deleteId);
 
     const after = await getHistory();
     expect(after).toHaveLength(1);
     expect(after[0].text).toBe("keep");
   });
 
-  it("deleteHistoryEntry is a no-op for non-existent timestamp", async () => {
+  it("deleteHistoryEntry is a no-op for non-existent id", async () => {
     await addHistoryEntry("exists", 50);
-    await deleteHistoryEntry("1999-01-01T00:00:00.000Z");
+    await deleteHistoryEntry("non-existent-id");
     const entries = await getHistory();
     expect(entries).toHaveLength(1);
   });

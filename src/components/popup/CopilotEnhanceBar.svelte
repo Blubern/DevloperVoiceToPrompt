@@ -162,6 +162,11 @@
   export function isConnected(): boolean {
     return copilotStatus === 'connected';
   }
+
+  /** Programmatically trigger enhancement (used by keyboard shortcut). */
+  export function triggerEnhance(): void {
+    handleEnhanceClick();
+  }
 </script>
 
 {#if settings.copilot_enabled && copilotStatus === 'connected' && enhancerTemplates.length > 0}

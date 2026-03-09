@@ -33,14 +33,18 @@ export function matchesShortcut(e: KeyboardEvent, shortcutStr: string): boolean 
   return ctrlOk && metaOk && shiftOk && altOk && keyMatch;
 }
 
+const isMac =
+  typeof navigator !== "undefined" &&
+  (navigator.userAgent.includes("Macintosh") || navigator.platform === "MacIntel");
+
 /**
  * Format a Tauri shortcut string to a human-readable label.
- * Example: "CommandOrControl+Shift+R" → "Ctrl+Shift+R"
+ * Example: "CommandOrControl+Shift+R" → "Ctrl+Shift+R" (or "⌘+Shift+R" on macOS)
  */
 export function formatShortcutLabel(shortcutStr: string): string {
   if (!shortcutStr) return "";
   return shortcutStr
-    .replace(/CommandOrControl/gi, "Ctrl")
+    .replace(/CommandOrControl/gi, isMac ? "⌘" : "Ctrl")
     .replace(/Control/gi, "Ctrl")
     .replace(/Meta/gi, "⌘")
     .replace(/\+/g, "+");

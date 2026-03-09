@@ -1,6 +1,7 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
 
 export interface HistoryEntry {
+  id: string;
   timestamp: string; // ISO 8601
   text: string;
   input_reason?: string;
@@ -28,7 +29,7 @@ export async function addHistoryEntry(
   const s = await getStore();
   const raw = await s.get<HistoryEntry[]>("entries");
   const entries: HistoryEntry[] = raw ?? [];
-  const entry: HistoryEntry = { timestamp: new Date().toISOString(), text: trimmed };
+  const entry: HistoryEntry = { id: crypto.randomUUID(), timestamp: new Date().toISOString(), text: trimmed };
   if (inputReason) entry.input_reason = inputReason;
   entries.unshift(entry);
   if (entries.length > maxEntries) {
@@ -50,10 +51,10 @@ export async function clearHistory(): Promise<void> {
   await s.save();
 }
 
-export async function deleteHistoryEntry(timestamp: string): Promise<void> {
+export async function deleteHistoryEntry(id: string): Promise<void> {
   const s = await getStore();
   const raw = await s.get<HistoryEntry[]>("entries");
-  const entries = (raw ?? []).filter((e) => e.timestamp !== timestamp);
+  const entries = (raw ?? []).filter((e) => e.id !== id);
   await s.set("entries", entries);
   await s.save();
 }

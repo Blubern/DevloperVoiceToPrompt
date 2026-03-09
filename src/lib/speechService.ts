@@ -206,7 +206,9 @@ export class OsSpeechProvider implements SpeechProvider {
     return new Promise((resolve) => {
       this.intentionallyStopped = true;
       if (this.recognition) {
+        const timeout = setTimeout(() => resolve(), 2000);
         const onEnd = () => {
+          clearTimeout(timeout);
           this.recognition?.removeEventListener("end", onEnd);
           resolve();
         };
@@ -593,23 +595,21 @@ export class WhisperSpeechProvider implements SpeechProvider {
       }
     } finally {
       this.decoding = false;
-      // If a tick fired while we were busy, run one more decode now.
+      // If a tick fired while we were busy, schedule one more decode.
+      // Use queueMicrotask to break the call stack and prevent unbounded recursion.
       if (this.pendingDecode && this.running) {
         this.pendingDecode = false;
-        this._runDecode();
+        queueMicrotask(() => this._runDecode());
       }
     }
   }
 
   // ----- overlap reconciliation -----
 
-  /** Whisper hallucination tokens to strip from results. */
-  private static readonly HALLUCINATION_RE =
-    /\[BLANK_AUDIO\]|\[MUSIC\]|\[SILENCE\]|\(silence\)|\(blank audio\)/gi;
-
-  /** Strip hallucination tokens and collapse whitespace. */
+  /** Collapse whitespace and trim. Hallucination tokens are already stripped
+   *  by the Rust backend — no need to duplicate that logic here. */
   private _clean(text: string): string {
-    return text.replace(WhisperSpeechProvider.HALLUCINATION_RE, " ").replace(/\s+/g, " ").trim();
+    return text.replace(/\s+/g, " ").trim();
   }
 
   /**
@@ -786,10 +786,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
           if (match) { bestMatchLen = suffix.length; break; }
         }
         const newWords = words.slice(bestMatchLen);
-        const newText = newWords.length > 0 ? newWords.join(" ") : cleaned;
-
-        if (newText) {
-          this.callbacks.onFinal(newText);
+        if (newWords.length > 0) {
+          this.callbacks.onFinal(newWords.join(" "));
           this.callbacks.onInterim?.("");
         }
       }

@@ -50,9 +50,11 @@ describe("enhancerTemplateStore migration does not spuriously rewrite", () => {
     expect(result[0].updatedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(result[1].updatedAt).toBe("2026-01-01T00:00:00.000Z");
 
-    // store.set should NOT have been called — no migration was needed
-    expect(fakeStore.set).not.toHaveBeenCalled();
-    expect(fakeStore.save).not.toHaveBeenCalled();
+    // store.set should only have been called for the version marker, not for templates
+    const setCalls = fakeStore.set.mock.calls.map((c: any[]) => c[0]);
+    expect(setCalls).not.toContain("templates");
+    expect(setCalls).toContain("template_version");
+    expect(fakeStore.save).toHaveBeenCalled();
   });
 
   it("rewrites store when templates have legacy text", async () => {

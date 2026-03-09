@@ -775,9 +775,8 @@
       }
     } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
       e.preventDefault();
-      // Delegate to CopilotEnhanceBar click — the bar handles model/template selection
-      const enhanceBtn = document.querySelector('.copilot-enhance-btn:not(:disabled)') as HTMLButtonElement;
-      enhanceBtn?.click();
+      // Delegate to CopilotEnhanceBar via component ref
+      copilotEnhanceBar?.triggerEnhance();
     } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && enhanceUndoStack.length > 0) {
       e.preventDefault();
       undoEnhance();
@@ -793,8 +792,8 @@
     historyOpen = !historyOpen;
   }
 
-  async function handleHistoryDelete(timestamp: string) {
-    await deleteHistoryEntry(timestamp);
+  async function handleHistoryDelete(id: string) {
+    await deleteHistoryEntry(id);
     historyEntries = await getHistory();
     historyCount = historyEntries.length;
   }

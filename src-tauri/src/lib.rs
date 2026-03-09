@@ -238,7 +238,14 @@ pub fn run() {
 
             // Start MCP server if enabled
             if user_settings.mcp_enabled {
-                mcp::start_mcp_server(app.handle().clone(), user_settings.mcp_port);
+                if (1024..=65535).contains(&user_settings.mcp_port) {
+                    mcp::start_mcp_server(app.handle().clone(), user_settings.mcp_port);
+                } else {
+                    tracing::error!(
+                        port = user_settings.mcp_port,
+                        "MCP port out of valid range (1024–65535); server not started"
+                    );
+                }
             }
 
             // Apply Dock (macOS) / Taskbar (Windows) visibility from saved settings

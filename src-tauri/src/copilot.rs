@@ -10,6 +10,7 @@ struct BridgeProcess {
     _child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    stderr_task: tokio::task::JoinHandle<()>,
     next_id: u64,
 }
 
@@ -196,6 +197,7 @@ pub async fn copilot_init(
 
     // Tear down old bridge outside the lock
     if let Some(mut old) = old_bridge {
+        old.stderr_task.abort();
         let _ = old.stdin.shutdown().await;
         let _ = old._child.kill().await;
         let _ = tokio::time::timeout(
@@ -253,7 +255,7 @@ pub async fn copilot_init(
     };
 
     // Spawn a background task to continuously read and log stderr from the bridge
-    tokio::spawn(async move {
+    let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();
         loop {
@@ -278,6 +280,7 @@ pub async fn copilot_init(
         _child: child,
         stdin,
         stdout: BufReader::new(stdout),
+        stderr_task,
         next_id: 1,
     };
 
@@ -366,6 +369,7 @@ pub async fn copilot_stop(state: tauri::State<'_, CopilotState>) -> Result<(), S
     if let Some(mut bridge) = guard.take() {
         // Try a graceful stop; ignore errors if the process already exited
         let _ = bridge_call(&mut bridge, "stop").await;
+        bridge.stderr_task.abort();
         let _ = bridge.stdin.shutdown().await;
         let _ = bridge._child.kill().await;
         // Wait for the process to actually exit (up to 5s) to avoid orphans
