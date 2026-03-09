@@ -43,6 +43,8 @@ export interface AppSettings {
   mcp_port: number;
   mcp_timeout_seconds: number;
   show_in_dock: boolean;
+  speech_tracing: boolean;
+  speech_trace_max_entries: number;
 }
 
 // DEFAULT_SETTINGS must stay in sync with `impl Default for AppSettings` in
@@ -87,6 +89,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mcp_port: 31337,
   mcp_timeout_seconds: 300,
   show_in_dock: false,
+  speech_tracing: false,
+  speech_trace_max_entries: 500,
 };
 
 export async function getSettings(): Promise<AppSettings> {

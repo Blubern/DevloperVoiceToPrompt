@@ -1,8 +1,12 @@
 [package]
 name = "DeveloperVoiceToPrompt"
-version = "0.1.0"
-description = "Azure Speech to Text dictation tool"
-authors = ["you"]
+version = "1.0.3"
+description = "Desktop dictation app for developers with templates, prompt enhancement, and MCP voice input"
+authors = ["Blubern"]
+license = "MIT"
+repository = "https://github.com/Blubern/DevloperVoiceToPrompt"
+homepage = "https://github.com/Blubern/DevloperVoiceToPrompt"
+readme = "../README.md"
 edition = "2021"
 
 [lib]

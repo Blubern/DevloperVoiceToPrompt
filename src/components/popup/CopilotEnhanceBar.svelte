@@ -1,5 +1,6 @@
 <script lang="ts">
   import { listen, emit } from "@tauri-apps/api/event";
+  import { untrack } from "svelte";
   import type { AppSettings } from "../../lib/settingsStore";
   import { saveSettings } from "../../lib/settingsStore";
   import {
@@ -71,11 +72,14 @@
     onStatusUpdate?.(copilotStatus, copilotAuth);
   });
 
-  // Auto-connect to Copilot when enabled
+  // Auto-connect to Copilot when enabled.
+  // Read copilotStatus via untrack() so writing to it inside the effect
+  // doesn't retrigger the effect and stale-cancel the in-flight async chain.
   $effect(() => {
     const enabled = settings.copilot_enabled;
+    const currentStatus = untrack(() => copilotStatus);
     let stale = false;
-    if (enabled && copilotStatus === 'disconnected') {
+    if (enabled && currentStatus === 'disconnected') {
       copilotStatus = 'connecting';
       copilotError = '';
       (async () => {
@@ -111,7 +115,7 @@
           selectedEnhancerId = enhancerTemplates[0].id;
         }
       })();
-    } else if (!enabled && copilotStatus !== 'disconnected') {
+    } else if (!enabled && currentStatus !== 'disconnected') {
       copilotStop().catch(e => console.error("Failed to stop Copilot:", e));
       copilotStatus = 'disconnected';
       copilotAuth = null;

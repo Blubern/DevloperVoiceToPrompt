@@ -24,6 +24,8 @@
     mcpTimeoutEnabled = $bindable(),
     mcpTimeoutSeconds = $bindable(),
     showInDock = $bindable(),
+    speechTracing = $bindable(),
+    speechTraceMaxEntries = $bindable(),
     isMac = false,
     isWindows = false,
     mcpRunning = false,
@@ -47,6 +49,8 @@
     mcpTimeoutEnabled: boolean;
     mcpTimeoutSeconds: number;
     showInDock: boolean;
+    speechTracing: boolean;
+    speechTraceMaxEntries: number;
     isMac: boolean;
     isWindows: boolean;
     mcpRunning: boolean;
@@ -349,6 +353,25 @@
       </div>
     {/if}
   </div>
+
+<div class="section">
+  <h2>Diagnostics</h2>
+  <label class="field toggle-field">
+    <span class="label">Speech Tracing</span>
+    <div class="toggle-row">
+      <input type="checkbox" bind:checked={speechTracing} class="toggle-checkbox" />
+      <span class="toggle-label">{speechTracing ? 'On' : 'Off'}</span>
+    </div>
+    <span class="hint">Show a live trace log in the popup while recording. Captures all speech events (recognizing, recognized, session restarts, errors) for debugging.</span>
+  </label>
+  {#if speechTracing}
+    <label class="field">
+      <span class="label">Max Trace Entries</span>
+      <input type="number" bind:value={speechTraceMaxEntries} min="50" max="10000" step="50" />
+      <span class="hint">Maximum number of trace entries to keep in memory (50–10,000). Default: 500.</span>
+    </label>
+  {/if}
+</div>
 
 <div class="section">
   <h2>Storage & Data</h2>

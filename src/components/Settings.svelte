@@ -185,12 +185,14 @@
           bind:autoStartRecording={s.auto_start_recording} bind:silenceTimeoutEnabled bind:silenceTimeoutSeconds={s.silence_timeout_seconds}
           bind:maxRecordingEnabled={s.max_recording_enabled} bind:maxRecordingSeconds={s.max_recording_seconds} bind:popupFont={s.popup_font} bind:openPopupOnStart={s.open_popup_on_start}
           bind:mcpEnabled={s.mcp_enabled} bind:mcpPort={s.mcp_port} bind:mcpTimeoutEnabled bind:mcpTimeoutSeconds={s.mcp_timeout_seconds}
-          bind:showInDock={s.show_in_dock} {isMac} {isWindows} {mcpRunning} />
+          bind:showInDock={s.show_in_dock} bind:speechTracing={s.speech_tracing} bind:speechTraceMaxEntries={s.speech_trace_max_entries}
+          {isMac} {isWindows} {mcpRunning} />
       {:else if activeTab === 'speech'}
         <SpeechTab bind:speechProvider={s.speech_provider} bind:osLanguage={s.os_language} bind:osAutoRestart={s.os_auto_restart} bind:osMaxRestarts={s.os_max_restarts}
           bind:key={s.azure_speech_key} bind:region={s.azure_region} bind:languages={s.languages} bind:microphoneDeviceId={s.microphone_device_id} bind:autoPunctuation={s.auto_punctuation}
           bind:whisperModel={s.whisper_model} bind:whisperLanguage={s.whisper_language} bind:whisperChunkSeconds={s.whisper_chunk_seconds}
           bind:whisperDecodeInterval={s.whisper_decode_interval} bind:whisperContextOverlap={s.whisper_context_overlap}
+          bind:speechTracing={s.speech_tracing}
           {audioDevices} {micWarning} bind:error />
       {:else if activeTab === 'phrases'}
         <PhrasesTab bind:phraseList={s.phrase_list} />

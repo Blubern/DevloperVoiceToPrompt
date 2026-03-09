@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { WHISPER_SILENCE_RMS_THRESHOLD, WHISPER_STABILITY_COUNT } from "../constants";
 import type { SpeechCallbacks, SpeechProvider } from "./types";
+import { traceEvent } from "../speechTraceStore";
 import {
   cleanText,
   stripOverlap,
@@ -176,6 +177,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.workletNode.connect(this.audioContext.destination); // required for processing
 
       callbacks.onStatusChange("listening");
+      traceEvent("info", "started", `Whisper started (model=${this.modelName}, lang=${this.language}, interval=${this.decodeIntervalSeconds}s)`);
 
       // Fire an eager first decode after 500 ms so the user sees text quickly,
       // then switch to the regular cadence.
@@ -271,7 +273,9 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
       // Report decode latency to UI.
       if (gen === this.generation && this.running) {
-        this.callbacks?.onDecodeLatency?.(performance.now() - t0);
+        const latency = performance.now() - t0;
+        this.callbacks?.onDecodeLatency?.(latency);
+        traceEvent("event", "decode", `latency=${Math.round(latency)}ms, window=${Math.round((windowEnd - windowStart) / 16000 * 10) / 10}s, result=${fullText ? fullText.length : 0} chars`);
       }
 
       // Drop result if generation changed (user stopped / restarted).
@@ -336,6 +340,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.stabilityHits = result.newStabilityHits;
 
     if (result.shouldCommit) {
+      traceEvent("data", "recognized", `final (${text.length} chars, stability=${WHISPER_STABILITY_COUNT}): ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`);
       this.callbacks.onFinal(text);
       this.callbacks.onInterim?.("");
       this.committedSamples = windowEndSample;
@@ -344,6 +349,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.stabilityHits = 0;
       this._compactChunks();
     } else {
+      traceEvent("event", "recognizing", `interim (${text.length} chars, hits=${result.newStabilityHits}/${WHISPER_STABILITY_COUNT}): ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`);
       this.callbacks.onInterim(text);
     }
   }
@@ -416,6 +422,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
       if (cleaned) {
         const newText = stripOverlap(this.lastCommittedWords, cleaned);
         if (newText) {
+          traceEvent("data", "flush-final", `final flush (${newText.length} chars): ${newText.slice(0, 120)}${newText.length > 120 ? "…" : ""}`);
           this.callbacks.onFinal(newText);
           this.callbacks.onInterim?.("");
         }

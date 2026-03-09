@@ -47,6 +47,8 @@ pub struct AppSettings {
     pub mcp_port: u16,
     pub mcp_timeout_seconds: u32,
     pub show_in_dock: bool,
+    pub speech_tracing: bool,
+    pub speech_trace_max_entries: u32,
 }
 
 // Default values must stay in sync with `DEFAULT_SETTINGS` in
@@ -93,6 +95,8 @@ impl Default for AppSettings {
             mcp_port: 31337,
             mcp_timeout_seconds: 300,
             show_in_dock: false,
+            speech_tracing: false,
+            speech_trace_max_entries: 500,
         }
     }
 }
@@ -232,6 +236,8 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         mcp_port: get_u32("mcp_port", defaults.mcp_port as u32) as u16,
         mcp_timeout_seconds: get_u32("mcp_timeout_seconds", defaults.mcp_timeout_seconds),
         show_in_dock: get_bool("show_in_dock", defaults.show_in_dock),
+        speech_tracing: get_bool("speech_tracing", defaults.speech_tracing),
+        speech_trace_max_entries: get_u32("speech_trace_max_entries", defaults.speech_trace_max_entries),
     }
 }
 

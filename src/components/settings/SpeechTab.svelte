@@ -21,6 +21,7 @@
     whisperChunkSeconds = $bindable(),
     whisperDecodeInterval = $bindable(),
     whisperContextOverlap = $bindable(),
+    speechTracing = $bindable(),
     audioDevices,
     micWarning,
     error = $bindable(),
@@ -39,6 +40,7 @@
     whisperChunkSeconds: number;
     whisperDecodeInterval: number;
     whisperContextOverlap: number;
+    speechTracing: boolean;
     audioDevices: AudioDevice[];
     micWarning: string;
     error: string;

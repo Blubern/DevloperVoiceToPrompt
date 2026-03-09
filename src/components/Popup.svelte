@@ -28,6 +28,9 @@
   import TemplatesPanel from "./popup/TemplatesPanel.svelte";
   import HistoryPanel from "./popup/HistoryPanel.svelte";
   import CopilotEnhanceBar from "./popup/CopilotEnhanceBar.svelte";
+  import SpeechTracePanel from "./popup/SpeechTracePanel.svelte";
+  import { setTracingEnabled, clearTrace } from "../lib/speechTraceStore";
+  import { traceEvent, setMaxEntries } from "../lib/speechTraceStore";
   import {
     PROVIDER_AZURE,
     PROVIDER_OS,
@@ -198,6 +201,12 @@
 
   let popupFontFamily = $derived(FONT_FAMILIES[settings.popup_font] ?? FONT_FAMILIES.mono);
 
+  // Sync speech tracing enabled state with settings
+  $effect(() => {
+    setTracingEnabled(settings.speech_tracing);
+    setMaxEntries(settings.speech_trace_max_entries);
+  });
+
   // Context-aware button label
   let primaryButtonLabel = $derived.by(() => {
     const hasText = editedText.trim().length > 0;
@@ -225,11 +234,24 @@
     const currentInterim = interimText;
 
     if (!userHasEdited) {
+      const oldText = editedText;
       editedText =
         finalSegments.join(" ") +
         (currentInterim ? (segmentCount ? " " : "") + currentInterim : "");
       cursorPosition = editedText.length;
       lastSyncedSegmentCount = segmentCount;
+      if (oldText !== editedText) {
+        const delta = editedText.length - oldText.length;
+        traceEvent("data", "popup:rebuild", `segments=${segmentCount}, interim=${currentInterim.length} chars | old=${oldText.length} → new=${editedText.length} chars (${delta >= 0 ? "+" : ""}${delta})`);
+        // Detect visible text loss: user-visible text got shorter
+        if (editedText.length < oldText.length && oldText.length > 0) {
+          const lost = oldText.length - editedText.length;
+          // Find what text disappeared
+          const oldEnd = oldText.slice(-Math.min(lost + 30, oldText.length));
+          const newEnd = editedText.slice(-Math.min(30, editedText.length));
+          traceEvent("warn", "⚠ TEXT-LOSS", `Visible text shrank by ${lost} chars! old=${oldText.length} → new=${editedText.length} | old tail: "${oldEnd}" | new tail: "${newEnd}"`);
+        }
+      }
     } else if (segmentCount > lastSyncedSegmentCount) {
       const newSegments = finalSegments.slice(lastSyncedSegmentCount);
       if (newSegments.length > 0) {
@@ -239,8 +261,10 @@
         const after = editedText.slice(pos);
         const needsSpace = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n");
         const insertText = (needsSpace ? " " : "") + addition;
+        const oldText = editedText;
         editedText = before + insertText + after;
         cursorPosition = pos + insertText.length;
+        traceEvent("data", "popup:insert", `${newSegments.length} new segment(s) at cursor ${pos} | +${insertText.length} chars | old=${oldText.length} → new=${editedText.length} chars`);
       }
       lastSyncedSegmentCount = segmentCount;
     }
@@ -428,9 +452,11 @@
 
   function handleTextInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
+    const oldLen = editedText.length;
     editedText = target.value;
     userHasEdited = true;
     cursorPosition = target.selectionStart;
+    traceEvent("event", "popup:userEdit", `User typed | old=${oldLen} chars → new=${editedText.length} chars`);
     // Typing counts as user activity — reset the silence timer so it
     // doesn't auto-stop recording while the user is actively editing.
     if (status === "listening") {
@@ -490,6 +516,7 @@
     clearMaxRecordingTimer();
     if (settings.max_recording_enabled && settings.max_recording_seconds > 0) {
       maxRecordingTimer = setTimeout(async () => {
+        traceEvent("warn", "popup:maxRecording", `Auto-stopped after ${settings.max_recording_seconds}s max recording time`);
         silenceMessage = `Auto-stopped after ${settings.max_recording_seconds}s max recording time`;
         silenceMessageFading = false;
         await stopAndRecordUsage();
@@ -506,6 +533,7 @@
     const timeout = settings.silence_timeout_seconds;
     if (timeout > 0 && status === "listening") {
       silenceTimer = setTimeout(async () => {
+        traceEvent("warn", "popup:silence", `Auto-paused after ${timeout}s of silence`);
         silenceMessage = `Auto-paused after ${timeout}s of silence`;
         silenceMessageFading = false;
         await stopAndRecordUsage();
@@ -518,6 +546,7 @@
   }
 
   async function stopAndRecordUsage(skipFlush = false) {
+    traceEvent("info", "popup:stop", `stopAndRecordUsage (skipFlush=${skipFlush}, segments=${finalSegments.length}, interim=${interimText.length} chars)`);
     if (activeProvider) {
       await activeProvider.stop(skipFlush);
       activeProvider.dispose();
@@ -575,6 +604,12 @@
 
     errorMessage = "";
     silenceMessage = "";
+    // Promote any leftover interim text to a final segment so it isn't lost
+    // when starting a new recording session.
+    if (interimText) {
+      traceEvent("info", "popup:promote", `Promoting leftover interim (${interimText.length} chars) to final segment before new session`);
+      finalSegments = [...finalSegments, interimText];
+    }
     interimText = "";
     lastSyncedSegmentCount = finalSegments.length;
     userScrolledUp = false;
@@ -583,20 +618,30 @@
 
     const callbacks: SpeechCallbacks = {
       onInterim: (text) => {
+        const oldInterim = interimText;
+        traceEvent("event", "popup:onInterim", `set interimText (${text.length} chars), resetSilenceTimer`);
+        // Detect interim shrink — this is the primary visible symptom of text loss:
+        // the user sees a long interim, then it suddenly gets replaced by a shorter one.
+        if (oldInterim.length > 0 && text.length < oldInterim.length * 0.5 && oldInterim.length > 20) {
+          traceEvent("warn", "⚠ INTERIM-SHRINK", `Interim shrank from ${oldInterim.length} to ${text.length} chars (${Math.round((1 - text.length / oldInterim.length) * 100)}% loss) | was: "${oldInterim.slice(0, 80)}…" | now: "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`);
+        }
         interimText = text;
         resetSilenceTimer();
       },
       onFinal: (text) => {
         if (text) {
+          traceEvent("data", "popup:onFinal", `append segment #${finalSegments.length} (${text.length} chars): ${text.slice(0, 100)}${text.length > 100 ? "…" : ""}`);
           finalSegments = [...finalSegments, text];
           interimText = "";
           resetSilenceTimer();
         }
       },
       onError: (err) => {
+        traceEvent("warn", "popup:onError", err);
         errorMessage = err;
       },
       onStatusChange: (s) => {
+        traceEvent("info", "popup:status", `${status} → ${s}`);
         status = s;
         if (s === "listening") {
           sessionStartTime = Date.now();
@@ -661,6 +706,7 @@
         undoSnapshot = null;
       }, 4000);
     }
+    traceEvent("info", "popup:clear", `Cleared text | old=${editedText.length} chars, ${finalSegments.length} segments`);
     finalSegments = [];
     interimText = "";
     editedText = "";
@@ -676,6 +722,7 @@
 
   function undoClear() {
     if (!undoSnapshot) return;
+    traceEvent("info", "popup:undoClear", `Restored | old=0 chars → new=${undoSnapshot.text.length} chars, ${undoSnapshot.segments.length} segments`);
     finalSegments = undoSnapshot.segments;
     editedText = undoSnapshot.text;
     userHasEdited = true;
@@ -802,6 +849,7 @@
   }
 
   function insertHistoryEntry(text: string) {
+    traceEvent("info", "popup:history", `Inserted from history | old=${editedText.length} chars → new=${text.length} chars`);
     editedText = text;
     userHasEdited = true;
     historyOpen = false;
@@ -824,6 +872,7 @@
   }
 
   function selectTemplate(t: PromptTemplate) {
+    traceEvent("info", "popup:template", `Applied template | old=${editedText.length} chars → new=${t.text.length} chars`);
     editedText = t.text.replace(/\r\n/g, "\n");
     userHasEdited = true;
     templatesOpen = false;
@@ -938,6 +987,7 @@
     listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
       mcpRequest = event.payload;
       // Start with context_input pre-filled, or empty editor if none provided.
+      traceEvent("info", "popup:mcp", `MCP request | reason="${event.payload.input_reason}", context=${event.payload.context_input?.length ?? 0} chars, old=${editedText.length} chars`);
       finalSegments = [];
       interimText = "";
       editedText = event.payload.context_input ?? "";
@@ -964,7 +1014,9 @@
   // Undo last enhancement (multi-level)
   function undoEnhance() {
     if (enhanceUndoStack.length === 0) return;
-    editedText = enhanceUndoStack[enhanceUndoStack.length - 1];
+    const restored = enhanceUndoStack[enhanceUndoStack.length - 1];
+    traceEvent("info", "popup:undoEnhance", `Undo enhancement | old=${editedText.length} chars → restored=${restored.length} chars`);
+    editedText = restored;
     enhanceUndoStack = enhanceUndoStack.slice(0, -1);
     userHasEdited = true;
     showEnhanceToast = false;
@@ -991,6 +1043,7 @@
       }
       // Push current text to undo stack before replacing
       enhanceUndoStack = [...enhanceUndoStack, editedText];
+      traceEvent("data", "popup:enhance", `Copilot enhanced | old=${editedText.length} chars → new=${result.length} chars`);
       editedText = result;
       userHasEdited = true;
       // Show enhancement toast
@@ -1314,6 +1367,11 @@
             <button class="error-action" onclick={() => invoke('show_settings')}>Open Settings</button>
           {/if}
         </div>
+      {/if}
+
+      <!-- Speech trace panel (shown when speech_tracing is enabled) -->
+      {#if settings.speech_tracing}
+        <SpeechTracePanel />
       {/if}
 
       <!-- Silence auto-stop message -->

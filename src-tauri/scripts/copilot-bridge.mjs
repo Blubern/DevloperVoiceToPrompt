@@ -9,20 +9,65 @@
 import { CopilotClient } from "@github/copilot-sdk";
 import { createInterface } from "readline";
 import { execSync } from "child_process";
+import { existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 let client = null;
 
-// The SDK defaults to import.meta.resolve("@github/copilot/sdk") to find the
-// CLI binary, which requires the @github/copilot npm package on disk.  In
-// packaged builds (esbuild bundle) that package isn't available, so we resolve
-// the user-installed copilot binary from PATH and pass it as cliPath instead.
+// ---------------------------------------------------------------------------
+// Resolve the @github/copilot CLI binary.  Tries every strategy in order so
+// it works in dev mode (node_modules present), packaged builds (bundled JS,
+// no node_modules), and user-installed global CLI setups.
+//
+// Strategy 1: import.meta.resolve — Node can find @github/copilot in
+//   node_modules directly (dev mode, unbundled builds).
+// Strategy 2: Explicit node_modules/.bin lookup — check relative to script,
+//   cwd, and NODE_PATH for the copilot binary.
+// Strategy 3: PATH lookup via where/which — globally installed Copilot CLI.
+// ---------------------------------------------------------------------------
 function findCopilotCli() {
+  // Strategy 1: Let Node resolve the package directly
+  try {
+    const resolved = import.meta.resolve("@github/copilot/sdk");
+    if (resolved) {
+      // The SDK can find @github/copilot itself via import.meta.resolve,
+      // so CopilotClient() needs no explicit cliPath.
+      return "__SDK_SELF_RESOLVE__";
+    }
+  } catch { /* not resolvable — package not in node_modules */ }
+
+  // Strategy 2: Check node_modules/.bin in common locations
+  const binName = process.platform === "win32" ? "copilot.cmd" : "copilot";
+  const candidates = [];
+
+  // Relative to this script file
+  try {
+    const scriptDir = dirname(fileURLToPath(import.meta.url));
+    candidates.push(join(scriptDir, "..", "node_modules", ".bin", binName));
+    candidates.push(join(scriptDir, "..", "..", "node_modules", ".bin", binName));
+  } catch { /* fileURLToPath may fail for bundled scripts */ }
+
+  // Via NODE_PATH environment variable (set by Rust side)
+  if (process.env.NODE_PATH) {
+    candidates.push(join(process.env.NODE_PATH, "node_modules", ".bin", binName));
+  }
+
+  // Via current working directory
+  candidates.push(join(process.cwd(), "node_modules", ".bin", binName));
+
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+
+  // Strategy 3: Fall back to PATH lookup (works when system PATH is available)
   try {
     const cmd = process.platform === "win32" ? "where copilot" : "which copilot";
-    return execSync(cmd, { encoding: "utf8" }).trim().split(/\r?\n/)[0];
-  } catch {
-    return undefined;
-  }
+    const result = execSync(cmd, { encoding: "utf8", timeout: 5000 }).trim().split(/\r?\n/)[0];
+    if (result && existsSync(result)) return result;
+  } catch { /* where/which failed or not on PATH */ }
+
+  return undefined;
 }
 
 async function handleRequest(req) {
@@ -33,9 +78,17 @@ async function handleRequest(req) {
       }
       const cliPath = findCopilotCli();
       if (!cliPath) {
-        throw new Error("GitHub Copilot CLI not found on PATH. Install it with: winget install GitHub.Copilot (Windows) or brew install copilot-cli (macOS)");
+        throw new Error(
+          "GitHub Copilot CLI not found. Ensure @github/copilot-sdk is installed (npm install) "
+          + "or install the Copilot CLI globally: winget install GitHub.Copilot (Windows) / brew install copilot-cli (macOS)"
+        );
       }
-      client = new CopilotClient({ cliPath });
+      // When the SDK can resolve @github/copilot itself, omit cliPath
+      if (cliPath === "__SDK_SELF_RESOLVE__") {
+        client = new CopilotClient();
+      } else {
+        client = new CopilotClient({ cliPath });
+      }
       await client.start();
       return { ok: true };
     }

@@ -4,6 +4,7 @@
 
 import type { SpeechCallbacks, SpeechProvider } from "./types";
 import { getSpeechRecognitionCtor } from "./speechHelpers";
+import { traceEvent } from "../speechTraceStore";
 
 export class OsSpeechProvider implements SpeechProvider {
   private recognition: SpeechRecognition | null = null;
@@ -46,8 +47,10 @@ export class OsSpeechProvider implements SpeechProvider {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         if (result.isFinal) {
+          traceEvent("data", "recognized", `final (${result[0].transcript.length} chars): ${result[0].transcript.slice(0, 120)}${result[0].transcript.length > 120 ? "…" : ""}`);
           callbacks.onFinal(result[0].transcript);
         } else {
+          traceEvent("event", "recognizing", `interim (${result[0].transcript.length} chars): ${result[0].transcript.slice(0, 80)}${result[0].transcript.length > 80 ? "…" : ""}`);
           callbacks.onInterim(result[0].transcript);
         }
       }
@@ -57,6 +60,7 @@ export class OsSpeechProvider implements SpeechProvider {
       if (this.recognition !== rec) return; // stale instance
       if (e.error === "aborted" && this.intentionallyStopped) return;
       if (e.error === "no-speech") return; // silent — not a real error
+      traceEvent("warn", "error", `Speech recognition error: ${e.error}`);
       callbacks.onError(`Speech recognition error: ${e.error}`);
       callbacks.onStatusChange("error");
     };
@@ -64,27 +68,33 @@ export class OsSpeechProvider implements SpeechProvider {
     rec.onend = () => {
       if (this.recognition !== rec) return; // stale instance
       if (this.intentionallyStopped) {
+        traceEvent("event", "sessionStopped", "Intentional stop");
         callbacks.onStatusChange("idle");
         return;
       }
       // Auto-restart logic
       if (this.autoRestart && this.restartCount < this.maxRestarts) {
         this.restartCount++;
+        traceEvent("info", "auto-restart", `Restart #${this.restartCount}/${this.maxRestarts}`);
         try {
           rec.start();
         } catch {
+          traceEvent("warn", "restart-failed", "Failed to restart recognition");
           callbacks.onStatusChange("idle");
         }
         return;
       }
+      traceEvent("event", "sessionStopped", `No more restarts (${this.restartCount}/${this.maxRestarts})`);
       callbacks.onStatusChange("idle");
     };
 
     this.recognition = rec;
     try {
       rec.start();
+      traceEvent("info", "started", `OS Speech started (lang=${this.language})`);
       callbacks.onStatusChange("listening");
     } catch (err) {
+      traceEvent("warn", "start-failed", `Failed to start: ${String(err)}`);
       callbacks.onError(String(err));
       callbacks.onStatusChange("error");
     }

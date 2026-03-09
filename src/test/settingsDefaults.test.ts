@@ -137,6 +137,8 @@ describe("DEFAULT_SETTINGS completeness", () => {
       "mcp_port",
       "mcp_timeout_seconds",
       "show_in_dock",
+      "speech_tracing",
+      "speech_trace_max_entries",
     ];
 
     const actualKeys = Object.keys(DEFAULT_SETTINGS).sort();
