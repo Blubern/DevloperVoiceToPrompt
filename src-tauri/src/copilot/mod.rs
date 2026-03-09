@@ -34,15 +34,33 @@ pub async fn copilot_init(
         ).await;
     }
 
-    let (script, project_root) = bridge_paths(&app)?;
+    let config = bridge_paths(&app).map_err(|e| {
+        tracing::error!("copilot_init: bridge_paths failed: {}", e);
+        e
+    })?;
 
-    let mut cmd = tokio::process::Command::new("node");
-    cmd.arg(&script)
-        .current_dir(&project_root)
+    // Use bundled Node.js if available, otherwise fall back to system "node"
+    let node_exe = config
+        .node_bin
+        .as_deref()
+        .unwrap_or(std::path::Path::new("node"));
+    if config.node_bin.is_some() {
+        tracing::info!("Using bundled Node.js at {:?}", node_exe);
+    } else {
+        tracing::info!("Using system Node.js");
+    }
+
+    let mut cmd = tokio::process::Command::new(node_exe);
+    cmd.arg(&config.script)
+        .current_dir(&config.work_dir)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+
+    // Tell the bridge where to find npm packages (needed in dev mode for
+    // the unbundled bridge; harmless for the bundled single-file bridge).
+    cmd.env("NODE_PATH", &config.work_dir);
 
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -67,7 +85,11 @@ pub async fn copilot_init(
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("Failed to spawn bridge: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Failed to spawn bridge: {}", e);
+            tracing::error!("copilot_init: {}", msg);
+            msg
+        })?;
 
     let stdin = match child.stdin.take() {
         Some(s) => s,
@@ -113,7 +135,10 @@ pub async fn copilot_init(
     };
 
     // Send "init" to have the bridge create a CopilotClient and verify the connection
-    bridge_call(&mut new_bridge, "init").await?;
+    bridge_call(&mut new_bridge, "init").await.map_err(|e| {
+        tracing::error!("copilot_init: bridge init call failed: {}", e);
+        e
+    })?;
 
     tracing::info!("Copilot bridge initialized");
 

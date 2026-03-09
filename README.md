@@ -197,7 +197,7 @@ That makes it the fastest way to start using the app.
 | --- | --- | --- |
 | Azure Speech | Azure Speech key and region, free tier available | Better speech recognition, punctuation, phrase boosting, multi-language scenarios |
 | Whisper local | Download a model in Settings | Local offline transcription and privacy |
-| Prompt enhancement | GitHub Copilot CLI plus a Copilot plan, including free tier options | Turn rough dictation into cleaner prompts |
+| Prompt enhancement | GitHub Copilot CLI installed and logged in, plus a Copilot plan (including free tier). The Full installer bundles Node.js; Lite requires Node.js 20+ separately. | Turn rough dictation into cleaner prompts |
 | MCP voice input | An MCP-capable client running on the same machine | Let AI tools request voice input through the popup |
 
 Without Azure, Whisper, Copilot, or MCP, the app is still useful as a standalone dictation and prompt-template tool.
@@ -206,10 +206,19 @@ Without Azure, Whisper, Copilot, or MCP, the app is still useful as a standalone
 
 [![Release](https://github.com/Blubern/DevloperVoiceToPrompt/actions/workflows/release.yml/badge.svg)](https://github.com/Blubern/DevloperVoiceToPrompt/actions/workflows/release.yml)
 
-| Platform | Download |
-| --- | --- |
-| Windows | [Latest installer](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
-| macOS | [Latest DMG](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
+Each release ships two installer variants per platform:
+
+| Variant | Includes Node.js | Copilot ready | Size |
+| --- | :---: | :---: | --- |
+| **Full** | ✅ | After installing the [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | Larger (~30 MB extra) |
+| **Lite** | ❌ | After installing [Node.js 20+](https://nodejs.org/) and the [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | Smaller |
+
+Both variants require the GitHub Copilot CLI to be installed and logged in for the prompt-enhancement feature. The only difference is whether Node.js is bundled.
+
+| Platform | Full | Lite |
+| --- | --- | --- |
+| Windows | [Full installer (.exe)](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) | [Lite installer (.exe)](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
+| macOS | [Full DMG](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) | [Lite DMG](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
 
 All releases are listed on the [Releases page](https://github.com/Blubern/DevloperVoiceToPrompt/releases).
 

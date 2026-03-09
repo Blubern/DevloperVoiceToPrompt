@@ -26,8 +26,9 @@
   let copilotLoading = $state(false);
   let copilotError = $state("");
   let copilotInitialized = $state(false);
-  let copilotNeedsCli = $state(false);
+  let copilotNeedsNode = $state(false);
   let copilotNeedsLogin = $state(false);
+  let copilotAutoConnectArmed = $state(true);
 
   // Enhancer template CRUD state
   let enhancerTemplates = $state<EnhancerTemplate[]>([]);
@@ -52,13 +53,26 @@
 
   // Auto-connect when toggled on
   $effect(() => {
-    if (copilotEnabled && !copilotInitialized && !copilotLoading && !copilotNeedsCli && !copilotNeedsLogin) {
+    if (!copilotEnabled) {
+      copilotAutoConnectArmed = true;
+      return;
+    }
+
+    if (
+      copilotAutoConnectArmed &&
+      !copilotInitialized &&
+      !copilotLoading &&
+      !copilotNeedsNode &&
+      !copilotNeedsLogin &&
+      !copilotError
+    ) {
+      copilotAutoConnectArmed = false;
       connectCopilot();
     }
   });
 
   async function connectCopilot() {
-    copilotLoading = true; copilotError = ''; copilotNeedsCli = false; copilotNeedsLogin = false;
+    copilotLoading = true; copilotError = ''; copilotNeedsNode = false; copilotNeedsLogin = false;
     try {
       await copilotInit(); copilotInitialized = true;
       copilotAuth = await copilotAuthStatus();
@@ -67,7 +81,10 @@
     } catch (e: any) {
       copilotInitialized = false;
       const msg = String(e); const msgLower = msg.toLowerCase();
-      if (msgLower.includes('not found') || msgLower.includes('no such file') || msgLower.includes('os error 2') || msgLower.includes('program not found')) { copilotNeedsCli = true; }
+      if (msgLower.includes('@github/copilot-sdk') || msgLower.includes('err_module_not_found')) {
+        copilotError = 'The installed app could not load the bundled GitHub Copilot runtime. Update or reinstall the app so the Copilot bridge dependencies are packaged correctly.';
+      }
+      else if (msgLower.includes('failed to spawn bridge') || msgLower.includes('os error 2') || msgLower.includes('program not found')) { copilotNeedsNode = true; }
       else { copilotError = msg; }
     } finally { copilotLoading = false; }
   }
@@ -90,7 +107,7 @@
 
   async function disconnect() {
     copilotLoading = true;
-    try { await copilotStop(); copilotInitialized = false; copilotAuth = null; copilotModels = []; copilotNeedsLogin = false; }
+    try { await copilotStop(); copilotInitialized = false; copilotAuth = null; copilotModels = []; copilotNeedsLogin = false; copilotAutoConnectArmed = false; }
     catch (e: any) { copilotError = String(e); } finally { copilotLoading = false; }
   }
 
@@ -168,8 +185,8 @@
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
       </div>
       <div class="notice-content">
-        <strong>GitHub Copilot CLI Required</strong>
-        <p>This feature requires the <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli" target="_blank" rel="noopener noreferrer" class="notice-link">GitHub Copilot CLI</a> to be installed and on your PATH and logged in. The preview version of <code>copilot-cli</code> is not supported — make sure you have the stable release.</p>
+        <strong>Requirements</strong>
+        <p>This feature requires the <a href="https://docs.github.com/en/copilot/github-copilot-in-the-cli" target="_blank" rel="noopener noreferrer" class="notice-link">GitHub Copilot CLI</a> installed and logged in, plus an active <a href="https://github.com/features/copilot" target="_blank" rel="noopener noreferrer" class="notice-link">Copilot subscription</a>. The <em>full</em> installer bundles Node.js; the <em>lite</em> installer requires <a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer" class="notice-link">Node.js 20+</a> separately.</p>
       </div>
     </div>
 
@@ -179,17 +196,17 @@
 
     {#if copilotLoading}
       <p class="hint">Connecting...</p>
-    {:else if copilotNeedsCli}
+    {:else if copilotNeedsNode}
       <div class="info-box">
-        <strong>GitHub Copilot CLI not found</strong>
-        <p style="margin-top: 8px;">The GitHub Copilot CLI is required to use this feature. To install it:</p>
+        <strong>Node.js not found</strong>
+        <p style="margin-top: 8px;">Node.js 20+ is required for the Copilot feature but was not detected. Either:</p>
         <ol style="margin: 8px 0 0 20px; line-height: 1.8;">
-          <li>Run <code>winget install GitHub.Copilot</code> (Windows) or see <a href="https://docs.github.com/en/copilot/managing-copilot/configure-personal-settings/installing-github-copilot-in-the-cli" target="_blank" rel="noopener">install docs</a></li>
-          <li>Restart your terminal so <code>copilot</code> is on your PATH</li>
-          <li>Come back here and click <strong>Retry</strong></li>
+          <li>Install <a href="https://nodejs.org/" target="_blank" rel="noopener">Node.js 20+</a> and make sure <code>node</code> is on your PATH</li>
+          <li>Or use the <strong>full installer</strong> which bundles Node.js</li>
         </ol>
+        <p style="margin-top: 8px;">After installing, click <strong>Retry</strong> below.</p>
       </div>
-      <button type="button" class="toggle-btn" style="margin-top: 12px;" onclick={() => { copilotNeedsCli = false; copilotError = ''; connectCopilot(); }}>Retry</button>
+      <button type="button" class="toggle-btn" style="margin-top: 12px;" onclick={() => { copilotAutoConnectArmed = false; copilotNeedsNode = false; copilotError = ''; connectCopilot(); }}>Retry</button>
     {:else if copilotNeedsLogin}
       <div class="info-box">
         <strong>Not signed in to GitHub Copilot</strong>
@@ -197,9 +214,9 @@
         <pre style="margin: 8px 0; padding: 8px 12px; background: var(--bg-primary); border-radius: 6px; font-size: 0.9em;">copilot auth login</pre>
         <p>Follow the prompts to sign in with your GitHub account, then click <strong>Retry</strong> below.</p>
       </div>
-      <button type="button" class="toggle-btn" style="margin-top: 12px;" onclick={retryAuth}>Retry</button>
+      <button type="button" class="toggle-btn" style="margin-top: 12px;" onclick={() => { copilotAutoConnectArmed = false; retryAuth(); }}>Retry</button>
     {:else if !copilotInitialized}
-      <button type="button" class="toggle-btn" onclick={connectCopilot}>Connect to GitHub Copilot</button>
+      <button type="button" class="toggle-btn" onclick={() => { copilotAutoConnectArmed = false; connectCopilot(); }}>Connect to GitHub Copilot</button>
     {:else}
       <div class="info-box" style="border-color: var(--accent-primary); display: flex; align-items: center; gap: 12px;">
         {#if copilotAuth?.login}

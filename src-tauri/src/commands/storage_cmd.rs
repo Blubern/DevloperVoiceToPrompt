@@ -16,7 +16,7 @@ pub async fn get_app_data_path(app: tauri::AppHandle) -> Result<String, String> 
 /// Opens the app data folder in the system file explorer (Explorer on Windows, Finder on macOS).
 #[tauri::command]
 pub async fn open_app_data_folder(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
+    use tauri_plugin_opener::OpenerExt;
 
     let dir = app
         .path()
@@ -27,8 +27,8 @@ pub async fn open_app_data_folder(app: tauri::AppHandle) -> Result<(), String> {
     let _ = fs::create_dir_all(&dir);
 
     let path_str = dir.to_string_lossy().to_string();
-    app.shell()
-        .open(&path_str, None)
+    app.opener()
+        .open_path(&path_str, None::<&str>)
         .map_err(|e| format!("Failed to open app data folder: {e}"))?;
 
     Ok(())

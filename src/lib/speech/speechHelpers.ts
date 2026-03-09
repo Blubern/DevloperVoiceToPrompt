@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { EnumerateResult } from "./types";
+import { AZURE_REGIONS } from "../settingsStore";
 
 export async function checkMicrophonePermission(): Promise<"granted" | "denied" | "prompt" | "unknown"> {
   try {
@@ -44,7 +45,6 @@ export async function testAzureConnection(
     return { ok: false, error: "Speech key and region are required." };
   }
   // Validate region against the known allowlist to prevent SSRF
-  const { AZURE_REGIONS } = await import("../settingsStore");
   if (!AZURE_REGIONS.some((r: { value: string }) => r.value === region)) {
     return { ok: false, error: "Invalid Azure region." };
   }

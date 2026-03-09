@@ -28,9 +28,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "dmg"],
     "resources": [
-      "scripts/copilot-bridge.mjs"
+      "scripts/copilot-bridge.mjs",
+      "scripts/copilot-bridge-bundled.mjs",
+      "node-runtime/*"
     ],
     "icon": [
       "icons/32x32.png",

@@ -8,8 +8,22 @@
 
 import { CopilotClient } from "@github/copilot-sdk";
 import { createInterface } from "readline";
+import { execSync } from "child_process";
 
 let client = null;
+
+// The SDK defaults to import.meta.resolve("@github/copilot/sdk") to find the
+// CLI binary, which requires the @github/copilot npm package on disk.  In
+// packaged builds (esbuild bundle) that package isn't available, so we resolve
+// the user-installed copilot binary from PATH and pass it as cliPath instead.
+function findCopilotCli() {
+  try {
+    const cmd = process.platform === "win32" ? "where copilot" : "which copilot";
+    return execSync(cmd, { encoding: "utf8" }).trim().split(/\r?\n/)[0];
+  } catch {
+    return undefined;
+  }
+}
 
 async function handleRequest(req) {
   switch (req.method) {
@@ -17,7 +31,11 @@ async function handleRequest(req) {
       if (client) {
         await client.stop().catch(() => {});
       }
-      client = new CopilotClient();
+      const cliPath = findCopilotCli();
+      if (!cliPath) {
+        throw new Error("GitHub Copilot CLI not found on PATH. Install it with: winget install GitHub.Copilot (Windows) or brew install copilot-cli (macOS)");
+      }
+      client = new CopilotClient({ cliPath });
       await client.start();
       return { ok: true };
     }
