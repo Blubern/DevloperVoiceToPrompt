@@ -406,6 +406,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private readonly overlapSamples: number;
   /** Decode cadence in ms. */
   private readonly decodeMs: number;
+  /** Maximum session samples before forcing a commit (5 minutes at 16 kHz). */
+  private readonly maxSessionSamples: number;
 
   constructor(
     private modelName: string,
@@ -417,13 +419,14 @@ export class WhisperSpeechProvider implements SpeechProvider {
   ) {
     this.overlapSamples = Math.round(contextOverlapSeconds * 16000);
     this.decodeMs = Math.max(250, decodeIntervalSeconds * 1000);
+    this.maxSessionSamples = 5 * 60 * 16000; // 5 minutes
   }
 
   start(callbacks: SpeechCallbacks): void {
     this.callbacks = callbacks;
-    this.running = true;
     this.generation++;
     this._startAsync(callbacks).catch((err) => {
+      this.running = false;
       callbacks.onError(String(err));
       callbacks.onStatusChange("error");
     });
@@ -432,6 +435,8 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private async _startAsync(callbacks: SpeechCallbacks): Promise<void> {
     // Ensure model is loaded
     await invoke("whisper_load_model", { modelName: this.modelName });
+
+    this.running = true;
 
     // Open mic at 16 kHz
     const constraints: MediaStreamConstraints = {
@@ -457,6 +462,12 @@ export class WhisperSpeechProvider implements SpeechProvider {
       const incoming = e.data;
       this.sessionChunks.push(incoming);
       this.sessionSampleCount += incoming.length;
+
+      // Prevent unbounded memory growth: if we've accumulated more than
+      // maxSessionSamples without a commit, force a compact.
+      if (this.sessionSampleCount - this.committedSamples > this.maxSessionSamples) {
+        this._compactChunks();
+      }
 
       // Compute RMS audio level from the incoming PCM chunk and report to UI.
       if (this.callbacks?.onAudioLevel) {

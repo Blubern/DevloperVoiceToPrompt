@@ -182,14 +182,14 @@
 .provider-warn-banner { padding: 8px 12px; margin-bottom: 8px; border-radius: 6px; background: color-mix(in srgb, var(--error) 12%, transparent); color: var(--error); font-size: 12px; font-weight: 500; }
 
 /* Speech notice */
-.speech-notice { display: flex; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 8px; background: color-mix(in srgb, var(--primary) 6%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent); border-left: 3px solid var(--primary); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
-.notice-icon { flex-shrink: 0; color: var(--primary); margin-top: 1px; opacity: 0.85; }
+.speech-notice { display: flex; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent); border-left: 3px solid var(--accent); font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+.notice-icon { flex-shrink: 0; color: var(--accent); margin-top: 1px; opacity: 0.85; }
 .notice-content { flex: 1; min-width: 0; }
-.notice-content strong { color: var(--text); font-size: 12px; display: block; margin-bottom: 4px; }
+.notice-content strong { color: var(--text-primary); font-size: 12px; display: block; margin-bottom: 4px; }
 .notice-content p { margin: 4px 0 0; }
-.browser-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--text); font-size: 11px; font-weight: 500; }
-.notice-link { color: var(--primary); text-decoration: none; font-weight: 500; border-bottom: 1px dashed color-mix(in srgb, var(--primary) 50%, transparent); transition: border-color 0.15s; }
-.notice-link:hover { border-bottom-style: solid; border-bottom-color: var(--primary); }
+.browser-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-primary); font-size: 11px; font-weight: 500; }
+.notice-link { color: var(--accent); text-decoration: none; font-weight: 500; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent); transition: border-color 0.15s; }
+.notice-link:hover { border-bottom-style: solid; border-bottom-color: var(--accent); }
 
 /* Theme toggle inline */
 .theme-toggle-inline { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--surface); border: 1px solid var(--surface-hover); color: var(--text-secondary); border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; }

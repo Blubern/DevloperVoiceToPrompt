@@ -115,10 +115,11 @@
 
   // Listen to enhancer-templates-updated from Settings
   $effect(() => {
-    const listenPromise = listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
+    let unlisten: (() => void) | null = null;
+    listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
       enhancerTemplates = await getEnhancerTemplates();
-    });
-    return () => { listenPromise.then((fn) => fn()).catch(() => {}); };
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   });
 
   async function handleModelChange(modelId: string) {

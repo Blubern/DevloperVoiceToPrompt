@@ -86,7 +86,10 @@ Preserve the original language.`;
 
 function getStore(): Promise<Store> {
   if (!storePromise) {
-    storePromise = load("enhancer-templates.json");
+    storePromise = load("enhancer-templates.json").catch((err) => {
+      storePromise = null;
+      throw err;
+    });
   }
   return storePromise;
 }
@@ -132,7 +135,7 @@ export async function getEnhancerTemplates(): Promise<EnhancerTemplate[]> {
       return template;
     });
 
-    const changed = migrated.some((template, index) => template !== raw[index]);
+    const changed = migrated.some((template, index) => template.text !== raw[index].text);
     if (changed) {
       await s.set("templates", migrated);
       await s.save();

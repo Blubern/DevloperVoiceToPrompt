@@ -264,3 +264,49 @@ describe("createSpeechProvider", () => {
     expect(provider).toBeInstanceOf(OsSpeechProvider);
   });
 });
+
+// ---------------------------------------------------------------------------
+// WhisperSpeechProvider — start/running race condition
+// ---------------------------------------------------------------------------
+
+describe("WhisperSpeechProvider start()", () => {
+  it("does not set running=true before async initialization completes", () => {
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    // start() kicks off async work but should NOT set running=true synchronously
+    provider.start(callbacks);
+
+    // Access private field via any cast — running should be false until _startAsync completes
+    expect((provider as any).running).toBe(false);
+  });
+
+  it("calls onError and sets running=false when async init fails", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("model not found"));
+
+    const provider = new WhisperSpeechProvider("nonexistent", "en", 3, 1);
+
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    provider.start(callbacks);
+
+    // Wait for the async error to propagate
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(callbacks.onError).toHaveBeenCalledWith(expect.stringContaining("model not found"));
+    expect(callbacks.onStatusChange).toHaveBeenCalledWith("error");
+    expect((provider as any).running).toBe(false);
+  });
+});

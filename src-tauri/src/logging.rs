@@ -43,7 +43,10 @@ pub fn cleanup_old_logs(app: &tauri::AppHandle, max_age_days: u64) {
 
     let entries = match fs::read_dir(&dir) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(e) => {
+            tracing::warn!("Failed to read log directory for cleanup: {e}");
+            return;
+        }
     };
 
     for entry in entries.flatten() {
@@ -59,7 +62,9 @@ pub fn cleanup_old_logs(app: &tauri::AppHandle, max_age_days: u64) {
         if let Ok(meta) = fs::metadata(&path) {
             if let Ok(modified) = meta.modified() {
                 if modified < cutoff {
-                    let _ = fs::remove_file(&path);
+                    if let Err(e) = fs::remove_file(&path) {
+                        tracing::warn!("Failed to remove old log file {}: {e}", path.display());
+                    }
                 }
             }
         }

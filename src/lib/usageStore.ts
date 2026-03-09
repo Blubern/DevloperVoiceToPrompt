@@ -18,7 +18,10 @@ let migrationDone = false;
 
 function getStore(): Promise<Store> {
   if (!storePromise) {
-    storePromise = load("usage.json");
+    storePromise = load("usage.json").catch((err) => {
+      storePromise = null;
+      throw err;
+    });
   }
   return storePromise;
 }
@@ -39,9 +42,11 @@ function getMonday(date: Date): Date {
 /** Migrate old untagged "daily" data into "daily_web" (best guess). Runs at most once per session. */
 async function migrateIfNeeded(s: Store): Promise<void> {
   if (migrationDone) return;
-  migrationDone = true;
   const old = await s.get<Record<string, number>>("daily");
-  if (!old || Object.keys(old).length === 0) return;
+  if (!old || Object.keys(old).length === 0) {
+    migrationDone = true;
+    return;
+  }
   // Merge old data into daily_web
   const existing = (await s.get<Record<string, number>>("daily_web")) ?? {};
   for (const [k, v] of Object.entries(old)) {
@@ -49,6 +54,7 @@ async function migrateIfNeeded(s: Store): Promise<void> {
   }
   await s.set("daily_web", existing);
   await s.delete("daily");
+  migrationDone = true;
 }
 
 export async function recordUsage(seconds: number, provider: "os" | "azure" | "whisper"): Promise<void> {

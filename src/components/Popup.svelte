@@ -894,12 +894,13 @@
 
   // Listen to templates-updated from Settings
   $effect(() => {
-    const listenPromise = listen(EVENT_TEMPLATES_UPDATED, async () => {
+    let unlisten: (() => void) | null = null;
+    listen(EVENT_TEMPLATES_UPDATED, async () => {
       if (templatesOpen) {
         templateEntries = await getTemplates();
       }
-    });
-    return () => { listenPromise.then((fn) => fn()).catch(() => {}); };
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   });
 
   // Global cleanup when the popup component is destroyed.
@@ -928,7 +929,8 @@
 
   // Listen for MCP voice requests from the Rust backend
   $effect(() => {
-    const listenPromise = listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
+    let unlisten: (() => void) | null = null;
+    listen<McpVoiceRequest>(EVENT_MCP_VOICE_REQUEST, (event) => {
       mcpRequest = event.payload;
       // Start with context_input pre-filled, or empty editor if none provided.
       finalSegments = [];
@@ -939,8 +941,8 @@
       cursorPosition = editedText.length;
 
       focusTextareaAtEnd();
-    });
-    return () => { listenPromise.then((fn) => fn()).catch(() => {}); };
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   });
 
   // Copilot status callback — used for titlebar avatar display

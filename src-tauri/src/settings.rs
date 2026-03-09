@@ -105,6 +105,7 @@ pub fn load_settings(app: &tauri::AppHandle) -> AppSettings {
     use tauri_plugin_store::StoreExt;
 
     let Ok(store) = app.store("settings.json") else {
+        tracing::error!("Failed to open settings store; using defaults");
         return AppSettings::default();
     };
 

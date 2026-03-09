@@ -21,7 +21,9 @@ pub fn create_or_show_popup(app: &tauri::AppHandle) {
         if let Err(e) = win.show() {
             tracing::error!("Failed to show popup: {e}");
         }
-        let _ = win.set_focus();
+        if let Err(e) = win.set_focus() {
+            tracing::warn!("Failed to set popup focus: {e}");
+        }
     } else {
         create_or_toggle_popup(app);
     }
@@ -30,10 +32,16 @@ pub fn create_or_show_popup(app: &tauri::AppHandle) {
 fn create_or_toggle_popup(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
         if win.is_visible().unwrap_or(false) {
-            let _ = win.set_focus();
+            if let Err(e) = win.set_focus() {
+                tracing::warn!("Failed to set popup focus: {e}");
+            }
         } else {
-            let _ = win.show();
-            let _ = win.set_focus();
+            if let Err(e) = win.show() {
+                tracing::warn!("Failed to show popup: {e}");
+            }
+            if let Err(e) = win.set_focus() {
+                tracing::warn!("Failed to set popup focus: {e}");
+            }
         }
     } else {
         let user_settings = settings::load_settings(app);
@@ -71,19 +79,26 @@ fn create_or_toggle_popup(app: &tauri::AppHandle) {
         }
 
         let _win = builder.build();
+        if let Err(ref e) = _win {
+            tracing::error!("Failed to create popup window: {e}");
+        }
     }
 }
 
 pub fn show_settings(app: &tauri::AppHandle) {
     // Temporarily lower the popup so the settings window is not hidden behind it
     if let Some(popup) = app.get_webview_window("popup") {
-        let _ = popup.set_always_on_top(false);
+        if let Err(e) = popup.set_always_on_top(false) {
+            tracing::warn!("Failed to lower popup always_on_top: {e}");
+        }
     }
     if let Some(win) = app.get_webview_window("main") {
         if let Err(e) = win.show() {
             tracing::error!("Failed to show settings window: {e}");
         }
-        let _ = win.set_focus();
+        if let Err(e) = win.set_focus() {
+            tracing::warn!("Failed to set settings focus: {e}");
+        }
     }
 }
 

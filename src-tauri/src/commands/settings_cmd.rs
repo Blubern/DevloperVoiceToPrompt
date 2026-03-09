@@ -61,9 +61,13 @@ pub fn save_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(),
     // Apply autostart setting
     let autolaunch = app.autolaunch();
     if settings.autostart_enabled {
-        let _ = autolaunch.enable();
+        if let Err(e) = autolaunch.enable() {
+            tracing::warn!("Failed to enable autostart: {e}");
+        }
     } else {
-        let _ = autolaunch.disable();
+        if let Err(e) = autolaunch.disable() {
+            tracing::warn!("Failed to disable autostart: {e}");
+        }
     }
 
     // Apply always_on_top to the popup window if it is currently open

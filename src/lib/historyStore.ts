@@ -10,7 +10,10 @@ let storePromise: Promise<Store> | null = null;
 
 function getStore(): Promise<Store> {
   if (!storePromise) {
-    storePromise = load("history.json");
+    storePromise = load("history.json").catch((err) => {
+      storePromise = null;
+      throw err;
+    });
   }
   return storePromise;
 }
