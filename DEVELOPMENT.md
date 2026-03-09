@@ -46,6 +46,28 @@ This document covers local setup, build requirements, troubleshooting, and the h
 | LLVM | Required for `whisper-rs-sys` bindgen |
 | Windows: VS Build Tools 2022+ | Required C++ toolchain for linking |
 
+## Windows Setup
+
+Install these dependencies before trying to run `npx tauri dev`:
+
+| Tool | Required | Install command | Link |
+| --- | --- | --- | --- |
+| Node.js LTS | Yes | `winget install OpenJS.NodeJS.LTS` | https://nodejs.org/ |
+| Rust toolchain (`rustup`) | Yes | `winget install Rustlang.Rustup` | https://rustup.rs/ |
+| LLVM | Yes | `winget install LLVM.LLVM` | https://llvm.org/ |
+| Visual Studio 2022 Build Tools | Yes | `winget install Microsoft.VisualStudio.2022.BuildTools` | https://visualstudio.microsoft.com/downloads/ |
+
+After installing Visual Studio Build Tools, open the Visual Studio Installer and make sure the `Desktop development with C++` workload is installed. The Rust linker step for Tauri will fail without it.
+
+Recommended checks:
+
+```powershell
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
 Install LLVM on Windows with:
 
 ```powershell
@@ -54,11 +76,11 @@ winget install LLVM.LLVM
 
 ## Getting Started
 
-1. Clone the repository.
+1. Clone the repository and open a terminal in the repository root.
 
 ```bash
 git clone <repo-url>
-cd SpeechToText
+cd DevloperVoiceToPrompt
 ```
 
 2. Install JavaScript dependencies.
@@ -83,6 +105,12 @@ $env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
 ```bash
 npx tauri dev
 ```
+
+Important:
+
+- run `npx tauri dev` from the repository root, not from `src/`
+- on Windows, run the `vcvarsall.bat` setup in every new terminal before any `cargo` or `tauri` command
+- if `npx tauri dev` resolves the wrong package, use `npm run tauri -- dev` from the repository root
 
 ## Common Commands
 
@@ -214,6 +242,28 @@ Important:
 
 - run this in every new terminal session
 - `cargo check` succeeding does not prove linking will work
+
+### `npm error could not determine executable to run`
+
+Cause:
+
+- the command was run outside the repository root, commonly from `src/`
+- `npx` then resolves the unrelated `tauri` package instead of this repo's local `@tauri-apps/cli`
+
+Fix:
+
+Run the command from the repository root:
+
+```powershell
+Set-Location D:\Repositorys\DevloperVoiceToPrompt
+npx tauri dev
+```
+
+If needed, force usage of the local package script:
+
+```powershell
+npm run tauri -- dev
+```
 
 ### `LIBCLANG_PATH` not set
 
