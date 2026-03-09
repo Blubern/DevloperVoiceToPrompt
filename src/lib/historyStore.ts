@@ -71,6 +71,7 @@ export function formatRelativeTime(isoString: string): string {
   const date = new Date(isoString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 0) return "Just now"; // future timestamp (clock skew)
   const diffSec = Math.floor(diffMs / 1000);
   const diffMin = Math.floor(diffSec / 60);
   const diffHour = Math.floor(diffMin / 60);

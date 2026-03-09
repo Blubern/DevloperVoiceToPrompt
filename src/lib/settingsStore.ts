@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke } from "./tauriInvoke";
 
 export interface AppSettings {
   speech_provider: "os" | "azure" | "whisper";
@@ -116,11 +116,11 @@ export const AZURE_REGIONS = [
 ];
 
 export async function getSettings(): Promise<AppSettings> {
-  return invoke<AppSettings>("get_settings");
+  return tauriInvoke<AppSettings>("get_settings");
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  await invoke("save_settings", { settings });
+  await tauriInvoke("save_settings", { settings });
 }
 
 export const SUPPORTED_LANGUAGES = [

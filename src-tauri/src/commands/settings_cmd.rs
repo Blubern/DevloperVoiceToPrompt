@@ -4,14 +4,18 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::settings::{self, AppSettings};
 
-/// Re-register the global shortcut. Unregisters all shortcuts first, then
-/// registers the given combo (if non-empty). Returns an error message if
-/// the shortcut registration fails.
+/// Re-register the global shortcut. Unregisters only the currently registered
+/// shortcut (if any) first, then registers the given combo (if non-empty).
+/// This avoids blanket unregister_all which could break other shortcuts.
 fn register_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
     let gs = app.global_shortcut();
 
-    if let Err(e) = gs.unregister_all() {
-        tracing::warn!(error = %e, "Failed to unregister shortcuts");
+    // Unregister the previously active shortcut instead of all shortcuts
+    let old_shortcut = settings::load_settings(app).shortcut;
+    if !old_shortcut.is_empty() {
+        if let Err(e) = gs.unregister(old_shortcut.as_str()) {
+            tracing::warn!(error = %e, shortcut = %old_shortcut, "Failed to unregister old shortcut");
+        }
     }
 
     if shortcut.is_empty() {

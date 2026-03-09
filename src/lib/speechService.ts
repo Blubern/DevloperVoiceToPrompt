@@ -94,6 +94,11 @@ export async function testAzureConnection(
   if (!key || !region) {
     return { ok: false, error: "Speech key and region are required." };
   }
+  // Validate region against the known allowlist to prevent SSRF
+  const { AZURE_REGIONS } = await import("./settingsStore");
+  if (!AZURE_REGIONS.some((r: { value: string }) => r.value === region)) {
+    return { ok: false, error: "Invalid Azure region." };
+  }
   try {
     const resp = await fetch(
       `https://${encodeURIComponent(region)}.api.cognitive.microsoft.com/sts/v1.0/issueToken`,
@@ -206,12 +211,16 @@ export class OsSpeechProvider implements SpeechProvider {
     return new Promise((resolve) => {
       this.intentionallyStopped = true;
       if (this.recognition) {
-        const timeout = setTimeout(() => resolve(), 2000);
         const onEnd = () => {
           clearTimeout(timeout);
           this.recognition?.removeEventListener("end", onEnd);
           resolve();
         };
+        const timeout = setTimeout(() => {
+          // Clean up the listener to prevent a leak when the timeout fires first
+          this.recognition?.removeEventListener("end", onEnd);
+          resolve();
+        }, 2000);
         this.recognition.addEventListener("end", onEnd);
         this.recognition.stop();
       } else {
@@ -236,6 +245,7 @@ export class OsSpeechProvider implements SpeechProvider {
 
 export class AzureSpeechProvider implements SpeechProvider {
   private recognizer: sdk.SpeechRecognizer | null = null;
+  private audioConfig: sdk.AudioConfig | null = null;
 
   constructor(
     private key: string,
@@ -256,7 +266,7 @@ export class AzureSpeechProvider implements SpeechProvider {
       speechConfig.setProperty("postprocessingoption", "0");
     }
 
-    const audioConfig = this.microphoneDeviceId
+    this.audioConfig = this.microphoneDeviceId
       ? sdk.AudioConfig.fromMicrophoneInput(this.microphoneDeviceId)
       : sdk.AudioConfig.fromDefaultMicrophoneInput();
 
@@ -264,10 +274,10 @@ export class AzureSpeechProvider implements SpeechProvider {
 
     if (this.languages.length > 1) {
       const autoDetect = sdk.AutoDetectSourceLanguageConfig.fromLanguages(this.languages);
-      rec = sdk.SpeechRecognizer.FromConfig(speechConfig, autoDetect, audioConfig);
+      rec = sdk.SpeechRecognizer.FromConfig(speechConfig, autoDetect, this.audioConfig);
     } else {
       speechConfig.speechRecognitionLanguage = this.languages[0] || "en-US";
-      rec = new sdk.SpeechRecognizer(speechConfig, audioConfig);
+      rec = new sdk.SpeechRecognizer(speechConfig, this.audioConfig);
     }
 
     if (this.phraseList && this.phraseList.length > 0) {
@@ -316,6 +326,10 @@ export class AzureSpeechProvider implements SpeechProvider {
     if (this.recognizer) {
       this.recognizer.close();
       this.recognizer = null;
+    }
+    if (this.audioConfig) {
+      this.audioConfig.close();
+      this.audioConfig = null;
     }
   }
 }
@@ -410,6 +424,10 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private readonly decodeMs: number;
   /** Maximum session samples before forcing a commit (5 minutes at 16 kHz). */
   private readonly maxSessionSamples: number;
+
+  /** Reusable flat buffer for session data — grows as needed to avoid
+   *  allocating a new Float32Array on every decode cycle. */
+  private sessionBuffer: Float32Array = new Float32Array(0);
 
   constructor(
     private modelName: string,
@@ -828,6 +846,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.sessionChunks = [];
     this.sessionSampleCount = 0;
     this.committedSamples = 0;
+    this.sessionBuffer = new Float32Array(0);
     this.lastInterim = "";
     this.lastCommittedWords = [];
     this.stabilityHits = 0;
@@ -845,18 +864,23 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
   /**
    * Concatenate all accumulated session chunks into a flat Float32Array.
+   * Reuses an internal buffer that grows as needed to avoid repeated large
+   * allocations during long recording sessions.
    * Call only at decode time — not on every incoming audio frame.
    */
   private _buildSessionBuffer(): Float32Array {
     if (this.sessionChunks.length === 0) return new Float32Array(0);
     if (this.sessionChunks.length === 1) return this.sessionChunks[0];
-    const result = new Float32Array(this.sessionSampleCount);
+    // Grow the reusable buffer if it's too small
+    if (this.sessionBuffer.length < this.sessionSampleCount) {
+      this.sessionBuffer = new Float32Array(this.sessionSampleCount);
+    }
     let offset = 0;
     for (const chunk of this.sessionChunks) {
-      result.set(chunk, offset);
+      this.sessionBuffer.set(chunk, offset);
       offset += chunk.length;
     }
-    return result;
+    return this.sessionBuffer;
   }
 
   /**

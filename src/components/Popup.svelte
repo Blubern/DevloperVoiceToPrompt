@@ -359,7 +359,9 @@
   // Load history count for badge
   $effect(() => {
     if (settings.history_enabled) {
-      getHistory().then(entries => { historyCount = entries.length; }).catch(e => console.error("Failed to load history count:", e));
+      let stale = false;
+      getHistory().then(entries => { if (!stale) historyCount = entries.length; }).catch(e => console.error("Failed to load history count:", e));
+      return () => { stale = true; };
     } else {
       historyCount = 0;
     }
@@ -539,9 +541,7 @@
     toggling = true;
     try {
     if (status === "listening") {
-      // Skip the final flush when the user is explicitly toggling off
-      // (they may immediately restart), so stop returns faster.
-      await stopAndRecordUsage(/* skipFlush */ true);
+      await stopAndRecordUsage();
       return;
     }
 
@@ -772,6 +772,7 @@
       e.preventDefault();
       if (status !== "listening") {
         settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
+        saveSettings(settings).then(() => emit(EVENT_SETTINGS_UPDATED)).catch(err => console.error("Failed to persist provider change:", err));
       }
     } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
       e.preventDefault();
@@ -874,10 +875,13 @@
 
   // Load audio devices on mount
   $effect(() => {
+    let stale = false;
     enumerateAudioDevices().then(result => {
+      if (stale) return;
       audioDevices = result.devices;
       micWarning = result.error ?? "";
     });
+    return () => { stale = true; };
   });
 
   async function selectMicrophone(deviceId: string) {
@@ -1013,9 +1017,15 @@
       <span class="title" data-tauri-drag-region>Developer Voice to Prompt</span>
       <button
         class="provider-toggle"
-        onclick={() => {
+        onclick={async () => {
           if (status !== "listening") {
             settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
+            try {
+              await saveSettings(settings);
+              await emit(EVENT_SETTINGS_UPDATED);
+            } catch (e) {
+              console.error("Failed to persist provider change:", e);
+            }
           }
         }}
         disabled={status === "listening"}

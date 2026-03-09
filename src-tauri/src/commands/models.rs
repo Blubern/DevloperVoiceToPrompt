@@ -8,6 +8,7 @@ pub async fn whisper_download_model(
     model_name: String,
 ) -> Result<(), String> {
     use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
 
     let path = whisper::model_file_path(&app, &model_name)?;
     if path.exists() {
@@ -32,16 +33,17 @@ pub async fn whisper_download_model(
     // Write to a uniquely-named temp file to avoid corruption from concurrent downloads
     let tmp_name = format!("ggml-{}.{}.bin.tmp", model_name, std::process::id());
     let tmp_path = path.parent().unwrap().join(tmp_name);
-    let mut file = std::fs::File::create(&tmp_path)
+    let mut file = tokio::fs::File::create(&tmp_path)
+        .await
         .map_err(|e| format!("Failed to create temp file: {e}"))?;
 
     let mut stream = resp.bytes_stream();
-    use std::io::Write;
 
     let result = (|| async {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
             file.write_all(&chunk)
+                .await
                 .map_err(|e| format!("Failed to write model data: {e}"))?;
             downloaded += chunk.len() as u64;
 
@@ -56,11 +58,12 @@ pub async fn whisper_download_model(
             );
         }
 
-        file.flush().map_err(|e| format!("Failed to flush file: {e}"))?;
+        file.flush().await.map_err(|e| format!("Failed to flush file: {e}"))?;
         drop(file);
 
         // Rename temp file to final
-        std::fs::rename(&tmp_path, &path)
+        tokio::fs::rename(&tmp_path, &path)
+            .await
             .map_err(|e| format!("Failed to finalize model file: {e}"))?;
 
         Ok::<(), String>(())
@@ -68,7 +71,7 @@ pub async fn whisper_download_model(
 
     // Clean up temp file on error
     if result.is_err() {
-        let _ = std::fs::remove_file(&tmp_path);
+        let _ = tokio::fs::remove_file(&tmp_path).await;
     }
 
     result

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { tauriInvoke } from "./tauriInvoke";
 
 export interface CopilotAuthStatus {
   authenticated: boolean;
@@ -15,19 +15,19 @@ export interface CopilotModel {
 }
 
 export async function copilotInit(): Promise<void> {
-  return invoke<void>("copilot_init");
+  return tauriInvoke<void>("copilot_init");
 }
 
 export async function copilotAuthStatus(): Promise<CopilotAuthStatus> {
-  return invoke<CopilotAuthStatus>("copilot_auth_status");
+  return tauriInvoke<CopilotAuthStatus>("copilot_auth_status");
 }
 
 export async function copilotListModels(): Promise<CopilotModel[]> {
-  return invoke<CopilotModel[]>("copilot_list_models");
+  return tauriInvoke<CopilotModel[]>("copilot_list_models");
 }
 
 export async function copilotStop(): Promise<void> {
-  return invoke<void>("copilot_stop");
+  return tauriInvoke<void>("copilot_stop");
 }
 
 export async function copilotEnhance(
@@ -36,7 +36,7 @@ export async function copilotEnhance(
   userText: string,
   deleteSession: boolean = true
 ): Promise<string> {
-  return invoke<string>("copilot_enhance", {
+  return tauriInvoke<string>("copilot_enhance", {
     modelId,
     systemPrompt,
     userText,

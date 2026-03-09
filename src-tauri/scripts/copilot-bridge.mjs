@@ -75,9 +75,13 @@ async function handleRequest(req) {
         );
         return response?.data?.content ?? "";
       } finally {
-        await session.destroy().catch(() => {});
+        // destroy() handles local cleanup; deleteSession() removes it from the
+        // Copilot server. Only call deleteSession when explicitly requested.
         if (delete_session !== false) {
+          await session.destroy().catch(() => {});
           await client.deleteSession(sessionId).catch(() => {});
+        } else {
+          await session.destroy().catch(() => {});
         }
       }
     }

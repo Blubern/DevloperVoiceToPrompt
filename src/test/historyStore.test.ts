@@ -34,4 +34,9 @@ describe("formatRelativeTime", () => {
     expect(result).not.toContain("ago");
     expect(result).not.toBe("Just now");
   });
+
+  it("returns 'Just now' for future timestamps (clock skew)", () => {
+    const future = new Date(Date.now() + 60 * 1000).toISOString();
+    expect(formatRelativeTime(future)).toBe("Just now");
+  });
 });

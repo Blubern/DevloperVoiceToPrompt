@@ -200,7 +200,7 @@ describe("testAzureConnection", () => {
   it("returns 'not authorized' on 403", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 403 } as Response);
 
-    const result = await testAzureConnection("key", "wrongregion");
+    const result = await testAzureConnection("key", "westus");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("not authorized");
   });
@@ -213,12 +213,29 @@ describe("testAzureConnection", () => {
     expect(result.error).toContain("500");
   });
 
-  it("returns network error when fetch throws", async () => {
+  it("returns error when fetch throws", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
 
     const result = await testAzureConnection("key", "westus");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Could not reach Azure");
+  });
+
+  it("rejects invalid region not in AZURE_REGIONS allowlist", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    const result = await testAzureConnection("key", "evil.com/foo");
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Invalid Azure region.");
+    // Fetch should never have been called
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("accepts valid region from AZURE_REGIONS allowlist", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    const result = await testAzureConnection("key", "eastus");
+    expect(result.ok).toBe(true);
   });
 });
 

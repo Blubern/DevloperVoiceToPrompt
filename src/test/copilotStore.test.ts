@@ -18,7 +18,7 @@ describe("copilotStore", () => {
   it("copilotInit calls invoke with correct command", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     await copilotInit();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_init");
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_init", undefined);
   });
 
   it("copilotAuthStatus calls invoke and returns auth info", async () => {
@@ -30,7 +30,7 @@ describe("copilotStore", () => {
     };
     mockInvoke.mockResolvedValueOnce(authData);
     const result = await copilotAuthStatus();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_auth_status");
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_auth_status", undefined);
     expect(result).toEqual(authData);
   });
 
@@ -41,7 +41,7 @@ describe("copilotStore", () => {
     ];
     mockInvoke.mockResolvedValueOnce(models);
     const result = await copilotListModels();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_list_models");
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_list_models", undefined);
     expect(result).toEqual(models);
     expect(result).toHaveLength(2);
   });
@@ -49,7 +49,7 @@ describe("copilotStore", () => {
   it("copilotStop calls invoke with correct command", async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     await copilotStop();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_stop");
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_stop", undefined);
   });
 
   it("copilotEnhance passes all params including deleteSession=true by default", async () => {
@@ -93,5 +93,15 @@ describe("copilotStore", () => {
     mockInvoke.mockResolvedValueOnce([]);
     const result = await copilotListModels();
     expect(result).toEqual([]);
+  });
+
+  it("wraps invoke errors in Error objects via tauriInvoke", async () => {
+    mockInvoke.mockRejectedValueOnce("bridge not running");
+    await expect(copilotInit()).rejects.toThrow('Tauri command "copilot_init" failed: bridge not running');
+  });
+
+  it("wraps Error-type rejections via tauriInvoke", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("connection refused"));
+    await expect(copilotStop()).rejects.toThrow('Tauri command "copilot_stop" failed: connection refused');
   });
 });
