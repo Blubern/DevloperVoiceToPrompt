@@ -79,3 +79,20 @@ pub async fn get_log_path(app: tauri::AppHandle) -> Result<String, String> {
     let dir = crate::logging::log_dir(&app);
     Ok(dir.to_string_lossy().to_string())
 }
+
+/// Opens the log folder in the system file explorer (Explorer on Windows, Finder on macOS).
+#[tauri::command]
+pub async fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+
+    let dir = crate::logging::log_dir(&app);
+
+    let _ = fs::create_dir_all(&dir);
+
+    let path_str = dir.to_string_lossy().to_string();
+    app.shell()
+        .open(&path_str, None)
+        .map_err(|e| format!("Failed to open log directory: {e}"))?;
+
+    Ok(())
+}

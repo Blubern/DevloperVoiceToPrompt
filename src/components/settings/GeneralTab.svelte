@@ -70,6 +70,7 @@
   type WhisperModelInfo = { name: string; label: string; size_mb: number; downloaded: boolean };
 
   let dataPath = $state<string | null>(null);
+  let logPath = $state<string | null>(null);
   let whisperModels = $state<WhisperModelInfo[]>([]);
   let showDeleteModelsConfirm = $state(false);
   let deletingModels = $state(false);
@@ -79,11 +80,13 @@
   let totalModelMb = $derived(downloadedModels.reduce((sum, m) => sum + m.size_mb, 0));
 
   async function loadStorageInfo() {
-    const [path, models] = await Promise.all([
+    const [path, logs, models] = await Promise.all([
       invoke<string>('get_app_data_path'),
+      invoke<string>('get_log_path'),
       invoke<WhisperModelInfo[]>('whisper_list_models'),
     ]);
     dataPath = path;
+    logPath = logs;
     whisperModels = models;
   }
 
@@ -357,6 +360,15 @@
       <button type="button" class="toggle-btn" onclick={() => invoke('open_app_data_folder')}>Open Folder</button>
     </div>
     <span class="hint">All settings, history, templates and Whisper models are stored in this folder.</span>
+  </div>
+
+  <div class="field">
+    <span class="label">Logs Folder</span>
+    <div class="data-path-row">
+      <code class="data-path">{logPath ?? 'Loading…'}</code>
+      <button type="button" class="toggle-btn" onclick={() => invoke('open_log_folder')}>Open Folder</button>
+    </div>
+    <span class="hint">Logs are stored in a separate OS-specific folder on Windows and macOS.</span>
   </div>
 
   <div class="field">

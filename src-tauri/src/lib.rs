@@ -62,6 +62,7 @@ pub fn run() {
             commands::get_logs,
             commands::clear_logs,
             commands::get_log_path,
+            commands::open_log_folder,
             commands::get_app_data_path,
             commands::open_app_data_folder,
             commands::delete_all_whisper_models,
