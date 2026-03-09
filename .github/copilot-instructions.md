@@ -25,14 +25,25 @@ src/                        # Svelte 5 frontend (TypeScript)
       TemplatesPanel.svelte # Slide-out templates sidebar
   lib/                      # Stores, services, constants, utilities
     constants.ts            # Shared enums, event names, magic values
-    settingsStore.ts        # AppSettings type + Tauri invoke wrappers
-    speechService.ts        # SpeechProvider interface + 3 implementations
+    settingsStore.ts        # AppSettings type + Tauri invoke wrappers (re-exports speechConstants)
+    speechConstants.ts      # SUPPORTED_LANGUAGES and AZURE_REGIONS static data
+    speechService.ts        # Barrel re-export + createSpeechProvider factory
+    speech/                 # Per-provider speech implementations
+      types.ts              # SpeechProvider interface, SpeechCallbacks, AudioDevice types
+      speechHelpers.ts      # Microphone permission, device enumeration, Azure connection test
+      OsSpeechProvider.ts   # Web Speech API provider
+      AzureSpeechProvider.ts # Azure Cognitive Services provider
+      WhisperSpeechProvider.ts # Local Whisper rolling-window realtime provider
     historyStore.ts         # Transcription history CRUD (Tauri store)
     usageStore.ts           # Per-provider usage tracking
     templateStore.ts        # Prompt template CRUD
+    enhancerTemplateStore.ts # Enhancer template CRUD (imports defaults + migration)
+    enhancerDefaults.ts     # Default enhancer template prompt texts
+    enhancerMigration.ts    # Template v1→v2 migration logic
     copilotStore.ts         # GitHub Copilot CLI bridge wrappers
     useKeyboardShortcuts.ts # matchesShortcut / formatShortcutLabel
     tauriInvoke.ts          # Typed invoke wrapper
+    audioLevelMeter.ts      # Web Audio API level metering for mic visualization
   styles/                   # Global CSS
     themes.css              # Catppuccin Mocha/Latte CSS variables
     base.css                # Reset, fonts, scrollbars
@@ -43,10 +54,16 @@ src/                        # Svelte 5 frontend (TypeScript)
 src-tauri/                  # Rust backend
   src/
     main.rs                 # Binary entry (calls lib::run)
-    lib.rs                  # App init, tray, global shortcut, window management
+    lib.rs                  # App init, global shortcut, plugin wiring (slim orchestrator)
+    window_manager.rs       # Popup/settings window lifecycle, geometry persistence
+    tray.rs                 # System tray icon + menu setup
     settings.rs             # AppSettings serde struct + load/save (single JSON object in store)
     whisper.rs              # WhisperEngine, model paths, transcription
-    copilot.rs              # Node.js bridge process (JSON-RPC over stdin/stdout)
+    copilot/                # GitHub Copilot bridge (directory module)
+      mod.rs                # Tauri command handlers + re-exports
+      bridge.rs             # BridgeProcess struct, JSON-RPC protocol, CopilotState
+      paths.rs              # Executable path resolution (bridge_paths, clean_path)
+      types.rs              # CopilotAuthStatus, CopilotModel, BridgeResponse
     commands/               # Tauri IPC command handlers
       mod.rs                # Re-exports
       settings_cmd.rs       # get_settings, save_settings, update_shortcut

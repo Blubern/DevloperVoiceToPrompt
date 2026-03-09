@@ -25,7 +25,7 @@ fn register_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), Strin
     let app_handle = app.clone();
     gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
-            crate::create_or_toggle_popup(&app_handle);
+            crate::window_manager::create_or_toggle_popup(&app_handle);
         }
     })
     .map_err(|e| format!(

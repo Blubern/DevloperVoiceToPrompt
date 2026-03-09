@@ -2,7 +2,7 @@ use tauri::Manager;
 
 #[tauri::command]
 pub fn toggle_popup(app: tauri::AppHandle) {
-    crate::create_or_toggle_popup(&app);
+    crate::window_manager::create_or_toggle_popup(&app);
 }
 
 #[tauri::command]
@@ -14,7 +14,7 @@ pub fn hide_popup(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub fn show_settings(app: tauri::AppHandle) {
-    crate::show_settings(&app);
+    crate::window_manager::show_settings(&app);
 }
 
 /// Toggle Dock (macOS) or Taskbar (Windows) icon visibility at runtime.

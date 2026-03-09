@@ -1,186 +1,14 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
+mod bridge;
+mod paths;
+pub mod types;
+
+pub use bridge::CopilotState;
+pub use types::{CopilotAuthStatus, CopilotModel};
+
+use bridge::{bridge_call, bridge_call_with_params, is_transport_error};
+use paths::bridge_paths;
+
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
-use tauri::Manager;
-
-/// A running copilot-bridge.mjs process with its I/O handles.
-struct BridgeProcess {
-    _child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    stderr_task: tokio::task::JoinHandle<()>,
-    next_id: u64,
-}
-
-pub struct CopilotState {
-    bridge: Arc<Mutex<Option<BridgeProcess>>>,
-}
-
-impl Default for CopilotState {
-    fn default() -> Self {
-        Self {
-            bridge: Arc::new(Mutex::new(None)),
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct CopilotAuthStatus {
-    pub authenticated: bool,
-    pub login: Option<String>,
-    pub host: Option<String>,
-    pub status_message: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CopilotModel {
-    pub id: String,
-    pub name: String,
-    pub is_premium: bool,
-    pub multiplier: f64,
-}
-
-#[derive(Deserialize)]
-struct BridgeResponse {
-    #[allow(dead_code)]
-    id: u64,
-    result: Option<serde_json::Value>,
-    error: Option<String>,
-}
-
-/// Send a JSON request to the bridge and read the JSON response line.
-/// Times out after 30 seconds to prevent hangs if the bridge freezes.
-async fn bridge_call(
-    bridge: &mut BridgeProcess,
-    method: &str,
-) -> Result<serde_json::Value, String> {
-    bridge_call_with_params(bridge, method, None).await
-}
-
-/// Send a JSON request with optional params to the bridge and read the JSON response line.
-/// Times out after 30 seconds to prevent hangs if the bridge freezes.
-async fn bridge_call_with_params(
-    bridge: &mut BridgeProcess,
-    method: &str,
-    params: Option<serde_json::Value>,
-) -> Result<serde_json::Value, String> {
-    use tokio::time::{timeout, Duration};
-
-    let id = bridge.next_id;
-    bridge.next_id += 1;
-    let mut req = serde_json::json!({ "id": id, "method": method });
-    if let Some(p) = params {
-        req["params"] = p;
-    }
-    let mut line = serde_json::to_string(&req)
-        .map_err(|e| format!("Failed to serialize bridge request: {e}"))?;
-    line.push('\n');
-
-    bridge
-        .stdin
-        .write_all(line.as_bytes())
-        .await
-        .map_err(|e| format!("Failed to write to bridge: {}", e))?;
-    bridge
-        .stdin
-        .flush()
-        .await
-        .map_err(|e| format!("Failed to flush bridge stdin: {}", e))?;
-
-    let mut buf = String::new();
-    let _read_result = timeout(
-        Duration::from_secs(30),
-        bridge.stdout.read_line(&mut buf),
-    )
-    .await
-    .map_err(|_| "Copilot bridge did not respond within 30 seconds".to_string())?
-    .map_err(|e| format!("Failed to read from bridge: {}", e))?;
-
-    if buf.is_empty() {
-        tracing::error!("Bridge process exited unexpectedly (empty stdout)");
-        return Err("Bridge process exited unexpectedly (transport)".into());
-    }
-
-    let resp: BridgeResponse =
-        serde_json::from_str(&buf).map_err(|e| {
-            let preview: String = buf.chars().take(200).collect();
-            format!("Invalid bridge response: {e} — raw: {preview}")
-        })?;
-
-    if let Some(err) = resp.error {
-        tracing::error!(method, error = %err, "Bridge returned error");
-        return Err(err);
-    }
-
-    Ok(resp.result.unwrap_or(serde_json::Value::Null))
-}
-
-/// Returns true when the error indicates the bridge process is dead and should
-/// be cleared from shared state so the next call doesn't repeat the failure.
-fn is_transport_error(err: &str) -> bool {
-    err.contains("(transport)")
-        || err.contains("Failed to write to bridge")
-        || err.contains("Failed to flush bridge stdin")
-        || err.contains("Failed to read from bridge")
-        || err.contains("did not respond within")
-}
-
-/// Strip the \\?\ extended-length prefix that canonicalize() adds on Windows.
-fn clean_path(p: std::path::PathBuf) -> std::path::PathBuf {
-    let s = p.to_string_lossy();
-    if s.starts_with(r"\\?\") {
-        std::path::PathBuf::from(&s[4..])
-    } else {
-        p
-    }
-}
-
-/// Resolve the path to copilot-bridge.mjs and the project root (where node_modules lives).
-fn bridge_paths(app: &tauri::AppHandle) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
-    // During dev the script lives at src-tauri/scripts/copilot-bridge.mjs
-    // and node_modules is at the project root (one level above src-tauri).
-    let resource = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Cannot resolve resource dir: {}", e))?
-        .join("scripts")
-        .join("copilot-bridge.mjs");
-    if resource.exists() {
-        let resource = clean_path(resource);
-        let project_root = resource
-            .parent()
-            .and_then(|p| p.parent())
-            .ok_or_else(|| "Cannot resolve project root from resource path".to_string())?
-            .to_path_buf();
-        return Ok((resource, project_root));
-    }
-
-    // Fallback: dev mode – walk from the executable to the source tree
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    if let Some(tauri_dir) = exe.parent() {
-        // target/debug/ -> src-tauri/
-        let dev_path = tauri_dir
-            .join("..") // target/
-            .join("..") // src-tauri/
-            .join("scripts")
-            .join("copilot-bridge.mjs");
-        let dev_path = clean_path(dev_path.canonicalize().unwrap_or(dev_path));
-        if dev_path.exists() {
-            // Project root is src-tauri/../ (i.e. two levels up from scripts/)
-            let project_root = dev_path
-                .parent()
-                .and_then(|p| p.parent())
-                .and_then(|p| p.parent())
-                .ok_or_else(|| "Cannot resolve project root from dev path".to_string())?
-                .to_path_buf();
-            return Ok((dev_path, project_root));
-        }
-    }
-
-    Err("copilot-bridge.mjs not found".into())
-}
 
 /// Initialize the Copilot SDK by spawning the Node.js bridge process.
 #[tauri::command]
@@ -276,7 +104,7 @@ pub async fn copilot_init(
         }
     });
 
-    let mut bridge = BridgeProcess {
+    let mut new_bridge = bridge::BridgeProcess {
         _child: child,
         stdin,
         stdout: BufReader::new(stdout),
@@ -285,13 +113,13 @@ pub async fn copilot_init(
     };
 
     // Send "init" to have the bridge create a CopilotClient and verify the connection
-    bridge_call(&mut bridge, "init").await?;
+    bridge_call(&mut new_bridge, "init").await?;
 
     tracing::info!("Copilot bridge initialized");
 
     // Only hold the lock briefly to insert the new bridge
     let mut guard = state.bridge.lock().await;
-    *guard = Some(bridge);
+    *guard = Some(new_bridge);
     Ok(())
 }
 
@@ -423,66 +251,4 @@ pub async fn copilot_enhance(
             tracing::error!("Copilot enhance returned unexpected format");
             "Unexpected response format from enhance".to_string()
         })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // --- is_transport_error ---
-
-    #[test]
-    fn transport_error_matches_transport_tag() {
-        assert!(is_transport_error("Bridge process exited unexpectedly (transport)"));
-    }
-
-    #[test]
-    fn transport_error_matches_write_failure() {
-        assert!(is_transport_error("Failed to write to bridge: broken pipe"));
-    }
-
-    #[test]
-    fn transport_error_matches_flush_failure() {
-        assert!(is_transport_error("Failed to flush bridge stdin: broken pipe"));
-    }
-
-    #[test]
-    fn transport_error_matches_read_failure() {
-        assert!(is_transport_error("Failed to read from bridge: eof"));
-    }
-
-    #[test]
-    fn transport_error_matches_timeout() {
-        assert!(is_transport_error("Copilot bridge did not respond within 30 seconds"));
-    }
-
-    #[test]
-    fn transport_error_rejects_normal_errors() {
-        assert!(!is_transport_error("Authentication failed"));
-        assert!(!is_transport_error("Invalid JSON"));
-        assert!(!is_transport_error("Model not found"));
-    }
-
-    // --- clean_path ---
-
-    #[test]
-    fn clean_path_strips_extended_prefix() {
-        let p = std::path::PathBuf::from(r"\\?\C:\Users\test\file.txt");
-        let cleaned = clean_path(p);
-        assert_eq!(cleaned, std::path::PathBuf::from(r"C:\Users\test\file.txt"));
-    }
-
-    #[test]
-    fn clean_path_leaves_normal_path_unchanged() {
-        let p = std::path::PathBuf::from(r"C:\Users\test\file.txt");
-        let cleaned = clean_path(p.clone());
-        assert_eq!(cleaned, p);
-    }
-
-    #[test]
-    fn clean_path_handles_unix_style_path() {
-        let p = std::path::PathBuf::from("/home/user/file.txt");
-        let cleaned = clean_path(p.clone());
-        assert_eq!(cleaned, p);
-    }
 }

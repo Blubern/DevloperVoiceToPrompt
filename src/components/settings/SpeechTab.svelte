@@ -44,7 +44,7 @@
     error: string;
   } = $props();
 
-  let speechSubTab = $state<"os" | "azure" | "whisper">("os");
+  let speechSubTab = $state<"whisper" | "os" | "azure">(speechProvider);
   let showKey = $state(false);
   let langFilter = $state("");
   let apiStatus = $state<"idle" | "checking" | "ok" | "error">("idle");
@@ -146,22 +146,90 @@
   <label class="field">
     <span class="label">Default Speech Provider</span>
     <select bind:value={speechProvider}>
+      <option value="whisper">Whisper (Local)</option>
       <option value="os">Web Speech</option>
       <option value="azure">Azure Speech</option>
-      <option value="whisper">Whisper (Local)</option>
     </select>
     <span class="hint">Choose which speech engine is used by default when recording.</span>
   </label>
 </div>
 
 <div class="speech-sub-tabs">
+  <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'whisper'} onclick={() => speechSubTab = 'whisper'}>Whisper (Local)</button>
   <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'os'} onclick={() => speechSubTab = 'os'}>
     Web Speech
     {#if !webSpeechAvailable}<span class="sub-tab-warn">!</span>{/if}
   </button>
   <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'azure'} onclick={() => speechSubTab = 'azure'}>Azure Speech</button>
-  <button type="button" class="speech-sub-tab" class:active={speechSubTab === 'whisper'} onclick={() => speechSubTab = 'whisper'}>Whisper (Local)</button>
 </div>
+
+{#if speechSubTab === 'whisper'}
+<div class="section">
+  <h2>Whisper (Local) Settings</h2>
+  <div class="speech-notice">
+    <div class="notice-icon" title="Info">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    </div>
+    <div class="notice-content">
+      <strong>Local Speech Recognition</strong>
+      <p>Whisper runs entirely on your device using <a href="https://github.com/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via <a href="https://github.com/tazz4843/whisper-rs" target="_blank" rel="noopener noreferrer">whisper-rs</a>. No data is sent to any cloud service. Download a model below to get started.</p>
+    </div>
+  </div>
+  <div class="field">
+    <span class="label">Model</span>
+    <select bind:value={whisperModel}>
+      {#each whisperModels as m}<option value={m.name} disabled={!m.downloaded}>{m.label}{m.downloaded ? '' : ' (not downloaded)'}</option>{/each}
+    </select>
+    <span class="hint">Select the Whisper model to use. Larger models are more accurate but slower.</span>
+  </div>
+  <div class="field">
+    <span class="label">Model Management</span>
+    <span class="hint">Models are downloaded from <a href="https://huggingface.co/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">HuggingFace (ggerganov/whisper.cpp)</a>.</span>
+    <div class="whisper-model-list">
+      {#each whisperModels as m}
+        <div class="whisper-model-row">
+          <span class="whisper-model-name">{m.label}</span>
+          {#if m.downloaded}
+            <span class="whisper-model-badge downloaded">Downloaded</span>
+            <button type="button" class="toggle-btn whisper-delete-btn" onclick={() => deleteWhisperModel(m.name)}>Delete</button>
+          {:else if whisperDownloading === m.name}
+            <span class="whisper-model-badge downloading">
+              {#if whisperDownloadTotal > 0}{Math.round(whisperDownloadProgress / whisperDownloadTotal * 100)}%{:else}Downloading...{/if}
+            </span>
+          {:else}
+            <button type="button" class="toggle-btn" onclick={() => downloadWhisperModel(m.name)} disabled={whisperDownloading !== null}>Download ({m.size_mb} MB)</button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </div>
+  <label class="field">
+    <span class="label">Language</span>
+    <select bind:value={whisperLanguage}>
+      {#each SUPPORTED_LANGUAGES as lang}<option value={lang.code}>{lang.label} ({lang.code})</option>{/each}
+    </select>
+    <span class="hint">Select the language you will be speaking. This improves transcription speed and accuracy.</span>
+  </label>
+  <label class="field">
+    <span class="label">Decode Interval: {whisperDecodeInterval}s</span>
+    <input type="range" min="0.5" max="10" step="0.5" bind:value={whisperDecodeInterval} />
+    <span class="hint">How often audio is sent to Whisper for transcription. Lower values give faster interim results but use more CPU.</span>
+  </label>
+  <label class="field">
+    <span class="label">Context Overlap: {whisperContextOverlap}s</span>
+    <input type="range" min="0" max="3" step="0.5" bind:value={whisperContextOverlap} />
+    <span class="hint">Seconds of already-transcribed audio re-sent for context. Helps avoid cut-off words at boundaries.</span>
+  </label>
+  <label class="field">
+    <span class="label">Microphone</span>
+    <select bind:value={microphoneDeviceId}>
+      <option value="">System Default</option>
+      {#each audioDevices as device}<option value={device.deviceId}>{device.label}</option>{/each}
+    </select>
+    {#if micWarning}<span class="hint mic-warning">{micWarning}</span>{:else}<span class="hint">Select the microphone to use for dictation.</span>{/if}
+  </label>
+</div>
+{/if}
 
 {#if speechSubTab === 'os'}
 <div class="section">
@@ -269,74 +337,6 @@
       <span class="toggle-label">{autoPunctuation ? 'On' : 'Off'}</span>
     </div>
     <span class="hint">Automatically add punctuation and capitalization to dictated text (Azure only).</span>
-  </label>
-</div>
-{/if}
-
-{#if speechSubTab === 'whisper'}
-<div class="section">
-  <h2>Whisper (Local) Settings</h2>
-  <div class="speech-notice">
-    <div class="notice-icon" title="Info">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-    </div>
-    <div class="notice-content">
-      <strong>Local Speech Recognition</strong>
-      <p>Whisper runs entirely on your device using <a href="https://github.com/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via <a href="https://github.com/tazz4843/whisper-rs" target="_blank" rel="noopener noreferrer">whisper-rs</a>. No data is sent to any cloud service. Download a model below to get started.</p>
-    </div>
-  </div>
-  <div class="field">
-    <span class="label">Model</span>
-    <select bind:value={whisperModel}>
-      {#each whisperModels as m}<option value={m.name} disabled={!m.downloaded}>{m.label}{m.downloaded ? '' : ' (not downloaded)'}</option>{/each}
-    </select>
-    <span class="hint">Select the Whisper model to use. Larger models are more accurate but slower.</span>
-  </div>
-  <div class="field">
-    <span class="label">Model Management</span>
-    <span class="hint">Models are downloaded from <a href="https://huggingface.co/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">HuggingFace (ggerganov/whisper.cpp)</a>.</span>
-    <div class="whisper-model-list">
-      {#each whisperModels as m}
-        <div class="whisper-model-row">
-          <span class="whisper-model-name">{m.label}</span>
-          {#if m.downloaded}
-            <span class="whisper-model-badge downloaded">Downloaded</span>
-            <button type="button" class="toggle-btn whisper-delete-btn" onclick={() => deleteWhisperModel(m.name)}>Delete</button>
-          {:else if whisperDownloading === m.name}
-            <span class="whisper-model-badge downloading">
-              {#if whisperDownloadTotal > 0}{Math.round(whisperDownloadProgress / whisperDownloadTotal * 100)}%{:else}Downloading...{/if}
-            </span>
-          {:else}
-            <button type="button" class="toggle-btn" onclick={() => downloadWhisperModel(m.name)} disabled={whisperDownloading !== null}>Download ({m.size_mb} MB)</button>
-          {/if}
-        </div>
-      {/each}
-    </div>
-  </div>
-  <label class="field">
-    <span class="label">Language</span>
-    <select bind:value={whisperLanguage}>
-      {#each SUPPORTED_LANGUAGES as lang}<option value={lang.code}>{lang.label} ({lang.code})</option>{/each}
-    </select>
-    <span class="hint">Select the language you will be speaking. This improves transcription speed and accuracy.</span>
-  </label>
-  <label class="field">
-    <span class="label">Decode Interval: {whisperDecodeInterval}s</span>
-    <input type="range" min="0.5" max="10" step="0.5" bind:value={whisperDecodeInterval} />
-    <span class="hint">How often audio is sent to Whisper for transcription. Lower values give faster interim results but use more CPU.</span>
-  </label>
-  <label class="field">
-    <span class="label">Context Overlap: {whisperContextOverlap}s</span>
-    <input type="range" min="0" max="3" step="0.5" bind:value={whisperContextOverlap} />
-    <span class="hint">Seconds of already-transcribed audio re-sent for context. Helps avoid cut-off words at boundaries.</span>
-  </label>
-  <label class="field">
-    <span class="label">Microphone</span>
-    <select bind:value={microphoneDeviceId}>
-      <option value="">System Default</option>
-      {#each audioDevices as device}<option value={device.deviceId}>{device.label}</option>{/each}
-    </select>
-    {#if micWarning}<span class="hint mic-warning">{micWarning}</span>{:else}<span class="hint">Select the microphone to use for dictation.</span>{/if}
   </label>
 </div>
 {/if}

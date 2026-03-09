@@ -1,0 +1,36 @@
+// ---------------------------------------------------------------------------
+// Shared types for speech providers
+// ---------------------------------------------------------------------------
+
+export interface SpeechCallbacks {
+  onInterim: (text: string) => void;
+  onFinal: (text: string) => void;
+  onError: (error: string) => void;
+  onStatusChange: (status: "idle" | "listening" | "error") => void;
+  /** Called by the Whisper provider each time a new decode cycle starts. */
+  onDecodeStart?: () => void;
+  /** Called after each Whisper decode with the wall-clock latency in milliseconds. */
+  onDecodeLatency?: (ms: number) => void;
+  /** Called with a normalized 0–1 audio level (Whisper provider only). */
+  onAudioLevel?: (level: number) => void;
+}
+
+export interface AudioDevice {
+  deviceId: string;
+  label: string;
+}
+
+export interface EnumerateResult {
+  devices: AudioDevice[];
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Provider interface
+// ---------------------------------------------------------------------------
+
+export interface SpeechProvider {
+  start(callbacks: SpeechCallbacks): void;
+  stop(skipFlush?: boolean): Promise<void>;
+  dispose(): void;
+}

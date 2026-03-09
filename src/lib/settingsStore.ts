@@ -1,5 +1,8 @@
 import { tauriInvoke } from "./tauriInvoke";
 
+// Re-export speech reference data for backward compatibility
+export { AZURE_REGIONS, SUPPORTED_LANGUAGES } from "./speechConstants";
+
 export interface AppSettings {
   speech_provider: "os" | "azure" | "whisper";
   os_language: string;
@@ -84,37 +87,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   show_in_dock: false,
 };
 
-export const AZURE_REGIONS = [
-  { value: "eastus", label: "East US" },
-  { value: "eastus2", label: "East US 2" },
-  { value: "westus", label: "West US" },
-  { value: "westus2", label: "West US 2" },
-  { value: "westus3", label: "West US 3" },
-  { value: "centralus", label: "Central US" },
-  { value: "northcentralus", label: "North Central US" },
-  { value: "southcentralus", label: "South Central US" },
-  { value: "canadacentral", label: "Canada Central" },
-  { value: "brazilsouth", label: "Brazil South" },
-  { value: "westeurope", label: "West Europe" },
-  { value: "northeurope", label: "North Europe" },
-  { value: "uksouth", label: "UK South" },
-  { value: "ukwest", label: "UK West" },
-  { value: "francecentral", label: "France Central" },
-  { value: "germanywestcentral", label: "Germany West Central" },
-  { value: "switzerlandnorth", label: "Switzerland North" },
-  { value: "swedencentral", label: "Sweden Central" },
-  { value: "norwayeast", label: "Norway East" },
-  { value: "eastasia", label: "East Asia" },
-  { value: "southeastasia", label: "Southeast Asia" },
-  { value: "japaneast", label: "Japan East" },
-  { value: "japanwest", label: "Japan West" },
-  { value: "koreacentral", label: "Korea Central" },
-  { value: "centralindia", label: "Central India" },
-  { value: "australiaeast", label: "Australia East" },
-  { value: "uaenorth", label: "UAE North" },
-  { value: "southafricanorth", label: "South Africa North" },
-];
-
 export async function getSettings(): Promise<AppSettings> {
   return tauriInvoke<AppSettings>("get_settings");
 }
@@ -122,41 +94,3 @@ export async function getSettings(): Promise<AppSettings> {
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await tauriInvoke("save_settings", { settings });
 }
-
-export const SUPPORTED_LANGUAGES = [
-  { code: "en-US", label: "English (US)" },
-  { code: "en-GB", label: "English (UK)" },
-  { code: "en-AU", label: "English (Australia)" },
-  { code: "de-DE", label: "German (Germany)" },
-  { code: "de-AT", label: "German (Austria)" },
-  { code: "de-CH", label: "German (Switzerland)" },
-  { code: "fr-FR", label: "French (France)" },
-  { code: "fr-CA", label: "French (Canada)" },
-  { code: "es-ES", label: "Spanish (Spain)" },
-  { code: "es-MX", label: "Spanish (Mexico)" },
-  { code: "it-IT", label: "Italian" },
-  { code: "pt-BR", label: "Portuguese (Brazil)" },
-  { code: "pt-PT", label: "Portuguese (Portugal)" },
-  { code: "nl-NL", label: "Dutch" },
-  { code: "pl-PL", label: "Polish" },
-  { code: "sv-SE", label: "Swedish" },
-  { code: "da-DK", label: "Danish" },
-  { code: "fi-FI", label: "Finnish" },
-  { code: "nb-NO", label: "Norwegian" },
-  { code: "ru-RU", label: "Russian" },
-  { code: "uk-UA", label: "Ukrainian" },
-  { code: "ja-JP", label: "Japanese" },
-  { code: "ko-KR", label: "Korean" },
-  { code: "zh-CN", label: "Chinese (Simplified)" },
-  { code: "zh-TW", label: "Chinese (Traditional)" },
-  { code: "hi-IN", label: "Hindi" },
-  { code: "ar-SA", label: "Arabic (Saudi)" },
-  { code: "tr-TR", label: "Turkish" },
-  { code: "cs-CZ", label: "Czech" },
-  { code: "ro-RO", label: "Romanian" },
-  { code: "hu-HU", label: "Hungarian" },
-  { code: "th-TH", label: "Thai" },
-  { code: "vi-VN", label: "Vietnamese" },
-  { code: "id-ID", label: "Indonesian" },
-  { code: "he-IL", label: "Hebrew" },
-];

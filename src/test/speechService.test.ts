@@ -277,7 +277,7 @@ describe("createSpeechProvider", () => {
   });
 
   it("defaults to OsSpeechProvider for unknown provider", () => {
-    const provider = createSpeechProvider({ ...baseSettings, speech_provider: "unknown" } as AppSettings);
+    const provider = createSpeechProvider({ ...baseSettings, speech_provider: "unknown" } as unknown as AppSettings);
     expect(provider).toBeInstanceOf(OsSpeechProvider);
   });
 });

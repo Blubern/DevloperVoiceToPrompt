@@ -1,154 +1,16 @@
-use tauri::{
-    image::Image,
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::TrayIconBuilder,
-    webview::WebviewWindowBuilder,
-    Emitter, Manager, WebviewUrl,
-};
-use tauri_plugin_store::StoreExt;
+use tauri::{Emitter, Manager};
 
 mod commands;
 mod copilot;
 pub mod logging;
 pub mod mcp;
 pub mod settings;
+mod tray;
 mod whisper;
+pub mod window_manager;
 
-/// Show the popup without toggling — always makes it visible and focused.
-/// Used by the MCP server to open the popup when a tool call arrives.
-pub fn create_or_show_popup(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("popup") {
-        if let Err(e) = win.show() {
-            tracing::error!("Failed to show popup: {e}");
-        }
-        if let Err(e) = win.set_focus() {
-            tracing::warn!("Failed to set popup focus: {e}");
-        }
-    } else {
-        create_or_toggle_popup(app);
-    }
-}
-
-fn create_or_toggle_popup(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("popup") {
-        if win.is_visible().unwrap_or(false) {
-            if let Err(e) = win.set_focus() {
-                tracing::warn!("Failed to set popup focus: {e}");
-            }
-        } else {
-            if let Err(e) = win.show() {
-                tracing::warn!("Failed to show popup: {e}");
-            }
-            if let Err(e) = win.set_focus() {
-                tracing::warn!("Failed to set popup focus: {e}");
-            }
-        }
-    } else {
-        let user_settings = settings::load_settings(app);
-        let on_top = user_settings.always_on_top;
-        let show_in_dock = user_settings.show_in_dock;
-
-        // Read saved popup geometry from store
-        let store = match app.store("settings.json") {
-            Ok(s) => Some(s),
-            Err(e) => {
-                tracing::warn!("Failed to open settings store for popup geometry: {e}");
-                None
-            }
-        };
-        let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(926.0);
-        let popup_h = store.as_ref().and_then(|s| s.get("popup_height").and_then(|v| v.as_f64())).unwrap_or(582.0);
-        let popup_x = store.as_ref().and_then(|s| s.get("popup_x").and_then(|v| v.as_f64()));
-        let popup_y = store.as_ref().and_then(|s| s.get("popup_y").and_then(|v| v.as_f64()));
-
-        let mut builder = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("/".into()))
-            .title("Voice to Prompt")
-            .inner_size(popup_w, popup_h)
-            .min_inner_size(350.0, 280.0)
-            .decorations(false)
-            .resizable(true)
-            .skip_taskbar(!show_in_dock)
-            .always_on_top(on_top)
-            .visible(true);
-
-        // Restore saved position, or center if none saved
-        if let (Some(x), Some(y)) = (popup_x, popup_y) {
-            builder = builder.position(x, y);
-        } else {
-            builder = builder.center();
-        }
-
-        let _win = builder.build();
-        if let Err(ref e) = _win {
-            tracing::error!("Failed to create popup window: {e}");
-        }
-    }
-}
-
-pub fn show_settings(app: &tauri::AppHandle) {
-    // Temporarily lower the popup so the settings window is not hidden behind it
-    if let Some(popup) = app.get_webview_window("popup") {
-        if let Err(e) = popup.set_always_on_top(false) {
-            tracing::warn!("Failed to lower popup always_on_top: {e}");
-        }
-    }
-    if let Some(win) = app.get_webview_window("main") {
-        if let Err(e) = win.show() {
-            tracing::error!("Failed to show settings window: {e}");
-        }
-        if let Err(e) = win.set_focus() {
-            tracing::warn!("Failed to set settings focus: {e}");
-        }
-    }
-}
-
-fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let open_item = MenuItemBuilder::with_id("open", "Open Voice to Prompt").build(app)?;
-    let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
-    let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-
-    let menu = MenuBuilder::new(app)
-        .item(&open_item)
-        .item(&settings_item)
-        .separator()
-        .item(&quit_item)
-        .build()?;
-
-    let tray_builder = TrayIconBuilder::new()
-        .icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)
-        .tooltip("Developer Voice to Prompt")
-        .menu(&menu);
-
-    #[cfg(target_os = "macos")]
-    let tray_builder = tray_builder.icon_as_template(false);
-
-    let _tray = tray_builder
-        .on_menu_event(move |app, event| match event.id().as_ref() {
-            "open" => create_or_toggle_popup(app),
-            "settings" => show_settings(app),
-            "quit" => {
-                // Close all windows first so WebView2 cleans up properly
-                for (_, win) in app.webview_windows() {
-                    let _ = win.destroy();
-                }
-                app.exit(0);
-            }
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let tauri::tray::TrayIconEvent::Click {
-                button: tauri::tray::MouseButton::Left,
-                button_state: tauri::tray::MouseButtonState::Up,
-                ..
-            } = event
-            {
-                create_or_toggle_popup(tray.app_handle());
-            }
-        })
-        .build(app)?;
-
-    Ok(())
-}
+// Re-export for use by other modules (e.g., mcp.rs)
+pub use window_manager::create_or_show_popup;
 
 fn setup_global_shortcut(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -161,7 +23,7 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
     }
     if let Err(e) = app.global_shortcut().on_shortcut(shortcut_str.as_str(), move |_app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
-            create_or_toggle_popup(&app_handle);
+            window_manager::create_or_toggle_popup(&app_handle);
         }
     }) {
         tracing::error!(error = %e, "Failed to register global shortcut");
@@ -230,7 +92,7 @@ pub fn run() {
 
             tracing::info!("Application started");
 
-            setup_tray(app.handle())?;
+            tray::setup_tray(app.handle())?;
             setup_global_shortcut(app.handle());
 
             // Load settings once for startup checks
@@ -253,7 +115,7 @@ pub fn run() {
 
             // Open popup on startup if enabled in settings
             if user_settings.open_popup_on_start {
-                create_or_toggle_popup(app.handle());
+                window_manager::create_or_toggle_popup(app.handle());
             }
 
             // On first run, if no settings exist, show the settings window

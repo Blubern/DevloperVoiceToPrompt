@@ -49,19 +49,24 @@
 
   /** Hydrate form state from a settings object. */
   function hydrateFromSettings(src: AppSettings) {
+    // Derive UI-only timeout toggles from the SOURCE, not from `s`,
+    // to avoid creating reactive dependencies inside $effect.
+    const srcSilenceEnabled = src.silence_timeout_seconds > 0;
+    const srcMcpEnabled = src.mcp_timeout_seconds > 0;
+
     s = {
       ...DEFAULT_SETTINGS,
       ...src,
       // Deep-copy arrays so form edits don't mutate the source
       languages: src.languages ? [...src.languages] : [...DEFAULT_SETTINGS.languages],
       phrase_list: src.phrase_list ? [...src.phrase_list] : [],
+      // Override timeout values for the UI when disabled
+      silence_timeout_seconds: srcSilenceEnabled ? src.silence_timeout_seconds : 30,
+      mcp_timeout_seconds: srcMcpEnabled ? src.mcp_timeout_seconds : DEFAULT_SETTINGS.mcp_timeout_seconds,
     };
-    // Derive UI-only timeout toggles
-    silenceTimeoutEnabled = s.silence_timeout_seconds > 0;
-    if (!silenceTimeoutEnabled) s.silence_timeout_seconds = 30;
-    mcpTimeoutEnabled = s.mcp_timeout_seconds > 0;
-    if (!mcpTimeoutEnabled) s.mcp_timeout_seconds = DEFAULT_SETTINGS.mcp_timeout_seconds;
-    document.documentElement.dataset.theme = s.theme;
+    silenceTimeoutEnabled = srcSilenceEnabled;
+    mcpTimeoutEnabled = srcMcpEnabled;
+    document.documentElement.dataset.theme = src.theme;
   }
 
   // Sync local state from initialSettings prop
@@ -161,12 +166,14 @@
       </button>
     </div>
     <div class="tab-bar">
-      {#each [
-        ["general", "General"], ["speech", "Speech"], ["phrases", "Phrases"],
-        ["templates", "Templates"], ["history", "History"], ["usage", "Usage"], ["copilot", "GitHub Copilot"], ["logs", "Logs"]
-      ] as [id, label]}
-        <button type="button" class="tab" class:active={activeTab === id} onclick={() => activeTab = id as typeof activeTab}>{label}</button>
-      {/each}
+      <button type="button" class="tab" class:active={activeTab === 'general'} onclick={() => activeTab = 'general'}>General</button>
+      <button type="button" class="tab" class:active={activeTab === 'speech'} onclick={() => activeTab = 'speech'}>Speech</button>
+      <button type="button" class="tab" class:active={activeTab === 'phrases'} onclick={() => activeTab = 'phrases'}>Phrases</button>
+      <button type="button" class="tab" class:active={activeTab === 'templates'} onclick={() => activeTab = 'templates'}>Templates</button>
+      <button type="button" class="tab" class:active={activeTab === 'history'} onclick={() => activeTab = 'history'}>History</button>
+      <button type="button" class="tab" class:active={activeTab === 'usage'} onclick={() => activeTab = 'usage'}>Usage</button>
+      <button type="button" class="tab" class:active={activeTab === 'copilot'} onclick={() => activeTab = 'copilot'}>GitHub Copilot</button>
+      <button type="button" class="tab" class:active={activeTab === 'logs'} onclick={() => activeTab = 'logs'}>Logs</button>
     </div>
   </div>
 
