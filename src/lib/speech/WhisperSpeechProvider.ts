@@ -114,6 +114,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
   }
 
   start(callbacks: SpeechCallbacks): void {
+    if (this.running) return;
     this.callbacks = callbacks;
     this.generation++;
     this._startAsync(callbacks).catch((err) => {

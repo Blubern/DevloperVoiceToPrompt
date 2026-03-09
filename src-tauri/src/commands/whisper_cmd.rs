@@ -149,7 +149,7 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
             let src_start = (i as f64 * ratio) as usize;
             let src_end = (((i + 1) as f64 * ratio) as usize).min(input.len());
             if src_end <= src_start {
-                output.push(0.0_f32);
+                output.push(input[src_start.min(input.len() - 1)]);
                 continue;
             }
             let count = (src_end - src_start) as f32;

@@ -110,7 +110,9 @@ pub fn run() {
             // Start MCP server if enabled
             if user_settings.mcp_enabled {
                 if (1024..=65535).contains(&user_settings.mcp_port) {
-                    mcp::start_mcp_server(app.handle().clone(), user_settings.mcp_port);
+                    if let Err(e) = mcp::start_mcp_server(app.handle().clone(), user_settings.mcp_port) {
+                        tracing::error!(error = %e, "Failed to start MCP server");
+                    }
                 } else {
                     tracing::error!(
                         port = user_settings.mcp_port,

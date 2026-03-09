@@ -15,6 +15,13 @@ export interface UsageStats {
 
 let storePromise: Promise<Store> | null = null;
 let migrationDone = false;
+let writeQueue: Promise<void> = Promise.resolve();
+
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const result = writeQueue.then(fn, fn);
+  writeQueue = result.then(() => {}, () => {});
+  return result;
+}
 
 function getStore(): Promise<Store> {
   if (!storePromise) {
@@ -57,16 +64,18 @@ async function migrateIfNeeded(s: Store): Promise<void> {
   migrationDone = true;
 }
 
-export async function recordUsage(seconds: number, provider: "os" | "azure" | "whisper"): Promise<void> {
-  if (seconds <= 0) return;
-  const s = await getStore();
-  const storeKey = provider === "os" ? "daily_web" : provider === "azure" ? "daily_azure" : "daily_whisper";
-  const key = todayKey();
-  const raw = await s.get<Record<string, number>>(storeKey);
-  const daily: Record<string, number> = raw ?? {};
-  daily[key] = (daily[key] ?? 0) + seconds;
-  await s.set(storeKey, daily);
-  await s.save();
+export function recordUsage(seconds: number, provider: "os" | "azure" | "whisper"): Promise<void> {
+  if (seconds <= 0) return Promise.resolve();
+  return serialized(async () => {
+    const s = await getStore();
+    const storeKey = provider === "os" ? "daily_web" : provider === "azure" ? "daily_azure" : "daily_whisper";
+    const key = todayKey();
+    const raw = await s.get<Record<string, number>>(storeKey);
+    const daily: Record<string, number> = raw ?? {};
+    daily[key] = (daily[key] ?? 0) + seconds;
+    await s.set(storeKey, daily);
+    await s.save();
+  });
 }
 
 function computeProviderUsage(daily: Record<string, number>): ProviderUsage {
@@ -74,6 +83,7 @@ function computeProviderUsage(daily: Record<string, number>): ProviderUsage {
   const todayStr = todayKey();
   const monday = getMonday(now);
   const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setHours(0, 0, 0, 0);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   let today = 0;
@@ -110,32 +120,36 @@ export async function getUsageStats(): Promise<UsageStats> {
   return { web, azure, whisper, total };
 }
 
-export async function resetUsage(): Promise<void> {
-  const s = await getStore();
-  await s.set("daily_web", {});
-  await s.set("daily_azure", {});
-  await s.set("daily_whisper", {});
-  await s.delete("daily"); // clean up legacy
-  await s.save();
+export function resetUsage(): Promise<void> {
+  return serialized(async () => {
+    const s = await getStore();
+    await s.set("daily_web", {});
+    await s.set("daily_azure", {});
+    await s.set("daily_whisper", {});
+    await s.delete("daily"); // clean up legacy
+    await s.save();
+  });
 }
 
-export async function pruneOldEntries(): Promise<void> {
-  const s = await getStore();
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 90);
+export function pruneOldEntries(): Promise<void> {
+  return serialized(async () => {
+    const s = await getStore();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
 
-  for (const storeKey of ["daily_web", "daily_azure", "daily_whisper"] as const) {
-    const raw = await s.get<Record<string, number>>(storeKey);
-    if (!raw) continue;
-    const pruned: Record<string, number> = {};
-    for (const [dateStr, secs] of Object.entries(raw)) {
-      if (new Date(dateStr + "T00:00:00") >= cutoff) {
-        pruned[dateStr] = secs;
+    for (const storeKey of ["daily_web", "daily_azure", "daily_whisper"] as const) {
+      const raw = await s.get<Record<string, number>>(storeKey);
+      if (!raw) continue;
+      const pruned: Record<string, number> = {};
+      for (const [dateStr, secs] of Object.entries(raw)) {
+        if (new Date(dateStr + "T00:00:00") >= cutoff) {
+          pruned[dateStr] = secs;
+        }
       }
+      await s.set(storeKey, pruned);
     }
-    await s.set(storeKey, pruned);
-  }
-  await s.save();
+    await s.save();
+  });
 }
 
 export function formatDuration(totalSeconds: number): string {

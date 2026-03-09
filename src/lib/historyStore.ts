@@ -8,6 +8,13 @@ export interface HistoryEntry {
 }
 
 let storePromise: Promise<Store> | null = null;
+let writeQueue: Promise<void> = Promise.resolve();
+
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const result = writeQueue.then(fn, fn);
+  writeQueue = result.then(() => {}, () => {});
+  return result;
+}
 
 function getStore(): Promise<Store> {
   if (!storePromise) {
@@ -19,24 +26,26 @@ function getStore(): Promise<Store> {
   return storePromise;
 }
 
-export async function addHistoryEntry(
+export function addHistoryEntry(
   text: string,
   maxEntries: number,
   inputReason?: string
 ): Promise<void> {
   const trimmed = text.trim();
-  if (!trimmed) return;
-  const s = await getStore();
-  const raw = await s.get<HistoryEntry[]>("entries");
-  const entries: HistoryEntry[] = raw ?? [];
-  const entry: HistoryEntry = { id: crypto.randomUUID(), timestamp: new Date().toISOString(), text: trimmed };
-  if (inputReason) entry.input_reason = inputReason;
-  entries.unshift(entry);
-  if (entries.length > maxEntries) {
-    entries.length = maxEntries;
-  }
-  await s.set("entries", entries);
-  await s.save();
+  if (!trimmed) return Promise.resolve();
+  return serialized(async () => {
+    const s = await getStore();
+    const raw = await s.get<HistoryEntry[]>("entries");
+    const entries: HistoryEntry[] = raw ?? [];
+    const entry: HistoryEntry = { id: crypto.randomUUID(), timestamp: new Date().toISOString(), text: trimmed };
+    if (inputReason) entry.input_reason = inputReason;
+    entries.unshift(entry);
+    if (entries.length > maxEntries) {
+      entries.length = maxEntries;
+    }
+    await s.set("entries", entries);
+    await s.save();
+  });
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {
@@ -45,26 +54,32 @@ export async function getHistory(): Promise<HistoryEntry[]> {
   return raw ?? [];
 }
 
-export async function clearHistory(): Promise<void> {
-  const s = await getStore();
-  await s.set("entries", []);
-  await s.save();
+export function clearHistory(): Promise<void> {
+  return serialized(async () => {
+    const s = await getStore();
+    await s.set("entries", []);
+    await s.save();
+  });
 }
 
-export async function deleteHistoryEntry(id: string): Promise<void> {
-  const s = await getStore();
-  const raw = await s.get<HistoryEntry[]>("entries");
-  const entries = (raw ?? []).filter((e) => e.id !== id);
-  await s.set("entries", entries);
-  await s.save();
+export function deleteHistoryEntry(id: string): Promise<void> {
+  return serialized(async () => {
+    const s = await getStore();
+    const raw = await s.get<HistoryEntry[]>("entries");
+    const entries = (raw ?? []).filter((e) => e.id !== id);
+    await s.set("entries", entries);
+    await s.save();
+  });
 }
 
-export async function pruneHistory(maxEntries: number): Promise<void> {
-  const s = await getStore();
-  const raw = await s.get<HistoryEntry[]>("entries");
-  if (!raw || raw.length <= maxEntries) return;
-  await s.set("entries", raw.slice(0, maxEntries));
-  await s.save();
+export function pruneHistory(maxEntries: number): Promise<void> {
+  return serialized(async () => {
+    const s = await getStore();
+    const raw = await s.get<HistoryEntry[]>("entries");
+    if (!raw || raw.length <= maxEntries) return;
+    await s.set("entries", raw.slice(0, maxEntries));
+    await s.save();
+  });
 }
 
 export function formatRelativeTime(isoString: string): string {

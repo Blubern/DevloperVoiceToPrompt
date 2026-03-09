@@ -46,11 +46,16 @@
 
   async function confirmEdit() {
     if (!editingId || !editName.trim() || !editText.trim()) return;
-    await updateTemplate(editingId, editName.trim(), editText.trim());
-    editingId = null;
-    editName = "";
-    editText = "";
-    await emit(EVENT_TEMPLATES_UPDATED);
+    try {
+      await updateTemplate(editingId, editName.trim(), editText.trim());
+      await emit(EVENT_TEMPLATES_UPDATED);
+    } catch (e) {
+      console.error("Failed to save template:", e);
+    } finally {
+      editingId = null;
+      editName = "";
+      editText = "";
+    }
   }
 
   function cancelEdit() {
@@ -60,9 +65,14 @@
   }
 
   async function confirmDelete(id: string) {
-    await deleteTemplate(id);
-    deleteConfirmId = null;
-    await emit(EVENT_TEMPLATES_UPDATED);
+    try {
+      await deleteTemplate(id);
+      await emit(EVENT_TEMPLATES_UPDATED);
+    } catch (e) {
+      console.error("Failed to delete template:", e);
+    } finally {
+      deleteConfirmId = null;
+    }
   }
 
   function handleSave() {
