@@ -48,9 +48,14 @@ if (process.env.BUNDLE_NODE === "true") {
   const arch = process.env.TARGET_ARCH || process.arch;
   await downloadNode(nodeDir, platform, arch);
 } else {
-  // Ensure the directory exists (even empty) so Tauri resources glob doesn't error
+  // Ensure the directory has at least one file so Tauri's "node-runtime/*" resource glob doesn't error
   const nodeDir = join(tauriDir, "node-runtime");
   if (!existsSync(nodeDir)) mkdirSync(nodeDir, { recursive: true });
+  const placeholder = join(nodeDir, ".gitkeep");
+  if (!existsSync(placeholder)) {
+    const { writeFileSync } = await import("fs");
+    writeFileSync(placeholder, "");
+  }
   console.log("[bundle-bridge] Skipping Node.js download (set BUNDLE_NODE=true for full build)");
 }
 
