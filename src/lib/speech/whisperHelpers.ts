@@ -21,6 +21,14 @@ export function cleanText(text: string): string {
  *
  * @returns The new text after stripping the overlap, or "" if nothing new.
  */
+/**
+ * Normalize a word for comparison: lowercase and strip punctuation/symbols.
+ * Handles cases like "hello," vs "hello" or "it's" vs "its".
+ */
+function normalizeWord(w: string): string {
+  return w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
 export function stripOverlap(committedWords: string[], transcription: string): string {
   const trimmed = cleanText(transcription);
   if (!trimmed) return "";
@@ -34,7 +42,7 @@ export function stripOverlap(committedWords: string[], transcription: string): s
     if (suffix.length > words.length) continue;
     let match = true;
     for (let j = 0; j < suffix.length; j++) {
-      if (suffix[j].toLowerCase() !== words[j].toLowerCase()) {
+      if (normalizeWord(suffix[j]) !== normalizeWord(words[j])) {
         match = false;
         break;
       }

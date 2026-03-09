@@ -11,6 +11,14 @@ pub(super) struct BridgeProcess {
     pub(super) stdin: ChildStdin,
     pub(super) stdout: BufReader<ChildStdout>,
     pub(super) stderr_task: tokio::task::JoinHandle<()>,
+    /// Monotonically increasing counter used to populate the JSON-RPC "id" field.
+    ///
+    /// IMPORTANT: Responses are matched **by position** (the next line read from
+    /// stdout), NOT by correlating the response id with the request id.  This is
+    /// correct only because all calls are serialised through a single
+    /// `tokio::sync::Mutex`-guarded `&mut BridgeProcess` (one in-flight request
+    /// at a time).  If you ever parallelise bridge calls you must switch to
+    /// proper id-based demultiplexing.
     pub(super) next_id: u64,
 }
 

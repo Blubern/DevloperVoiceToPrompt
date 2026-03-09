@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use rmcp::{
     ErrorData, ServerHandler,
     handler::server::{tool::ToolRouter, wrapper::Parameters},
@@ -22,14 +22,20 @@ pub struct PendingRequest {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct McpState(pub Arc<Mutex<Option<PendingRequest>>>);
+// tokio::sync::Mutex is used here (not std::sync::Mutex) so that
+// .lock().await inside the async `voice_to_text` handler does not block
+// the async runtime.  See also: mcp_submit_result / mcp_cancel in
+// commands/mcp_cmd.rs, which must be async for the same reason.
+pub struct McpState(pub Arc<tokio::sync::Mutex<Option<PendingRequest>>>);
 
 // ---------------------------------------------------------------------------
 // Server lifecycle handle: holds a shutdown signal for the running server
 // ---------------------------------------------------------------------------
 
 #[derive(Default, Clone)]
-pub struct McpServerHandle(pub Arc<Mutex<Option<watch::Sender<bool>>>>);
+// McpServerHandle is only accessed from synchronous Tauri commands
+// (is_mcp_running, start/stop), so std::sync::Mutex is appropriate here.
+pub struct McpServerHandle(pub Arc<std::sync::Mutex<Option<watch::Sender<bool>>>>);
 
 // ---------------------------------------------------------------------------
 // Tauri event payload emitted to the popup
@@ -89,12 +95,9 @@ impl VoiceToTextServer {
         // Create the oneshot channel
         let (tx, rx) = oneshot::channel::<Result<String, String>>();
 
-        // Reject concurrent requests and store the sender in a single critical section
+        // Reject concurrent requests and store the sender in a single critical section.
         {
-            let mut guard = self.state.0.lock().map_err(|e| {
-                tracing::error!("MCP state lock poisoned: {e}");
-                ErrorData::internal_error("Internal lock error", None)
-            })?;
+            let mut guard = self.state.0.lock().await;
             if guard.is_some() {
                 return Ok(CallToolResult::error(vec![Content::text(
                     "Another dictation is already in progress. Please wait for it to complete.",
@@ -111,9 +114,7 @@ impl VoiceToTextServer {
 
         if let Err(e) = self.app.emit("mcp-voice-request", &payload) {
             // Remove pending request on emit failure
-            if let Ok(mut guard) = self.state.0.lock() {
-                *guard = None;
-            }
+            *self.state.0.lock().await = None;
             return Ok(CallToolResult::error(vec![Content::text(format!("Failed to open popup: {e}"))]));
         }
 
@@ -123,28 +124,31 @@ impl VoiceToTextServer {
         // Wait for the user to submit or cancel. A timeout of 0 disables the limit.
         let timeout_seconds = self.timeout_seconds;
 
-        if timeout_seconds == 0 {
+        let result = if timeout_seconds == 0 {
             match rx.await {
                 Ok(Ok(text)) => Ok(CallToolResult::success(vec![Content::text(text)])),
                 Ok(Err(reason)) => Ok(CallToolResult::error(vec![Content::text(format!("Dictation cancelled: {reason}"))])),
-                Err(_) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).") ])),
+                Err(_) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).")])),
             }
         } else {
             match tokio::time::timeout(std::time::Duration::from_secs(timeout_seconds as u64), rx).await {
                 Ok(Ok(Ok(text))) => Ok(CallToolResult::success(vec![Content::text(text)])),
                 Ok(Ok(Err(reason))) => Ok(CallToolResult::error(vec![Content::text(format!("Dictation cancelled: {reason}"))])),
-                Ok(Err(_)) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).") ])),
-                Err(_) => {
-                    // Timeout — clean up state
-                    if let Ok(mut guard) = self.state.0.lock() {
-                        *guard = None;
-                    }
-                    Ok(CallToolResult::error(vec![Content::text(format!(
-                        "Dictation timed out after {timeout_seconds} seconds with no submission.",
-                    ))]))
-                }
+                Ok(Err(_)) => Ok(CallToolResult::error(vec![Content::text("Dictation was cancelled (popup closed).")])),
+                Err(_) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Dictation timed out after {timeout_seconds} seconds with no submission.",
+                ))])),
             }
-        }
+        };
+
+        // Defensive cleanup: ensure the pending request slot is always cleared when
+        // this tool call exits, regardless of whether mcp_submit_result / mcp_cancel
+        // was invoked by the frontend.  Those commands already call guard.take(), so
+        // this assignment is a no-op on the normal path — it only matters when the
+        // receiver is dropped before a value is sent (unexpected runtime edge-case).
+        *self.state.0.lock().await = None;
+
+        result
     }
 }
 

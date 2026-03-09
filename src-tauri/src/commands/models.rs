@@ -40,6 +40,11 @@ pub async fn whisper_download_model(
     let mut stream = resp.bytes_stream();
 
     let result = (|| async {
+        // Track the last emitted integer percentage to avoid sending a Tauri IPC
+        // event on every chunk (chunks are typically ~8 KB; a 1.5 GB model would
+        // otherwise produce tens of thousands of events).
+        let mut last_pct: u64 = u64::MAX;
+
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
             file.write_all(&chunk)
@@ -47,15 +52,18 @@ pub async fn whisper_download_model(
                 .map_err(|e| format!("Failed to write model data: {e}"))?;
             downloaded += chunk.len() as u64;
 
-            // Emit progress event to frontend
-            let _ = app.emit(
-                "whisper-download-progress",
-                serde_json::json!({
-                    "model": model_name,
-                    "downloaded": downloaded,
-                    "total": total_size,
-                }),
-            );
+            let pct = if total_size > 0 { downloaded * 100 / total_size } else { 0 };
+            if pct != last_pct {
+                last_pct = pct;
+                let _ = app.emit(
+                    "whisper-download-progress",
+                    serde_json::json!({
+                        "model": model_name,
+                        "downloaded": downloaded,
+                        "total": total_size,
+                    }),
+                );
+            }
         }
 
         file.flush().await.map_err(|e| format!("Failed to flush file: {e}"))?;

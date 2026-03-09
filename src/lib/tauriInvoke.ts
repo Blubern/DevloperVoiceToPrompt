@@ -12,6 +12,6 @@ export async function tauriInvoke<T>(
   } catch (e) {
     const message =
       e instanceof Error ? e.message : typeof e === "string" ? e : String(e);
-    throw new Error(`Tauri command "${command}" failed: ${message}`);
+    throw new Error(`Tauri command "${command}" failed: ${message}`, { cause: e });
   }
 }

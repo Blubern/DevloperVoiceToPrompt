@@ -4,8 +4,10 @@ use crate::mcp::{McpState, McpServerHandle};
 /// Called by the frontend when the user clicks "Submit to MCP".
 /// Resolves the pending MCP tool call with the dictated text.
 #[tauri::command]
-pub fn mcp_submit_result(text: String, state: State<McpState>) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| format!("Lock error: {e}"))?;
+pub async fn mcp_submit_result(text: String, state: State<'_, McpState>) -> Result<(), String> {
+    // McpState uses tokio::sync::Mutex; this command must be async so the
+    // lock can be awaited without blocking the thread-pool.
+    let mut guard = state.0.lock().await;
     if let Some(pending) = guard.take() {
         if pending.tx.send(Ok(text)).is_err() {
             tracing::warn!("MCP submit: receiver already dropped");
@@ -19,8 +21,8 @@ pub fn mcp_submit_result(text: String, state: State<McpState>) -> Result<(), Str
 /// Called by the frontend when the popup is closed/dismissed without submitting.
 /// Cancels the pending MCP tool call so the caller receives an error instead of hanging.
 #[tauri::command]
-pub fn mcp_cancel(state: State<McpState>) -> Result<(), String> {
-    let mut guard = state.0.lock().map_err(|e| format!("Lock error: {e}"))?;
+pub async fn mcp_cancel(state: State<'_, McpState>) -> Result<(), String> {
+    let mut guard = state.0.lock().await;
     if let Some(pending) = guard.take() {
         if pending.tx.send(Err("cancelled".into())).is_err() {
             tracing::warn!("MCP cancel: receiver already dropped");

@@ -14,6 +14,9 @@ export class AudioLevelMeter {
   private ownsStream = false;
   private animFrameId: number | null = null;
   private dataArray: Uint8Array<ArrayBuffer> | null = null;
+  /** Set to true during stop() so a rAF tick that fires between stop() and
+   *  cancelAnimationFrame() does not invoke the stale callback. */
+  private stopped = false;
 
   /**
    * @param onLevel  Callback receiving a normalized 0–1 volume level.
@@ -27,6 +30,7 @@ export class AudioLevelMeter {
     deviceId?: string,
     existingStream?: MediaStream,
   ): Promise<void> {
+    this.stopped = false;
     try {
       if (existingStream) {
         this.stream = existingStream;
@@ -48,7 +52,7 @@ export class AudioLevelMeter {
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
 
       const tick = () => {
-        if (!this.analyser || !this.dataArray) return;
+        if (this.stopped || !this.analyser || !this.dataArray) return;
         this.analyser.getByteFrequencyData(this.dataArray);
 
         // Compute average volume (0–255) and normalize to 0–1
@@ -70,6 +74,7 @@ export class AudioLevelMeter {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;

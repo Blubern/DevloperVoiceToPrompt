@@ -45,6 +45,8 @@ export interface AppSettings {
   show_in_dock: boolean;
 }
 
+// DEFAULT_SETTINGS must stay in sync with `impl Default for AppSettings` in
+// src-tauri/src/settings.rs.  When adding a field, update both files.
 export const DEFAULT_SETTINGS: AppSettings = {
   speech_provider: "os",
   os_language: "en-US",

@@ -16,7 +16,8 @@ export async function checkMicrophonePermission(): Promise<"granted" | "denied" 
 
 export async function enumerateAudioDevices(): Promise<EnumerateResult> {
   try {
-    await navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => s.getTracks().forEach((t) => t.stop()));
+    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    tempStream.getTracks().forEach((t) => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
     return {
       devices: devices

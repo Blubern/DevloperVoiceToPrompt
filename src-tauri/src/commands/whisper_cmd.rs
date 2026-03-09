@@ -67,6 +67,16 @@ pub async fn whisper_transcribe(
         return Err("Invalid sample rate: must be greater than 0".into());
     }
 
+    // Guard against extreme values that would cause the resampler to allocate
+    // gigabytes of memory (e.g. sample_rate=1 → 16000× input length).
+    const MIN_SAMPLE_RATE: u32 = 8_000;
+    const MAX_SAMPLE_RATE: u32 = 192_000;
+    if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+        return Err(format!(
+            "Invalid sample rate {sample_rate}: must be between {MIN_SAMPLE_RATE} and {MAX_SAMPLE_RATE}"
+        ));
+    }
+
     if audio_b64.is_empty() {
         return Ok(String::new());
     }
@@ -118,7 +128,12 @@ pub async fn whisper_transcribe(
     .map_err(|e| format!("Task join error: {e}"))?
 }
 
-/// Simple linear resampler for converting audio sample rates.
+/// Resample `input` from `from_rate` Hz to `to_rate` Hz.
+///
+/// Downsampling uses a box filter (arithmetic mean over each output window) to
+/// provide basic anti-aliasing and avoid the spectral artefacts produced by
+/// naive sample-and-hold / linear interpolation without a low-pass pre-filter.
+/// Upsampling uses linear interpolation (no aliasing concern there).
 fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     if from_rate == to_rate || input.is_empty() {
         return input.to_vec();
@@ -126,16 +141,34 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     let ratio = from_rate as f64 / to_rate as f64;
     let out_len = (input.len() as f64 / ratio).ceil() as usize;
     let mut output = Vec::with_capacity(out_len);
-    for i in 0..out_len {
-        let src_idx = i as f64 * ratio;
-        let idx = src_idx as usize;
-        let frac = src_idx - idx as f64;
-        let sample = if idx + 1 < input.len() {
-            input[idx] as f64 * (1.0 - frac) + input[idx + 1] as f64 * frac
-        } else {
-            input[idx.min(input.len() - 1)] as f64
-        };
-        output.push(sample as f32);
+
+    if from_rate > to_rate {
+        // Downsampling: average the input samples that fall inside each output
+        // window.  This is a simple rectangular (box) anti-alias filter.
+        for i in 0..out_len {
+            let src_start = (i as f64 * ratio) as usize;
+            let src_end = (((i + 1) as f64 * ratio) as usize).min(input.len());
+            if src_end <= src_start {
+                output.push(0.0_f32);
+                continue;
+            }
+            let count = (src_end - src_start) as f32;
+            let sum: f32 = input[src_start..src_end].iter().sum();
+            output.push(sum / count);
+        }
+    } else {
+        // Upsampling: linear interpolation between adjacent samples.
+        for i in 0..out_len {
+            let src_idx = i as f64 * ratio;
+            let idx = src_idx as usize;
+            let frac = src_idx - idx as f64;
+            let sample = if idx + 1 < input.len() {
+                input[idx] as f64 * (1.0 - frac) + input[idx + 1] as f64 * frac
+            } else {
+                input[idx.min(input.len() - 1)] as f64
+            };
+            output.push(sample as f32);
+        }
     }
     output
 }

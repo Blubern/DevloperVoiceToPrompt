@@ -9,7 +9,10 @@ pub fn log_dir(app: &tauri::AppHandle) -> PathBuf {
     let base = app
         .path()
         .app_log_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("DeveloperVoiceToPrompt"));
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: cannot resolve app log dir ({e}); falling back to temp directory");
+            std::env::temp_dir().join("DeveloperVoiceToPrompt")
+        });
     // Ensure the directory exists
     let _ = fs::create_dir_all(&base);
     base

@@ -218,6 +218,21 @@ pub async fn copilot_enhance(
     user_text: String,
     delete_session: bool,
 ) -> Result<String, String> {
+    // Guard against excessively long inputs to limit token usage and
+    // memory pressure in the Copilot bridge process.
+    const MAX_TEXT_LEN: usize = 10_000;
+    if user_text.len() > MAX_TEXT_LEN {
+        return Err(format!(
+            "user_text exceeds the {MAX_TEXT_LEN}-character limit ({} chars)",
+            user_text.len()
+        ));
+    }
+    if system_prompt.len() > MAX_TEXT_LEN {
+        return Err(format!(
+            "system_prompt exceeds the {MAX_TEXT_LEN}-character limit ({} chars)",
+            system_prompt.len()
+        ));
+    }
     tracing::info!(model = %model_id, text_len = user_text.len(), delete_session, "Copilot enhance request");
     let mut guard = state.bridge.lock().await;
     let bridge = guard

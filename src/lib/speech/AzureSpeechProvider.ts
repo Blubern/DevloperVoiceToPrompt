@@ -16,7 +16,12 @@ export class AzureSpeechProvider implements SpeechProvider {
     private microphoneDeviceId?: string,
     private phraseList?: string[],
     private autoPunctuation?: boolean,
-  ) {}
+  ) {
+    // Ensure at least one language is present so languages[0] is always defined.
+    if (this.languages.length === 0) {
+      this.languages = ["en-US"];
+    }
+  }
 
   start(callbacks: SpeechCallbacks): void {
     const speechConfig = sdk.SpeechConfig.fromSubscription(this.key, this.region);
@@ -86,8 +91,13 @@ export class AzureSpeechProvider implements SpeechProvider {
 
   dispose(): void {
     if (this.recognizer) {
-      this.recognizer.close();
+      const rec = this.recognizer;
       this.recognizer = null;
+      // Stop before closing to avoid SDK emitting events on a torn-down object.
+      rec.stopContinuousRecognitionAsync(
+        () => rec.close(),
+        () => rec.close(),
+      );
     }
     if (this.audioConfig) {
       this.audioConfig.close();

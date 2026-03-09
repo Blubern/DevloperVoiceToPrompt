@@ -78,16 +78,21 @@ impl WhisperEngine {
             text.push_str(&segment.to_string());
         }
 
-        // Strip common Whisper hallucination tokens
-        let cleaned = text
-            .replace("[BLANK_AUDIO]", "")
-            .replace("[MUSIC]", "")
-            .replace("[SILENCE]", "")
-            .replace("(silence)", "")
-            .replace("(blank audio)", "");
-
-        Ok(cleaned.trim().to_string())
+        Ok(strip_hallucinations(&text))
     }
+}
+
+/// Strip known Whisper hallucination tokens from raw transcription output
+/// and whitespace-normalize the result.
+pub fn strip_hallucinations(text: &str) -> String {
+    let cleaned = text
+        .replace("[BLANK_AUDIO]", "")
+        .replace("[MUSIC]", "")
+        .replace("[SILENCE]", "")
+        .replace("(silence)", "")
+        .replace("(blank audio)", "");
+    // Collapse multiple spaces introduced by token removal and trim edges.
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Available model definitions.
@@ -185,17 +190,12 @@ mod tests {
     }
 
     #[test]
-    fn hallucination_tokens_cleaned_in_transcription_output() {
-        // The transcribe() method strips hallucination tokens.
-        // Verify the patterns exist in the replace chain.
-        let text = "[BLANK_AUDIO] hello [MUSIC] world [SILENCE] (silence) (blank audio)";
-        let cleaned = text
-            .replace("[BLANK_AUDIO]", "")
-            .replace("[MUSIC]", "")
-            .replace("[SILENCE]", "")
-            .replace("(silence)", "")
-            .replace("(blank audio)", "");
-        let cleaned = cleaned.trim();
-        assert_eq!(cleaned, "hello  world");
+    fn hallucination_tokens_stripped() {
+        // strip_hallucinations is the production function — test it directly
+        // rather than duplicating the replace chain.
+        let input = "[BLANK_AUDIO] hello [MUSIC] world [SILENCE] (silence) (blank audio)";
+        let result = strip_hallucinations(input);
+        // Tokens are removed and multiple spaces are collapsed to single spaces.
+        assert_eq!(result, "hello world");
     }
 }

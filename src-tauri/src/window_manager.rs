@@ -4,6 +4,13 @@ use tauri::{
 };
 use tauri_plugin_store::StoreExt;
 
+// Store keys used to persist the popup window geometry between sessions.
+// Must match the keys written by the frontend in Popup.svelte.
+const STORE_KEY_POPUP_WIDTH:  &str = "popup_width";
+const STORE_KEY_POPUP_HEIGHT: &str = "popup_height";
+const STORE_KEY_POPUP_X:      &str = "popup_x";
+const STORE_KEY_POPUP_Y:      &str = "popup_y";
+
 /// Show the popup without toggling — always makes it visible and focused.
 /// Used by the MCP server to open the popup when a tool call arrives.
 pub fn create_or_show_popup(app: &tauri::AppHandle) {
@@ -46,10 +53,10 @@ pub fn create_or_toggle_popup(app: &tauri::AppHandle) {
                 None
             }
         };
-        let popup_w = store.as_ref().and_then(|s| s.get("popup_width").and_then(|v| v.as_f64())).unwrap_or(926.0);
-        let popup_h = store.as_ref().and_then(|s| s.get("popup_height").and_then(|v| v.as_f64())).unwrap_or(582.0);
-        let popup_x = store.as_ref().and_then(|s| s.get("popup_x").and_then(|v| v.as_f64()));
-        let popup_y = store.as_ref().and_then(|s| s.get("popup_y").and_then(|v| v.as_f64()));
+        let popup_w = store.as_ref().and_then(|s| s.get(STORE_KEY_POPUP_WIDTH).and_then(|v| v.as_f64())).unwrap_or(926.0);
+        let popup_h = store.as_ref().and_then(|s| s.get(STORE_KEY_POPUP_HEIGHT).and_then(|v| v.as_f64())).unwrap_or(582.0);
+        let popup_x = store.as_ref().and_then(|s| s.get(STORE_KEY_POPUP_X).and_then(|v| v.as_f64()));
+        let popup_y = store.as_ref().and_then(|s| s.get(STORE_KEY_POPUP_Y).and_then(|v| v.as_f64()));
 
         let mut builder = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("/".into()))
             .title("Voice to Prompt")

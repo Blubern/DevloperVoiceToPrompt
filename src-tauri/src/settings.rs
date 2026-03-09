@@ -49,6 +49,8 @@ pub struct AppSettings {
     pub show_in_dock: bool,
 }
 
+// Default values must stay in sync with `DEFAULT_SETTINGS` in
+// src/lib/settingsStore.ts.  When adding a field, update both files.
 impl Default for AppSettings {
     fn default() -> Self {
         Self {

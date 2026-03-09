@@ -148,48 +148,48 @@ export class WhisperSpeechProvider implements SpeechProvider {
       await this.audioContext.audioWorklet.addModule(getWorkletUrl());
 
       this.workletNode = new AudioWorkletNode(this.audioContext, "pcm-processor");
-    this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
-      if (!this.running) return;
-      const incoming = e.data;
-      this.sessionChunks.push(incoming);
-      this.sessionSampleCount += incoming.length;
+      this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+        if (!this.running) return;
+        const incoming = e.data;
+        this.sessionChunks.push(incoming);
+        this.sessionSampleCount += incoming.length;
 
-      // Prevent unbounded memory growth: if we've accumulated more than
-      // maxSessionSamples without a commit, force a compact.
-      if (this.sessionSampleCount - this.committedSamples > this.maxSessionSamples) {
-        this._compactChunks();
-      }
+        // Prevent unbounded memory growth: if we've accumulated more than
+        // maxSessionSamples without a commit, force a compact.
+        if (this.sessionSampleCount - this.committedSamples > this.maxSessionSamples) {
+          this._compactChunks();
+        }
 
-      // Compute RMS audio level from the incoming PCM chunk and report to UI.
-      if (this.callbacks?.onAudioLevel) {
-        let sumSq = 0;
-        for (let i = 0; i < incoming.length; i++) sumSq += incoming[i] * incoming[i];
-        const rms = Math.sqrt(sumSq / incoming.length);
-        // Normalize: rms of ~0.15 ≈ moderate speech → map to ~1.0
-        this.callbacks.onAudioLevel(Math.min(rms / 0.15, 1));
-      }
-    };
+        // Compute RMS audio level from the incoming PCM chunk and report to UI.
+        if (this.callbacks?.onAudioLevel) {
+          let sumSq = 0;
+          for (let i = 0; i < incoming.length; i++) sumSq += incoming[i] * incoming[i];
+          const rms = Math.sqrt(sumSq / incoming.length);
+          // Normalize: rms of ~0.15 ≈ moderate speech → map to ~1.0
+          this.callbacks.onAudioLevel(Math.min(rms / 0.15, 1));
+        }
+      };
 
-    this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
-    this.sourceNode.connect(this.workletNode);
-    this.workletNode.connect(this.audioContext.destination); // required for processing
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
+      this.sourceNode.connect(this.workletNode);
+      this.workletNode.connect(this.audioContext.destination); // required for processing
 
-    callbacks.onStatusChange("listening");
+      callbacks.onStatusChange("listening");
 
-    // Fire an eager first decode after 500 ms so the user sees text quickly,
-    // then switch to the regular cadence.
-    const firstDecodeDelay = Math.min(500, this.decodeMs);
-    this.firstDecodeTimer = setTimeout(() => {
-      this.firstDecodeTimer = null;
-      if (!this.running) return;
-      this._tickDecode();
-      // Now start the steady-state interval
-      if (this.running && !this.decodeTimer) {
-        this.decodeTimer = setInterval(() => {
-          this._tickDecode();
-        }, this.decodeMs);
-      }
-    }, firstDecodeDelay);
+      // Fire an eager first decode after 500 ms so the user sees text quickly,
+      // then switch to the regular cadence.
+      const firstDecodeDelay = Math.min(500, this.decodeMs);
+      this.firstDecodeTimer = setTimeout(() => {
+        this.firstDecodeTimer = null;
+        if (!this.running) return;
+        this._tickDecode();
+        // Now start the steady-state interval
+        if (this.running && !this.decodeTimer) {
+          this.decodeTimer = setInterval(() => {
+            this._tickDecode();
+          }, this.decodeMs);
+        }
+      }, firstDecodeDelay);
     } catch (err) {
       // Clean up media stream on failure to prevent mic leak
       if (this.mediaStream) {
@@ -213,7 +213,12 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.pendingDecode = true;
       return;
     }
-    this._runDecode();
+    // Use .catch() so any unexpected rejection surfaces as an error callback
+    // rather than an unhandled Promise rejection that could silence the bug.
+    this._runDecode().catch((err) => {
+      this.decoding = false;
+      this.callbacks?.onError(`Decode error: ${err}`);
+    });
   }
 
   private async _runDecode(): Promise<void> {
