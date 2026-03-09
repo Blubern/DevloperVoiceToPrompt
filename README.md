@@ -98,6 +98,18 @@ That means MCP-capable tools can ask this app for voice input, open the popup, s
 - speak a bug reproduction description when the agent asks for clarification
 - capture architecture context for an AI tool that can call MCP tools but has no voice UI
 
+## Practical Use Cases
+
+- use voice input in VS Code and in GitHub Copilot CLI through MCP instead of depending on whether the current tool has good built-in dictation
+- make voice a first-class part of the developer workflow, not just a fallback for occasional note-taking
+- use the popup as the default human-in-the-loop tool for agent systems when an agent is missing context, missing data, or missing the right tool during debugging and experimentation
+- reuse local history to test agent workflows repeatedly, compare phrasing, and refine prompts across multiple runs
+- turn unstructured brainstorming into a more structured prompt before sending it into an AI tool or agent workflow
+- start with plain voice-to-text, then optionally apply a prompt template and an LLM-based enhancement step to shape the final transcript to your preferred style
+- use Azure Speech for mixed-language dictation when technical terms and spoken language switch back and forth, and use local Whisper as the default mode when mixed-language support is not needed
+- expose voice-to-text through MCP so other AI tools can adopt faster voice-driven workflows without having to build their own voice UI first
+
+
 ### Setup
 
 1. Open Settings.
@@ -200,6 +212,12 @@ Without Azure, Whisper, Copilot, or MCP, the app is still useful as a standalone
 | macOS | [Latest DMG](https://github.com/Blubern/DevloperVoiceToPrompt/releases/latest) |
 
 All releases are listed on the [Releases page](https://github.com/Blubern/DevloperVoiceToPrompt/releases).
+
+## Uninstall Note
+
+If you want a clean uninstall that also removes your local settings, history, templates, and other stored app data, open Settings and go to the General tab before uninstalling.
+
+Use the app data removal action there. It permanently removes all app data and restarts the app, which is useful if you do not want local data to remain on the machine after uninstalling.
 
 ## macOS Install Note
 
