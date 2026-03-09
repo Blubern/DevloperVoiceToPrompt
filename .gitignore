@@ -5,3 +5,4 @@ src-tauri/target/
 src-tauri/node-runtime/*
 !src-tauri/node-runtime/.gitkeep
 src-tauri/scripts/copilot-bridge-bundled.mjs
+src-tauri/gen/schemas/macOS-schema.json
