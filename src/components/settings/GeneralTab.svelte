@@ -2,6 +2,7 @@
   import ShortcutRecorder from "../ShortcutRecorder.svelte";
   import { DEFAULT_SETTINGS } from "../../lib/settingsStore";
   import { FONT_OPTIONS } from "../../lib/constants";
+  import { invoke } from '@tauri-apps/api/core';
 
   let {
     theme = $bindable(),
@@ -64,6 +65,31 @@
     popupVoiceShortcut = DEFAULT_SETTINGS.popup_voice_shortcut;
     providerSwitchShortcut = DEFAULT_SETTINGS.provider_switch_shortcut;
   }
+
+  // --- Storage & Data section ---
+  type WhisperModelInfo = { name: string; label: string; size_mb: number; downloaded: boolean };
+
+  let dataPath = $state<string | null>(null);
+  let whisperModels = $state<WhisperModelInfo[]>([]);
+  let showDeleteModelsConfirm = $state(false);
+  let deletingModels = $state(false);
+  let showWipeConfirm = $state(false);
+
+  let downloadedModels = $derived(whisperModels.filter(m => m.downloaded));
+  let totalModelMb = $derived(downloadedModels.reduce((sum, m) => sum + m.size_mb, 0));
+
+  async function loadStorageInfo() {
+    const [path, models] = await Promise.all([
+      invoke<string>('get_app_data_path'),
+      invoke<WhisperModelInfo[]>('whisper_list_models'),
+    ]);
+    dataPath = path;
+    whisperModels = models;
+  }
+
+  $effect(() => {
+    loadStorageInfo().catch(() => {});
+  });
 </script>
 
 <div class="section">
@@ -321,6 +347,62 @@
     {/if}
   </div>
 
+<div class="section">
+  <h2>Storage & Data</h2>
+
+  <div class="field">
+    <span class="label">App Data Folder</span>
+    <div class="data-path-row">
+      <code class="data-path">{dataPath ?? 'Loading…'}</code>
+      <button type="button" class="toggle-btn" onclick={() => invoke('open_app_data_folder')}>Open Folder</button>
+    </div>
+    <span class="hint">All settings, history, templates and Whisper models are stored in this folder.</span>
+  </div>
+
+  <div class="field">
+    <span class="label">Whisper Models</span>
+    {#if showDeleteModelsConfirm}
+      <div class="usage-actions">
+        <span class="reset-confirm-text">Delete {downloadedModels.length} model{downloadedModels.length !== 1 ? 's' : ''} ({totalModelMb} MB)?</span>
+        <button type="button" class="toggle-btn reset-yes" disabled={deletingModels} onclick={async () => {
+          deletingModels = true;
+          await invoke('delete_all_whisper_models');
+          whisperModels = await invoke<WhisperModelInfo[]>('whisper_list_models');
+          deletingModels = false;
+          showDeleteModelsConfirm = false;
+        }}>{deletingModels ? 'Deleting…' : 'Yes, delete'}</button>
+        <button type="button" class="toggle-btn" onclick={() => (showDeleteModelsConfirm = false)}>Cancel</button>
+      </div>
+    {:else}
+      <div class="usage-actions">
+        {#if downloadedModels.length > 0}
+          <span class="reset-confirm-text">{downloadedModels.length} downloaded ({totalModelMb} MB)</span>
+          <button type="button" class="toggle-btn" onclick={() => (showDeleteModelsConfirm = true)}>Delete All</button>
+        {:else}
+          <span class="reset-confirm-text">No models downloaded</span>
+        {/if}
+      </div>
+    {/if}
+    <span class="hint">Whisper speech recognition models. Can be re-downloaded from the Speech settings.</span>
+  </div>
+
+  <div class="field">
+    <span class="label">Wipe All App Data</span>
+    {#if showWipeConfirm}
+      <div class="usage-actions">
+        <span class="reset-confirm-text wipe-warning">This will permanently delete all settings, history, templates, models and logs, then restart the app.</span>
+        <button type="button" class="toggle-btn reset-yes" onclick={() => { invoke('wipe_all_app_data'); }}>Confirm Reset & Restart</button>
+        <button type="button" class="toggle-btn" onclick={() => (showWipeConfirm = false)}>Cancel</button>
+      </div>
+    {:else}
+      <div class="usage-actions">
+        <button type="button" class="toggle-btn reset-yes" onclick={() => (showWipeConfirm = true)}>Wipe All Data…</button>
+      </div>
+    {/if}
+    <span class="hint">Permanently removes all app data and restarts. Use before uninstalling for a clean removal.</span>
+  </div>
+</div>
+
 <style>
   .font-preview {
     margin-top: 6px;
@@ -454,5 +536,32 @@
     font-size: 11.5px;
     color: var(--text-secondary);
     line-height: 1.4;
+  }
+
+  .data-path-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+
+  .data-path {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+
+  .wipe-warning {
+    color: var(--error);
   }
 </style>

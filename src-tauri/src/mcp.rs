@@ -157,7 +157,7 @@ impl ServerHandler for VoiceToTextServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(
-                "DeveloperVoiceToText",
+                "developer_voice_to_text_server",
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
