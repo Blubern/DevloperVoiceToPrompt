@@ -22,6 +22,13 @@ pub(super) struct BridgeProcess {
     pub(super) next_id: u64,
 }
 
+impl BridgeProcess {
+    /// Returns `true` when the child process is still running.
+    pub(super) fn is_alive(&mut self) -> bool {
+        matches!(self._child.try_wait(), Ok(None))
+    }
+}
+
 /// Shared state holding the optional bridge process.
 pub struct CopilotState {
     pub(super) bridge: Arc<Mutex<Option<BridgeProcess>>>,

@@ -6,6 +6,7 @@
   import {
     EVENT_SETTINGS_UPDATED,
     EVENT_ENHANCER_TEMPLATES_UPDATED,
+    EVENT_COPILOT_BRIDGE_STATE,
     type RecordingStatus,
   } from "../../lib/constants";
   import {
@@ -13,6 +14,7 @@
     copilotAuthStatus,
     copilotListModels,
     copilotStop,
+    copilotIsConnected,
     type CopilotAuthStatus,
     type CopilotModel,
   } from "../../lib/copilotStore";
@@ -85,8 +87,13 @@
       copilotError = '';
       (async () => {
         try {
-          await copilotInit();
+          // Check if the bridge is already alive (started by another window).
+          const alreadyConnected = await copilotIsConnected();
           if (stale) return;
+          if (!alreadyConnected) {
+            await copilotInit();
+            if (stale) return;
+          }
           const auth = await copilotAuthStatus();
           if (stale) return;
           copilotAuth = auth;
@@ -143,6 +150,32 @@
     let unlisten: (() => void) | null = null;
     listen(EVENT_ENHANCER_TEMPLATES_UPDATED, async () => {
       enhancerTemplates = await getEnhancerTemplates();
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  });
+
+  // Listen to bridge state changes emitted from the Rust backend.
+  // This keeps the Popup in sync when the Settings window inits/disconnects the bridge.
+  $effect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ connected: boolean }>(EVENT_COPILOT_BRIDGE_STATE, async (event) => {
+      if (!settings.copilot_enabled) return;
+      if (event.payload.connected && copilotStatus !== 'connected') {
+        // Bridge came up (possibly from another window) — refresh auth/models.
+        try {
+          const auth = await copilotAuthStatus();
+          copilotAuth = auth;
+          if (auth?.authenticated) {
+            copilotModels = await copilotListModels();
+            copilotStatus = 'connected';
+            copilotSelectedModel = resolveSavedCopilotModel(settings.copilot_selected_model, copilotModels);
+          }
+        } catch (e) { console.warn("CopilotEnhanceBar: bridge state refresh failed, will retry on next event:", e); }
+      } else if (!event.payload.connected && copilotStatus === 'connected') {
+        copilotStatus = 'disconnected';
+        copilotAuth = null;
+        copilotModels = [];
+      }
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   });

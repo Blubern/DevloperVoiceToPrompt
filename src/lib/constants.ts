@@ -29,6 +29,7 @@ export const EVENT_ENHANCER_TEMPLATES_UPDATED = "enhancer-templates-updated" as 
 export const EVENT_CHECK_FIRST_RUN = "check-first-run" as const;
 export const EVENT_WHISPER_DOWNLOAD_PROGRESS = "whisper-download-progress" as const;
 export const EVENT_MCP_VOICE_REQUEST = "mcp-voice-request" as const;
+export const EVENT_COPILOT_BRIDGE_STATE = "copilot-bridge-state" as const;
 
 // Timer defaults
 export const DEFAULT_SILENCE_TIMEOUT_SECONDS = 30;

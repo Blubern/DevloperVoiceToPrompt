@@ -8,38 +8,42 @@ pub use types::{CopilotAuthStatus, CopilotModel};
 use bridge::{bridge_call, bridge_call_with_params, is_transport_error};
 use paths::bridge_paths;
 
+use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-/// Initialize the Copilot SDK by spawning the Node.js bridge process.
-#[tauri::command]
-pub async fn copilot_init(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, CopilotState>,
-) -> Result<(), String> {
-    // Take the old bridge out of the lock first, then tear it down outside the lock.
-    // This minimizes lock duration so concurrent commands aren't blocked during teardown.
-    let old_bridge = {
-        let mut guard = state.bridge.lock().await;
-        guard.take()
-    };
+/// Payload emitted on the `copilot-bridge-state` event.
+#[derive(Clone, serde::Serialize)]
+struct BridgeStatePayload {
+    connected: bool,
+}
 
-    // Tear down old bridge outside the lock
-    if let Some(mut old) = old_bridge {
-        old.stderr_task.abort();
-        let _ = old.stdin.shutdown().await;
-        let _ = old._child.kill().await;
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            old._child.wait(),
-        ).await;
+/// Emit the bridge connection state to all windows.
+fn emit_bridge_state(app: &tauri::AppHandle, connected: bool) {
+    if let Err(e) = app.emit("copilot-bridge-state", BridgeStatePayload { connected }) {
+        tracing::warn!("Failed to emit copilot-bridge-state: {e}");
     }
+}
 
-    let config = bridge_paths(&app).map_err(|e| {
+/// Tear down an existing bridge process (kill child, abort stderr task).
+async fn teardown_bridge(old: &mut bridge::BridgeProcess) {
+    tracing::info!("Tearing down Copilot bridge process");
+    old.stderr_task.abort();
+    let _ = old.stdin.shutdown().await;
+    let _ = old._child.kill().await;
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        old._child.wait(),
+    )
+    .await;
+}
+
+/// Spawn a new bridge process, send the "init" RPC, and return it.
+async fn spawn_bridge(app: &tauri::AppHandle) -> Result<bridge::BridgeProcess, String> {
+    let config = bridge_paths(app).map_err(|e| {
         tracing::error!("copilot_init: bridge_paths failed: {}", e);
         e
     })?;
 
-    // Use bundled Node.js if available, otherwise fall back to system "node"
     let node_exe = config
         .node_bin
         .as_deref()
@@ -58,16 +62,11 @@ pub async fn copilot_init(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    // Tell the bridge where to find npm packages (needed in dev mode for
-    // the unbundled bridge; harmless for the bundled single-file bridge).
     cmd.env("NODE_PATH", &config.work_dir);
 
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-    // macOS GUI apps don't inherit the user's login-shell PATH, so tools installed
-    // via Homebrew (node, gh, etc.) won't be found. Query the login shell for its
-    // full PATH and forward it to the child process.
     #[cfg(target_os = "macos")]
     {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
@@ -83,35 +82,41 @@ pub async fn copilot_init(
         }
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| {
-            let msg = format!("Failed to spawn bridge: {}", e);
-            tracing::error!("copilot_init: {}", msg);
-            msg
-        })?;
+    let mut child = cmd.spawn().map_err(|e| {
+        let msg = format!("Failed to spawn bridge: {}", e);
+        tracing::error!("copilot_init: {}", msg);
+        msg
+    })?;
 
     let stdin = match child.stdin.take() {
         Some(s) => s,
-        None => { let _ = child.kill().await; return Err("No stdin on bridge process".into()); }
+        None => {
+            let _ = child.kill().await;
+            return Err("No stdin on bridge process".into());
+        }
     };
     let stdout = match child.stdout.take() {
         Some(s) => s,
-        None => { let _ = child.kill().await; return Err("No stdout on bridge process".into()); }
+        None => {
+            let _ = child.kill().await;
+            return Err("No stdout on bridge process".into());
+        }
     };
     let stderr = match child.stderr.take() {
         Some(s) => s,
-        None => { let _ = child.kill().await; return Err("No stderr on bridge process".into()); }
+        None => {
+            let _ = child.kill().await;
+            return Err("No stderr on bridge process".into());
+        }
     };
 
-    // Spawn a background task to continuously read and log stderr from the bridge
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();
         loop {
             line.clear();
             match reader.read_line(&mut line).await {
-                Ok(0) => break, // EOF — process exited
+                Ok(0) => break,
                 Ok(_) => {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
@@ -134,23 +139,106 @@ pub async fn copilot_init(
         next_id: 1,
     };
 
-    // Send "init" to have the bridge create a CopilotClient and verify the connection
     bridge_call(&mut new_bridge, "init").await.map_err(|e| {
         tracing::error!("copilot_init: bridge init call failed: {}", e);
         e
     })?;
 
     tracing::info!("Copilot bridge initialized");
+    Ok(new_bridge)
+}
 
-    // Only hold the lock briefly to insert the new bridge
+/// Initialize the Copilot SDK by spawning the Node.js bridge process.
+///
+/// **Idempotent**: if a healthy bridge is already running, this is a no-op.
+#[tauri::command]
+pub async fn copilot_init(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CopilotState>,
+) -> Result<(), String> {
+    // Fast path: if a live bridge already exists, reuse it.
+    {
+        let mut guard = state.bridge.lock().await;
+        if let Some(ref mut b) = *guard {
+            if b.is_alive() {
+                tracing::debug!("copilot_init: bridge already running, skipping respawn");
+                return Ok(());
+            }
+            // Bridge exists but process is dead — clean up the stale entry.
+            tracing::warn!("copilot_init: clearing dead bridge before respawn");
+            *guard = None;
+        }
+    }
+
+    let new_bridge = spawn_bridge(&app).await?;
+
     let mut guard = state.bridge.lock().await;
     *guard = Some(new_bridge);
+    emit_bridge_state(&app, true);
+    Ok(())
+}
+
+/// Force-restart the Copilot bridge: tear down any existing bridge and spawn a
+/// fresh one.  Use this for explicit user-initiated reconnection.
+#[tauri::command]
+pub async fn copilot_restart(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CopilotState>,
+) -> Result<(), String> {
+    tracing::info!("copilot_restart: force-restarting bridge");
+    // Take the old bridge out of the lock, tear it down outside the lock.
+    let old_bridge = {
+        let mut guard = state.bridge.lock().await;
+        guard.take()
+    };
+
+    if let Some(mut old) = old_bridge {
+        teardown_bridge(&mut old).await;
+    }
+    emit_bridge_state(&app, false);
+
+    let new_bridge = spawn_bridge(&app).await?;
+
+    let mut guard = state.bridge.lock().await;
+    *guard = Some(new_bridge);
+    emit_bridge_state(&app, true);
+    tracing::info!("copilot_restart: bridge restarted successfully");
+    Ok(())
+}
+
+/// Check whether the Copilot bridge process is currently alive.
+#[tauri::command]
+pub async fn copilot_is_connected(
+    state: tauri::State<'_, CopilotState>,
+) -> Result<bool, String> {
+    let mut guard = state.bridge.lock().await;
+    Ok(match *guard {
+        Some(ref mut b) => b.is_alive(),
+        None => false,
+    })
+}
+
+/// Shut down the bridge without respawning.
+#[tauri::command]
+pub async fn copilot_disconnect(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CopilotState>,
+) -> Result<(), String> {
+    tracing::info!("copilot_disconnect: shutting down bridge");
+    let mut guard = state.bridge.lock().await;
+    if let Some(mut bridge) = guard.take() {
+        let _ = bridge_call(&mut bridge, "stop").await;
+        teardown_bridge(&mut bridge).await;
+    }
+    emit_bridge_state(&app, false);
+    tracing::info!("copilot_disconnect: bridge shut down");
     Ok(())
 }
 
 /// Get the current authentication status.
 #[tauri::command]
 pub async fn copilot_auth_status(
+    app: tauri::AppHandle,
     state: tauri::State<'_, CopilotState>,
 ) -> Result<CopilotAuthStatus, String> {
     let mut guard = state.bridge.lock().await;
@@ -164,6 +252,7 @@ pub async fn copilot_auth_status(
             if is_transport_error(&e) {
                 tracing::warn!("Clearing dead Copilot bridge after transport error");
                 *guard = None;
+                emit_bridge_state(&app, false);
             }
             return Err(e);
         }
@@ -192,6 +281,7 @@ pub async fn copilot_auth_status(
 /// List available models from the Copilot API.
 #[tauri::command]
 pub async fn copilot_list_models(
+    app: tauri::AppHandle,
     state: tauri::State<'_, CopilotState>,
 ) -> Result<Vec<CopilotModel>, String> {
     let mut guard = state.bridge.lock().await;
@@ -205,38 +295,41 @@ pub async fn copilot_list_models(
             if is_transport_error(&e) {
                 tracing::warn!("Clearing dead Copilot bridge after transport error");
                 *guard = None;
+                emit_bridge_state(&app, false);
             }
             return Err(e);
         }
     };
 
     let models: Vec<CopilotModel> =
-        serde_json::from_value(val).map_err(|e| format!("Failed to parse models: {}", e))?;
+        serde_json::from_value(val).map_err(|e| {
+            tracing::error!("copilot_list_models: failed to parse response: {}", e);
+            format!("Failed to parse models: {}", e)
+        })?;
     Ok(models)
 }
 
 /// Stop the bridge process and clean up.
 #[tauri::command]
-pub async fn copilot_stop(state: tauri::State<'_, CopilotState>) -> Result<(), String> {
+pub async fn copilot_stop(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, CopilotState>,
+) -> Result<(), String> {
+    tracing::info!("copilot_stop: stopping bridge");
     let mut guard = state.bridge.lock().await;
     if let Some(mut bridge) = guard.take() {
-        // Try a graceful stop; ignore errors if the process already exited
         let _ = bridge_call(&mut bridge, "stop").await;
-        bridge.stderr_task.abort();
-        let _ = bridge.stdin.shutdown().await;
-        let _ = bridge._child.kill().await;
-        // Wait for the process to actually exit (up to 5s) to avoid orphans
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            bridge._child.wait(),
-        ).await;
+        teardown_bridge(&mut bridge).await;
     }
+    emit_bridge_state(&app, false);
+    tracing::info!("copilot_stop: bridge stopped");
     Ok(())
 }
 
 /// Enhance a prompt using the Copilot chat API.
 #[tauri::command]
 pub async fn copilot_enhance(
+    app: tauri::AppHandle,
     state: tauri::State<'_, CopilotState>,
     model_id: String,
     system_prompt: String,
@@ -277,6 +370,7 @@ pub async fn copilot_enhance(
             if is_transport_error(&e) {
                 tracing::warn!("Clearing dead Copilot bridge after transport error");
                 *guard = None;
+                emit_bridge_state(&app, false);
             }
             return Err(e);
         }

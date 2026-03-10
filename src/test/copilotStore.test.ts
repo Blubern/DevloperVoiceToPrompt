@@ -6,6 +6,9 @@ import {
   copilotListModels,
   copilotStop,
   copilotEnhance,
+  copilotRestart,
+  copilotIsConnected,
+  copilotDisconnect,
 } from "../lib/copilotStore";
 
 const mockInvoke = vi.mocked(invoke);
@@ -103,5 +106,30 @@ describe("copilotStore", () => {
   it("wraps Error-type rejections via tauriInvoke", async () => {
     mockInvoke.mockRejectedValueOnce(new Error("connection refused"));
     await expect(copilotStop()).rejects.toThrow('Tauri command "copilot_stop" failed: connection refused');
+  });
+
+  it("copilotRestart calls invoke with correct command", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await copilotRestart();
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_restart", undefined);
+  });
+
+  it("copilotIsConnected calls invoke and returns boolean", async () => {
+    mockInvoke.mockResolvedValueOnce(true);
+    const result = await copilotIsConnected();
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_is_connected", undefined);
+    expect(result).toBe(true);
+  });
+
+  it("copilotIsConnected returns false when bridge is not running", async () => {
+    mockInvoke.mockResolvedValueOnce(false);
+    const result = await copilotIsConnected();
+    expect(result).toBe(false);
+  });
+
+  it("copilotDisconnect calls invoke with correct command", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await copilotDisconnect();
+    expect(mockInvoke).toHaveBeenCalledWith("copilot_disconnect", undefined);
   });
 });

@@ -30,6 +30,18 @@ export async function copilotStop(): Promise<void> {
   return tauriInvoke<void>("copilot_stop");
 }
 
+export async function copilotRestart(): Promise<void> {
+  return tauriInvoke<void>("copilot_restart");
+}
+
+export async function copilotIsConnected(): Promise<boolean> {
+  return tauriInvoke<boolean>("copilot_is_connected");
+}
+
+export async function copilotDisconnect(): Promise<void> {
+  return tauriInvoke<void>("copilot_disconnect");
+}
+
 export async function copilotEnhance(
   modelId: string,
   systemPrompt: string,

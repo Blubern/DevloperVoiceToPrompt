@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { copilotInit, copilotAuthStatus, copilotListModels, copilotStop, type CopilotAuthStatus, type CopilotModel } from "../../lib/copilotStore";
+  import { copilotInit, copilotAuthStatus, copilotListModels, copilotStop, copilotRestart, copilotIsConnected, copilotDisconnect, type CopilotAuthStatus, type CopilotModel } from "../../lib/copilotStore";
   import { getEnhancerTemplates, addEnhancerTemplate, updateEnhancerTemplate, deleteEnhancerTemplate, resetEnhancerTemplates, type EnhancerTemplate } from "../../lib/enhancerTemplateStore";
-  import { EVENT_ENHANCER_TEMPLATES_UPDATED } from "../../lib/constants";
-  import { emit } from "@tauri-apps/api/event";
+  import { EVENT_ENHANCER_TEMPLATES_UPDATED, EVENT_COPILOT_BRIDGE_STATE } from "../../lib/constants";
+  import { emit, listen } from "@tauri-apps/api/event";
   import ShortcutRecorder from "../ShortcutRecorder.svelte";
   import TemplateEditorModal from "./TemplateEditorModal.svelte";
   import { onMount } from "svelte";
@@ -71,14 +71,53 @@
     }
   });
 
+  // Listen to bridge state changes emitted from the Rust backend.
+  // This keeps Settings in sync when the Popup window inits/disconnects the bridge.
+  $effect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ connected: boolean }>(EVENT_COPILOT_BRIDGE_STATE, async (event) => {
+      if (!copilotEnabled) return;
+      if (event.payload.connected && !copilotInitialized) {
+        // Bridge came up (possibly from another window) — refresh auth/models.
+        copilotLoading = true;
+        try {
+          copilotInitialized = true;
+          copilotAuth = await copilotAuthStatus();
+          if (copilotAuth?.authenticated) {
+            copilotModels = await copilotListModels();
+          } else {
+            copilotNeedsLogin = true;
+          }
+        } catch (e: any) {
+          console.error("CopilotTab: bridge state refresh failed:", e);
+          copilotInitialized = false;
+          copilotError = String(e);
+        } finally {
+          copilotLoading = false;
+        }
+      } else if (!event.payload.connected && copilotInitialized) {
+        copilotInitialized = false;
+        copilotAuth = null;
+        copilotModels = [];
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  });
+
   async function connectCopilot() {
     copilotLoading = true; copilotError = ''; copilotNeedsNode = false; copilotNeedsLogin = false;
     try {
-      await copilotInit(); copilotInitialized = true;
+      // Check if the bridge is already alive (started by another window).
+      const alreadyConnected = await copilotIsConnected();
+      if (!alreadyConnected) {
+        await copilotInit();
+      }
+      copilotInitialized = true;
       copilotAuth = await copilotAuthStatus();
       if (copilotAuth?.authenticated) { copilotModels = await copilotListModels(); }
       else { copilotNeedsLogin = true; }
     } catch (e: any) {
+      console.error("CopilotTab: connect failed:", e);
       copilotInitialized = false;
       const msg = String(e); const msgLower = msg.toLowerCase();
       if (msgLower.includes('@github/copilot-sdk') || msgLower.includes('err_module_not_found')) {
@@ -95,20 +134,35 @@
       copilotAuth = await copilotAuthStatus();
       if (copilotAuth?.authenticated) { copilotModels = await copilotListModels(); }
       else { copilotNeedsLogin = true; }
-    } catch (e: any) { copilotError = String(e); copilotNeedsLogin = true; }
+    } catch (e: any) { console.error("CopilotTab: retry auth failed:", e); copilotError = String(e); copilotNeedsLogin = true; }
     finally { copilotLoading = false; }
   }
 
   async function refreshModels() {
     copilotLoading = true; copilotError = '';
-    try { copilotModels = await copilotListModels(); } catch (e: any) { copilotError = String(e); }
+    try { copilotModels = await copilotListModels(); } catch (e: any) { console.error("CopilotTab: refresh models failed:", e); copilotError = String(e); }
     finally { copilotLoading = false; }
   }
 
   async function disconnect() {
     copilotLoading = true;
-    try { await copilotStop(); copilotInitialized = false; copilotAuth = null; copilotModels = []; copilotNeedsLogin = false; copilotAutoConnectArmed = false; }
-    catch (e: any) { copilotError = String(e); } finally { copilotLoading = false; }
+    try { await copilotDisconnect(); copilotInitialized = false; copilotAuth = null; copilotModels = []; copilotNeedsLogin = false; copilotAutoConnectArmed = false; }
+    catch (e: any) { console.error("CopilotTab: disconnect failed:", e); copilotError = String(e); } finally { copilotLoading = false; }
+  }
+
+  async function reconnect() {
+    copilotLoading = true; copilotError = ''; copilotNeedsNode = false; copilotNeedsLogin = false;
+    try {
+      await copilotRestart();
+      copilotInitialized = true;
+      copilotAuth = await copilotAuthStatus();
+      if (copilotAuth?.authenticated) { copilotModels = await copilotListModels(); }
+      else { copilotNeedsLogin = true; }
+    } catch (e: any) {
+      console.error("CopilotTab: reconnect failed:", e);
+      copilotInitialized = false;
+      copilotError = String(e);
+    } finally { copilotLoading = false; }
   }
 
   function openAddModal() {
@@ -137,28 +191,40 @@
     const trimmedName = modalName.trim();
     const trimmedText = modalText.trim();
     if (!trimmedName || !trimmedText) return;
-    if (modalEditId) {
-      await updateEnhancerTemplate(modalEditId, trimmedName, trimmedText);
-    } else {
-      await addEnhancerTemplate(trimmedName, trimmedText);
+    try {
+      if (modalEditId) {
+        await updateEnhancerTemplate(modalEditId, trimmedName, trimmedText);
+      } else {
+        await addEnhancerTemplate(trimmedName, trimmedText);
+      }
+      enhancerTemplates = await getEnhancerTemplates();
+      closeModal();
+      await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
+    } catch (e) {
+      console.error("CopilotTab: failed to save enhancer template:", e);
     }
-    enhancerTemplates = await getEnhancerTemplates();
-    closeModal();
-    await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
   }
 
   async function confirmDelete(id: string) {
-    await deleteEnhancerTemplate(id);
-    enhancerTemplates = await getEnhancerTemplates();
-    deleteConfirmId = null;
-    await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
+    try {
+      await deleteEnhancerTemplate(id);
+      enhancerTemplates = await getEnhancerTemplates();
+      deleteConfirmId = null;
+      await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
+    } catch (e) {
+      console.error("CopilotTab: failed to delete enhancer template:", e);
+    }
   }
 
   async function handleResetTemplates() {
-    enhancerTemplates = await resetEnhancerTemplates();
-    copilotSelectedEnhancer = "";
-    resetConfirm = false;
-    await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
+    try {
+      enhancerTemplates = await resetEnhancerTemplates();
+      copilotSelectedEnhancer = "";
+      resetConfirm = false;
+      await emit(EVENT_ENHANCER_TEMPLATES_UPDATED);
+    } catch (e) {
+      console.error("CopilotTab: failed to reset enhancer templates:", e);
+    }
   }
 </script>
 
@@ -245,6 +311,7 @@
 
       <div style="margin-top: 12px; display: flex; gap: 8px;">
         <button type="button" class="toggle-btn" onclick={refreshModels}>Refresh Models</button>
+        <button type="button" class="toggle-btn" onclick={reconnect}>Reconnect</button>
         <button type="button" class="toggle-btn" onclick={disconnect}>Disconnect</button>
       </div>
     {/if}
