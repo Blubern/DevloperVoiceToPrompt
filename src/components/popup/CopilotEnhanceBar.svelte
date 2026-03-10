@@ -16,6 +16,7 @@
     type CopilotAuthStatus,
     type CopilotModel,
   } from "../../lib/copilotStore";
+  import { resolveSavedCopilotModel } from "../../lib/copilotSelection";
   import {
     getEnhancerTemplates,
     type EnhancerTemplate,
@@ -93,9 +94,7 @@
             copilotModels = await copilotListModels();
             if (stale) return;
             copilotStatus = 'connected';
-            if (settings.copilot_selected_model && copilotModels.some(m => m.id === settings.copilot_selected_model)) {
-              copilotSelectedModel = settings.copilot_selected_model;
-            }
+            copilotSelectedModel = resolveSavedCopilotModel(settings.copilot_selected_model, copilotModels);
           } else {
             copilotStatus = 'error';
             copilotError = 'Not signed in to GitHub Copilot';
@@ -123,6 +122,20 @@
       copilotError = '';
     }
     return () => { stale = true; };
+  });
+
+  // Keep the popup dropdown in sync with saved settings after the initial
+  // connection sequence has already completed.
+  $effect(() => {
+    const savedModelId = settings.copilot_selected_model;
+    const connected = copilotStatus === 'connected';
+    const syncedModelId = connected
+      ? resolveSavedCopilotModel(savedModelId, copilotModels)
+      : "";
+
+    if (copilotSelectedModel !== syncedModelId) {
+      copilotSelectedModel = syncedModelId;
+    }
   });
 
   // Listen to enhancer-templates-updated from Settings
