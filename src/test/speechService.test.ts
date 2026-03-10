@@ -24,6 +24,7 @@ import {
   AzureSpeechProvider,
   WhisperSpeechProvider,
 } from "../lib/speechService";
+import { clearTrace, getTraceEntries, setTracingEnabled } from "../lib/speechTraceStore";
 import type { AppSettings } from "../lib/settingsStore";
 
 // ---------------------------------------------------------------------------
@@ -608,5 +609,144 @@ describe("WhisperSpeechProvider stop with pending lastInterim", () => {
 
     // skipFlush skips the final flush entirely
     expect(callbacks.onFinal).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WhisperSpeechProvider — microphone lifecycle trace events
+// ---------------------------------------------------------------------------
+
+describe("WhisperSpeechProvider microphone trace events", () => {
+  beforeEach(() => {
+    clearTrace();
+    setTracingEnabled(true);
+  });
+
+  afterEach(() => {
+    clearTrace();
+    setTracingEnabled(false);
+  });
+
+  it("traces microphone mute, unmute, and ended events from the media track", () => {
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const track = {
+      enabled: true,
+      readyState: "live",
+      onmute: null,
+      onunmute: null,
+      onended: null,
+    } as unknown as MediaStreamTrack;
+
+    (provider as any).mediaStream = {
+      getAudioTracks: () => [track],
+    } as MediaStream;
+
+    (provider as any)._attachMicTrackListeners();
+
+    track.onmute?.(new Event("mute"));
+    track.onunmute?.(new Event("unmute"));
+    track.onended?.(new Event("ended"));
+
+    const entries = getTraceEntries();
+    expect(entries.some((entry) => entry.event === "mic:muted")).toBe(true);
+    expect(entries.some((entry) => entry.event === "mic:unmuted")).toBe(true);
+    expect(entries.some((entry) => entry.event === "mic:ended")).toBe(true);
+  });
+
+  it("clears track listeners during teardown so manual stop does not emit mic ended", () => {
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const stop = vi.fn();
+    const track = {
+      enabled: true,
+      readyState: "live",
+      onmute: vi.fn(),
+      onunmute: vi.fn(),
+      onended: vi.fn(),
+      stop,
+    } as unknown as MediaStreamTrack;
+
+    (provider as any).mediaStream = {
+      getAudioTracks: () => [track],
+      getTracks: () => [track],
+    } as MediaStream;
+    (provider as any).micTrack = track;
+
+    (provider as any)._syncTeardown();
+
+    expect(track.onmute).toBeNull();
+    expect(track.onunmute).toBeNull();
+    expect(track.onended).toBeNull();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it("traces the requested stop reason", async () => {
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    (provider as any).callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+    (provider as any).running = false;
+    (provider as any).sessionChunks = [];
+    (provider as any).sessionSampleCount = 0;
+
+    await provider.stop(true, "user-toggle");
+
+    expect(
+      getTraceEntries().some(
+        (entry) => entry.event === "session:stop-requested" && entry.detail.includes("reason=user-toggle"),
+      ),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider event contract — session vs mic lifecycle
+// ---------------------------------------------------------------------------
+
+describe("Provider trace event contract", () => {
+  beforeEach(() => {
+    clearTrace();
+    setTracingEnabled(true);
+  });
+
+  afterEach(() => {
+    clearTrace();
+    setTracingEnabled(false);
+    vi.restoreAllMocks();
+  });
+
+  it("OsSpeechProvider emits session stop request without fake mic lifecycle events", async () => {
+    const provider = new OsSpeechProvider("en-US", true, 3);
+    const stop = vi.fn();
+    const addEventListener = vi.fn((_event: string, handler: () => void) => {
+      handler();
+    });
+    const removeEventListener = vi.fn();
+
+    (provider as any).recognition = {
+      addEventListener,
+      removeEventListener,
+      stop,
+    };
+
+    await provider.stop(false, "user-toggle");
+
+    const events = getTraceEntries().map((entry) => entry.event);
+    expect(events).toContain("session:stop-requested");
+    expect(events).not.toContain("mic:stopping");
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it("AzureSpeechProvider emits session stop request without fake mic lifecycle events", async () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    (provider as any).recognizer = null;
+
+    await provider.stop(false, "dismiss");
+
+    const entries = getTraceEntries();
+    expect(entries.some((entry) => entry.event === "session:stop-requested" && entry.detail.includes("reason=dismiss"))).toBe(true);
+    expect(entries.some((entry) => entry.event.startsWith("mic:"))).toBe(false);
   });
 });

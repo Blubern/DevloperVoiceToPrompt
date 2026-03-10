@@ -516,7 +516,7 @@
         traceEvent("warn", "popup:maxRecording", `Auto-stopped after ${settings.max_recording_seconds}s max recording time`);
         silenceMessage = `Auto-stopped after ${settings.max_recording_seconds}s max recording time`;
         silenceMessageFading = false;
-        await stopAndRecordUsage();
+        await stopAndRecordUsage(false, "max-recording-timeout");
         setTimeout(() => {
           silenceMessageFading = true;
           setTimeout(() => { silenceMessage = ""; silenceMessageFading = false; }, 500);
@@ -533,7 +533,7 @@
         traceEvent("warn", "popup:silence", `Auto-paused after ${timeout}s of silence`);
         silenceMessage = `Auto-paused after ${timeout}s of silence`;
         silenceMessageFading = false;
-        await stopAndRecordUsage();
+        await stopAndRecordUsage(false, "silence-timeout");
         setTimeout(() => {
           silenceMessageFading = true;
           setTimeout(() => { silenceMessage = ""; silenceMessageFading = false; }, 500);
@@ -542,10 +542,10 @@
     }
   }
 
-  async function stopAndRecordUsage(skipFlush = false) {
-    traceEvent("info", "popup:stop", `stopAndRecordUsage (skipFlush=${skipFlush}, segments=${finalSegments.length}, interim=${interimText.length} chars)`);
+  async function stopAndRecordUsage(skipFlush = false, reason = "unspecified") {
+    traceEvent("info", "popup:stop", `reason=${reason}, skipFlush=${skipFlush}, segments=${finalSegments.length}, interim=${interimText.length} chars`);
     if (activeProvider) {
-      await activeProvider.stop(skipFlush);
+      await activeProvider.stop(skipFlush, reason);
       activeProvider.dispose();
       activeProvider = null;
     }
@@ -576,7 +576,7 @@
     toggling = true;
     try {
     if (status === "listening") {
-      await stopAndRecordUsage();
+      await stopAndRecordUsage(false, "user-toggle");
       return;
     }
 
@@ -650,6 +650,7 @@
         traceEvent("info", "popup:status", `${status} → ${s}`);
         status = s;
         if (s === "listening") {
+          traceEvent("info", "popup:mic-start", `provider=${settings.speech_provider}, device=${settings.microphone_device_id || "default"}`);
           sessionStartTime = Date.now();
           resetSilenceTimer();
           startMaxRecordingTimer();
@@ -772,7 +773,7 @@
     showEnhanceToast = false;
     if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
     if (status === "listening") {
-      await stopAndRecordUsage();
+      await stopAndRecordUsage(false, "copy-and-close");
     }
     // If open via MCP, send the result back to the caller
     if (mcpRequest !== null) {
@@ -789,7 +790,7 @@
 
   async function dismiss() {
     if (status === "listening") {
-      await stopAndRecordUsage();
+      await stopAndRecordUsage(false, "dismiss");
     }
     // If we were opened by an MCP call, cancel it so the caller gets an error
     if (mcpRequest !== null) {
@@ -1037,7 +1038,7 @@
     try {
       // Stop mic first if recording
       if (status === 'listening') {
-        await stopAndRecordUsage();
+        await stopAndRecordUsage(false, "enhance");
       }
       const text = editedText.trim();
       if (!text) return;

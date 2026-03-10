@@ -6,6 +6,13 @@ import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 import type { SpeechCallbacks, SpeechProvider } from "./types";
 import { traceEvent } from "../speechTraceStore";
 
+// Event coverage:
+// - session:start / session:stop-requested / session:stopped
+// - result:interim / result:final plus Azure-specific reconciliation diagnostics
+// - transport:connected / transport:disconnected
+// Azure browser SDK owns microphone input internally, so session events are
+// authoritative but mic:* hardware lifecycle events are not.
+
 const MAX_AUTO_RESTARTS = 5;
 
 // Shorter segmentation → more frequent final results → less text at risk per
@@ -75,9 +82,10 @@ export class AzureSpeechProvider implements SpeechProvider {
     this.createAndStartRecognizer(true);
   }
 
-  stop(): Promise<void> {
+  stop(_skipFlush = false, reason = "unspecified"): Promise<void> {
     this.intentionallyStopped = true;
     this.clearSpeechEndTimer();
+    traceEvent("info", "session:stop-requested", `Azure Speech stop requested (reason=${reason})`);
     return new Promise((resolve) => {
       if (this.recognizer) {
         this.recognizer.stopContinuousRecognitionAsync(() => resolve(), () => resolve());
@@ -151,10 +159,10 @@ export class AzureSpeechProvider implements SpeechProvider {
     try {
       const conn = sdk.Connection.fromRecognizer(rec);
       conn.connected = () => {
-        traceEvent("info", "ws-connected", "WebSocket connected");
+        traceEvent("info", "transport:connected", "WebSocket connected");
       };
       conn.disconnected = () => {
-        traceEvent("warn", "ws-disconnected", "WebSocket disconnected");
+        traceEvent("warn", "transport:disconnected", "WebSocket disconnected");
       };
     } catch { /* Connection API may not be available in all SDK builds */ }
 
@@ -191,7 +199,7 @@ export class AzureSpeechProvider implements SpeechProvider {
 
       this.lastInterimText = newText;
       this.lastInterimTimestamp = now;
-      traceEvent("event", "recognizing", `interim (${newText.length} chars): ${newText.slice(0, 80)}${newText.length > 80 ? "…" : ""}`);
+      traceEvent("event", "result:interim", `interim (${newText.length} chars): ${newText.slice(0, 80)}${newText.length > 80 ? "…" : ""}`);
       cb.onInterim(newText);
     };
 
@@ -229,7 +237,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         // Reset restart budget on every successful recognition so long
         // sessions don't exhaust the limit.
         this.restartCount = 0;
-        traceEvent("data", "recognized", `final (${finalText.length} chars): ${finalText.slice(0, 120)}${finalText.length > 120 ? "…" : ""}`);
+        traceEvent("data", "result:final", `final (${finalText.length} chars): ${finalText.slice(0, 120)}${finalText.length > 120 ? "…" : ""}`);
         // Log interim vs recognized comparison for text-loss diagnosis
         if (interim.length > 0 && recognized.length !== interim.length) {
           const delta = recognized.length - interim.length;
@@ -278,7 +286,7 @@ export class AzureSpeechProvider implements SpeechProvider {
     rec.sessionStopped = () => {
       traceEvent(
         "event",
-        "sessionStopped",
+        "session:stopped",
         `intentional=${this.intentionallyStopped}, restarts=${this.restartCount}, pending interim=${this.lastInterimText.length} chars`,
       );
       this.clearSpeechEndTimer();
@@ -294,19 +302,19 @@ export class AzureSpeechProvider implements SpeechProvider {
       // degraded state where events stop firing.
       if (this.restartCount < MAX_AUTO_RESTARTS) {
         this.restartCount++;
-        traceEvent("info", "auto-restart", `Restart #${this.restartCount}/${MAX_AUTO_RESTARTS}`);
+        traceEvent("info", "session:auto-restart", `Restart #${this.restartCount}/${MAX_AUTO_RESTARTS}`);
         this.disposeRecognizer();
         this.createAndStartRecognizer(false);
         return;
       }
 
-      traceEvent("warn", "max-restarts", "Max auto-restarts reached, giving up");
+      traceEvent("warn", "session:max-restarts", "Max auto-restarts reached, giving up");
       cb.onStatusChange("idle");
     };
 
     rec.startContinuousRecognitionAsync(
       () => {
-        traceEvent("info", "started", `Recognition started (initial=${isInitialStart})`);
+        traceEvent("info", "session:start", `Azure Speech session started (initial=${isInitialStart}, lang=${this.languages[0] || "en-US"}, device=${this.microphoneDeviceId || "default"})`);
         if (isInitialStart) cb.onStatusChange("listening");
       },
       (err) => {

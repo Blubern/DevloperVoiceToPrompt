@@ -9,7 +9,7 @@ export interface SpeechTraceEntry {
   time: string;
   /** Trace level */
   level: "info" | "warn" | "event" | "data";
-  /** Short event label, e.g. "recognizing", "recognized", "sessionStopped" */
+  /** Short event label, e.g. "session:start", "result:final", "mic:muted" */
   event: string;
   /** Detail message */
   detail: string;

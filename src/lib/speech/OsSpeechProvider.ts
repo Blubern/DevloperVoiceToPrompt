@@ -6,6 +6,13 @@ import type { SpeechCallbacks, SpeechProvider } from "./types";
 import { getSpeechRecognitionCtor } from "./speechHelpers";
 import { traceEvent } from "../speechTraceStore";
 
+// Event coverage:
+// - session:start / session:stop-requested / session:stopped
+// - result:interim / result:final
+// - session:auto-restart / session:restart-failed
+// Web Speech does not expose MediaStreamTrack lifecycle, so it does not emit
+// authoritative mic:muted / mic:unmuted / mic:ended events.
+
 export class OsSpeechProvider implements SpeechProvider {
   private recognition: SpeechRecognition | null = null;
   private callbacks: SpeechCallbacks | null = null;
@@ -47,10 +54,10 @@ export class OsSpeechProvider implements SpeechProvider {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         if (result.isFinal) {
-          traceEvent("data", "recognized", `final (${result[0].transcript.length} chars): ${result[0].transcript.slice(0, 120)}${result[0].transcript.length > 120 ? "…" : ""}`);
+          traceEvent("data", "result:final", `final (${result[0].transcript.length} chars): ${result[0].transcript.slice(0, 120)}${result[0].transcript.length > 120 ? "…" : ""}`);
           callbacks.onFinal(result[0].transcript);
         } else {
-          traceEvent("event", "recognizing", `interim (${result[0].transcript.length} chars): ${result[0].transcript.slice(0, 80)}${result[0].transcript.length > 80 ? "…" : ""}`);
+          traceEvent("event", "result:interim", `interim (${result[0].transcript.length} chars): ${result[0].transcript.slice(0, 80)}${result[0].transcript.length > 80 ? "…" : ""}`);
           callbacks.onInterim(result[0].transcript);
         }
       }
@@ -68,30 +75,30 @@ export class OsSpeechProvider implements SpeechProvider {
     rec.onend = () => {
       if (this.recognition !== rec) return; // stale instance
       if (this.intentionallyStopped) {
-        traceEvent("event", "sessionStopped", "Intentional stop");
+        traceEvent("event", "session:stopped", "Intentional stop");
         callbacks.onStatusChange("idle");
         return;
       }
       // Auto-restart logic
       if (this.autoRestart && this.restartCount < this.maxRestarts) {
         this.restartCount++;
-        traceEvent("info", "auto-restart", `Restart #${this.restartCount}/${this.maxRestarts}`);
+        traceEvent("info", "session:auto-restart", `Restart #${this.restartCount}/${this.maxRestarts}`);
         try {
           rec.start();
         } catch {
-          traceEvent("warn", "restart-failed", "Failed to restart recognition");
+          traceEvent("warn", "session:restart-failed", "Failed to restart recognition");
           callbacks.onStatusChange("idle");
         }
         return;
       }
-      traceEvent("event", "sessionStopped", `No more restarts (${this.restartCount}/${this.maxRestarts})`);
+      traceEvent("event", "session:stopped", `No more restarts (${this.restartCount}/${this.maxRestarts})`);
       callbacks.onStatusChange("idle");
     };
 
     this.recognition = rec;
     try {
       rec.start();
-      traceEvent("info", "started", `OS Speech started (lang=${this.language})`);
+      traceEvent("info", "session:start", `OS Speech session started (lang=${this.language})`);
       callbacks.onStatusChange("listening");
     } catch (err) {
       traceEvent("warn", "start-failed", `Failed to start: ${String(err)}`);
@@ -100,9 +107,10 @@ export class OsSpeechProvider implements SpeechProvider {
     }
   }
 
-  stop(): Promise<void> {
+  stop(_skipFlush = false, reason = "unspecified"): Promise<void> {
     return new Promise((resolve) => {
       this.intentionallyStopped = true;
+      traceEvent("info", "session:stop-requested", `OS Speech stop requested (reason=${reason})`);
       if (this.recognition) {
         const onEnd = () => {
           clearTimeout(timeout);

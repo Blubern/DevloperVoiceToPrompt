@@ -31,6 +31,6 @@ export interface EnumerateResult {
 
 export interface SpeechProvider {
   start(callbacks: SpeechCallbacks): void;
-  stop(skipFlush?: boolean): Promise<void>;
+  stop(skipFlush?: boolean, reason?: string): Promise<void>;
   dispose(): void;
 }

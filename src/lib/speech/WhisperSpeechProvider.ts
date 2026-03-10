@@ -16,6 +16,13 @@ import {
   uint8ToBase64,
 } from "./whisperHelpers";
 
+// Event coverage:
+// - session:start / session:stop-requested
+// - result:interim / result:final plus Whisper-specific flush diagnostics
+// - mic:started / mic:muted / mic:unmuted / mic:ended
+// Whisper owns the MediaStream directly, so mic:* events represent real track
+// lifecycle rather than inferred session state.
+
 // ---------------------------------------------------------------------------
 // Cached AudioWorklet blob URL — reused across all WhisperSpeechProvider instances.
 // ---------------------------------------------------------------------------
@@ -56,6 +63,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
   private callbacks: SpeechCallbacks | null = null;
   private audioContext: AudioContext | null = null;
   private mediaStream: MediaStream | null = null;
+  private micTrack: MediaStreamTrack | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
 
@@ -142,6 +150,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
       },
     };
     this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+    this._attachMicTrackListeners();
 
     try {
       this.audioContext = new AudioContext({ sampleRate: 16000 });
@@ -177,7 +186,14 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.workletNode.connect(this.audioContext.destination); // required for processing
 
       callbacks.onStatusChange("listening");
-      traceEvent("info", "started", `Whisper started (model=${this.modelName}, lang=${this.language}, interval=${this.decodeIntervalSeconds}s)`);
+      traceEvent("info", "session:start", `Whisper session started (model=${this.modelName}, lang=${this.language}, interval=${this.decodeIntervalSeconds}s)`);
+      if (this.micTrack) {
+        traceEvent(
+          "info",
+          "mic:started",
+          `Whisper microphone active (device=${this.microphoneDeviceId || "default"}, enabled=${this.micTrack.enabled}, readyState=${this.micTrack.readyState})`,
+        );
+      }
 
       // Fire an eager first decode after 500 ms so the user sees text quickly,
       // then switch to the regular cadence.
@@ -196,6 +212,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     } catch (err) {
       // Clean up media stream on failure to prevent mic leak
       if (this.mediaStream) {
+        this._detachMicTrackListeners();
         this.mediaStream.getTracks().forEach((t) => t.stop());
         this.mediaStream = null;
       }
@@ -340,7 +357,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.stabilityHits = result.newStabilityHits;
 
     if (result.shouldCommit) {
-      traceEvent("data", "recognized", `final (${text.length} chars, stability=${WHISPER_STABILITY_COUNT}): ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`);
+      traceEvent("data", "result:final", `final (${text.length} chars, stability=${WHISPER_STABILITY_COUNT}): ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`);
       this.callbacks.onFinal(text);
       this.callbacks.onInterim?.("");
       this.committedSamples = windowEndSample;
@@ -349,15 +366,16 @@ export class WhisperSpeechProvider implements SpeechProvider {
       this.stabilityHits = 0;
       this._compactChunks();
     } else {
-      traceEvent("event", "recognizing", `interim (${text.length} chars, hits=${result.newStabilityHits}/${WHISPER_STABILITY_COUNT}): ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`);
+      traceEvent("event", "result:interim", `interim (${text.length} chars, hits=${result.newStabilityHits}/${WHISPER_STABILITY_COUNT}): ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`);
       this.callbacks.onInterim(text);
     }
   }
 
   // ----- lifecycle -----
 
-  async stop(skipFlush = false): Promise<void> {
+  async stop(skipFlush = false, reason = "unspecified"): Promise<void> {
     this.running = false;
+    traceEvent("info", "session:stop-requested", `Whisper stop requested (reason=${reason}, skipFlush=${skipFlush})`);
     if (this.decodeTimer) {
       clearInterval(this.decodeTimer);
       this.decodeTimer = null;
@@ -474,6 +492,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.workletNode = null;
     this.sourceNode?.disconnect();
     this.sourceNode = null;
+    this._detachMicTrackListeners();
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((t) => t.stop());
       this.mediaStream = null;
@@ -487,6 +506,30 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.stabilityHits = 0;
     this.decoding = false;
     this.pendingDecode = false;
+  }
+
+  private _attachMicTrackListeners(): void {
+    const track = this.mediaStream?.getAudioTracks()[0] ?? null;
+    this.micTrack = track;
+    if (!track) return;
+
+    track.onmute = () => {
+      traceEvent("warn", "mic:muted", `Whisper microphone muted (readyState=${track.readyState})`);
+    };
+    track.onunmute = () => {
+      traceEvent("info", "mic:unmuted", `Whisper microphone unmuted (readyState=${track.readyState})`);
+    };
+    track.onended = () => {
+      traceEvent("warn", "mic:ended", `Whisper microphone track ended (readyState=${track.readyState})`);
+    };
+  }
+
+  private _detachMicTrackListeners(): void {
+    if (!this.micTrack) return;
+    this.micTrack.onmute = null;
+    this.micTrack.onunmute = null;
+    this.micTrack.onended = null;
+    this.micTrack = null;
   }
 
   /** Async AudioContext close — fire-and-forget safe. */
