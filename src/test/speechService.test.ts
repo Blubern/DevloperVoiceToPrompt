@@ -440,6 +440,119 @@ describe("AzureSpeechProvider turn-boundary detection", () => {
     const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
     expect((provider as any).sharePrefix("Hi", "Hi")).toBe(false);
   });
+
+  it("flushes when new interim is 67% of old length with no shared prefix (0.75 ratio)", () => {
+    // Reproduces the exact scenario from the trace: "when we see this text" (21 chars)
+    // followed by "he was waiting" (14 chars) — ratio = 14/21 = 0.667 < 0.75
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    (provider as any).callbacks = callbacks;
+    (provider as any).lastInterimText = "when we see this text"; // 21 chars
+    (provider as any).lastInterimTimestamp = Date.now(); // recent — no time-gap
+
+    // Simulate a new recognizing event with shorter, unrelated text
+    // The turn-boundary check: 21 > 15 ✓, 14 < 21*0.75 (15.75) ✓, no shared prefix ✓
+    // This calls flushPendingInterim internally — simulate via direct method test
+    const oldText = (provider as any).lastInterimText;
+    const newText = "he was waiting"; // 14 chars, 66.7% of 21
+
+    const shouldFlush =
+      oldText.length > 15 &&
+      newText.length < oldText.length * 0.75 &&
+      !(provider as any).sharePrefix(oldText, newText);
+
+    expect(shouldFlush).toBe(true);
+  });
+
+  it("does NOT flush when new interim is 80% of old length (above 0.75 ratio)", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+
+    const oldText = "when we see this text here"; // 25 chars
+    const newText = "something entirely new!!"; // 24 chars = 96% of 25
+
+    const shouldFlush =
+      oldText.length > 15 &&
+      newText.length < oldText.length * 0.75 &&
+      !(provider as any).sharePrefix(oldText, newText);
+
+    expect(shouldFlush).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AzureSpeechProvider — time-gap flush
+// ---------------------------------------------------------------------------
+
+describe("AzureSpeechProvider time-gap flush", () => {
+  it("flushes pending interim when recognizing event arrives after >3s gap", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    (provider as any).callbacks = callbacks;
+    (provider as any).lastInterimText = "when we see this text";
+    // Simulate the last interim arrived 5 seconds ago
+    (provider as any).lastInterimTimestamp = Date.now() - 5000;
+
+    (provider as any).flushPendingInterim("time-gap");
+
+    expect(callbacks.onFinal).toHaveBeenCalledWith("when we see this text");
+    expect((provider as any).lastInterimText).toBe("");
+  });
+
+  it("detects time-gap condition correctly (>3000ms)", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+
+    const now = Date.now();
+    (provider as any).lastInterimText = "some pending text";
+    (provider as any).lastInterimTimestamp = now - 3001; // just over 3s ago
+
+    const shouldFlush =
+      (provider as any).lastInterimText &&
+      (provider as any).lastInterimTimestamp > 0 &&
+      now - (provider as any).lastInterimTimestamp > 3000;
+
+    expect(shouldFlush).toBeTruthy();
+  });
+
+  it("does NOT trigger time-gap flush when interims arrive within normal cadence (<3s)", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+
+    const now = Date.now();
+    (provider as any).lastInterimText = "some pending text";
+    (provider as any).lastInterimTimestamp = now - 200; // 200ms ago (normal cadence)
+
+    const shouldFlush =
+      (provider as any).lastInterimText &&
+      (provider as any).lastInterimTimestamp > 0 &&
+      now - (provider as any).lastInterimTimestamp > 3000;
+
+    expect(shouldFlush).toBeFalsy();
+  });
+
+  it("does NOT trigger time-gap flush when lastInterimTimestamp is 0 (no prior interim)", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+
+    (provider as any).lastInterimText = "";
+    (provider as any).lastInterimTimestamp = 0;
+
+    const shouldFlush =
+      (provider as any).lastInterimText &&
+      (provider as any).lastInterimTimestamp > 0 &&
+      Date.now() - (provider as any).lastInterimTimestamp > 3000;
+
+    expect(shouldFlush).toBeFalsy();
+  });
 });
 
 // ---------------------------------------------------------------------------

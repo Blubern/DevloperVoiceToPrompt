@@ -17,6 +17,17 @@ const SEGMENTATION_SILENCE_MS = "800";
 // long utterances significantly, which looks like text loss to the user.
 const INTERIM_PREFER_RATIO = 0.5;
 
+// If a new recognizing event arrives more than this many ms after the last
+// one, flush the previous interim as a final segment.  The JS browser SDK
+// does not reliably honor Speech_SegmentationSilenceTimeoutMs (confirmed by
+// Microsoft Q&A and multiple SDK bug reports), so this client-side gap
+// detection is the primary safety net against interim text loss.
+const TIME_GAP_FLUSH_MS = 3000;
+
+// When a new interim is shorter than this fraction of the previous interim
+// AND shares no common prefix, treat it as a turn boundary and flush.
+const TURN_BOUNDARY_RATIO = 0.75;
+
 export class AzureSpeechProvider implements SpeechProvider {
   private recognizer: sdk.SpeechRecognizer | null = null;
   private audioConfig: sdk.AudioConfig | null = null;
@@ -25,6 +36,7 @@ export class AzureSpeechProvider implements SpeechProvider {
   private restartCount = 0;
   private lastResultId: string | null = null;
   private lastInterimText = "";
+  private lastInterimTimestamp = 0;
   private speechEndTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -54,6 +66,7 @@ export class AzureSpeechProvider implements SpeechProvider {
     this.restartCount = 0;
     this.lastResultId = null;
     this.lastInterimText = "";
+    this.lastInterimTimestamp = 0;
 
     this.audioConfig = this.microphoneDeviceId
       ? sdk.AudioConfig.fromMicrophoneInput(this.microphoneDeviceId)
@@ -95,11 +108,16 @@ export class AzureSpeechProvider implements SpeechProvider {
 
     const speechConfig = sdk.SpeechConfig.fromSubscription(this.key, this.region);
 
-    // Both timeouts must exceed the app's own silence timer so the SDK never
-    // kills the session before the app does.  Add a 15 s buffer (minimum 60 s).
+    // InitialSilenceTimeoutMs: if only silence is heard at session start, the
+    // SDK gives up after this duration.  Must exceed the app's own silence
+    // timer so the SDK never kills the session first.  Note: the JS browser
+    // SDK does not always honor this reliably (see TIME_GAP_FLUSH_MS).
     const sdkTimeoutMs = String(Math.max(60000, (this.silenceTimeoutSeconds + 15) * 1000));
     speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, sdkTimeoutMs);
-    speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, sdkTimeoutMs);
+    // EndSilenceTimeoutMs is deprecated in the JS SDK and unreliable — omitted.
+    // Speech_SegmentationSilenceTimeoutMs: hint for turn splitting.  The JS
+    // browser SDK does not reliably honor this; TIME_GAP_FLUSH_MS is the
+    // client-side backstop.
     speechConfig.setProperty("Speech_SegmentationSilenceTimeoutMs", SEGMENTATION_SILENCE_MS);
 
     // Enable dictation mode for better punctuation, capitalization, and
@@ -145,6 +163,18 @@ export class AzureSpeechProvider implements SpeechProvider {
     rec.recognizing = (_s, e) => {
       this.clearSpeechEndTimer();
       const newText = e.result.text;
+      const now = Date.now();
+
+      // Time-gap flush: if the previous interim arrived more than
+      // TIME_GAP_FLUSH_MS ago, the SDK failed to emit a finalization
+      // event during the silence gap — flush the old interim as final.
+      if (
+        this.lastInterimText &&
+        this.lastInterimTimestamp > 0 &&
+        now - this.lastInterimTimestamp > TIME_GAP_FLUSH_MS
+      ) {
+        this.flushPendingInterim("time-gap");
+      }
 
       // Detect turn boundary: Azure started a new recognition turn WITHOUT
       // firing a `recognized` event for the previous one.  This happens when
@@ -153,13 +183,14 @@ export class AzureSpeechProvider implements SpeechProvider {
       // shorter AND shares no common prefix → flush old as final segment.
       if (
         this.lastInterimText.length > 15 &&
-        newText.length < this.lastInterimText.length * 0.6 &&
+        newText.length < this.lastInterimText.length * TURN_BOUNDARY_RATIO &&
         !this.sharePrefix(this.lastInterimText, newText)
       ) {
         this.flushPendingInterim("turn-boundary");
       }
 
       this.lastInterimText = newText;
+      this.lastInterimTimestamp = now;
       traceEvent("event", "recognizing", `interim (${newText.length} chars): ${newText.slice(0, 80)}${newText.length > 80 ? "…" : ""}`);
       cb.onInterim(newText);
     };
@@ -194,6 +225,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         }
 
         this.lastInterimText = "";
+        this.lastInterimTimestamp = 0;
         // Reset restart budget on every successful recognition so long
         // sessions don't exhaust the limit.
         this.restartCount = 0;
