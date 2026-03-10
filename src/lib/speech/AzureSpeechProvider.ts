@@ -156,12 +156,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         newText.length < this.lastInterimText.length * 0.6 &&
         !this.sharePrefix(this.lastInterimText, newText)
       ) {
-        traceEvent(
-          "warn",
-          "turn-boundary",
-          `Flushing lost turn (${this.lastInterimText.length} chars) before new interim (${newText.length} chars). Lost: "${this.lastInterimText.slice(0, 100)}${this.lastInterimText.length > 100 ? "…" : ""}"`,
-        );
-        cb.onFinal(this.lastInterimText);
+        this.flushPendingInterim("turn-boundary");
       }
 
       this.lastInterimText = newText;
@@ -217,13 +212,8 @@ export class AzureSpeechProvider implements SpeechProvider {
         const noMatchDetail = sdk.NoMatchDetails.fromResult(e.result);
         const reason = sdk.NoMatchReason[noMatchDetail.reason] ?? String(noMatchDetail.reason);
         if (this.lastInterimText) {
-          traceEvent(
-            "warn",
-            "nomatch-flush",
-            `NoMatch (${reason}) — flushing interim (${this.lastInterimText.length} chars): ${this.lastInterimText.slice(0, 100)}${this.lastInterimText.length > 100 ? "…" : ""}`,
-          );
-          cb.onFinal(this.lastInterimText);
-          this.lastInterimText = "";
+          traceEvent("info", "nomatch", `NoMatch (${reason}) — flushing pending interim`);
+          this.flushPendingInterim("nomatch");
         } else {
           traceEvent("event", "nomatch", `NoMatch (${reason}) — no pending interim`);
         }
@@ -237,11 +227,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         cb.onStatusChange("error");
       } else if (e.reason === sdk.CancellationReason.EndOfStream) {
         traceEvent("info", "canceled", "EndOfStream — audio input ended");
-        // Flush pending interim before session ends
-        if (this.lastInterimText) {
-          cb.onFinal(this.lastInterimText);
-          this.lastInterimText = "";
-        }
+        this.flushPendingInterim("endofstream");
       }
     };
 
@@ -252,16 +238,8 @@ export class AzureSpeechProvider implements SpeechProvider {
       if (this.lastInterimText) {
         this.clearSpeechEndTimer();
         this.speechEndTimer = setTimeout(() => {
-          if (this.lastInterimText) {
-            traceEvent(
-              "warn",
-              "speechEnd-flush",
-              `Timeout — flushing interim (${this.lastInterimText.length} chars): ${this.lastInterimText.slice(0, 100)}${this.lastInterimText.length > 100 ? "…" : ""}`,
-            );
-            cb.onFinal(this.lastInterimText);
-            this.lastInterimText = "";
-          }
-        }, 2000);
+          this.flushPendingInterim("speechEnd-timeout");
+        }, 1200);
       }
     };
 
@@ -272,12 +250,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         `intentional=${this.intentionallyStopped}, restarts=${this.restartCount}, pending interim=${this.lastInterimText.length} chars`,
       );
       this.clearSpeechEndTimer();
-
-      // Flush any pending interim text as a final segment so it isn't lost.
-      if (this.lastInterimText) {
-        cb.onFinal(this.lastInterimText);
-        this.lastInterimText = "";
-      }
+      this.flushPendingInterim("sessionStopped");
 
       if (this.intentionallyStopped) {
         cb.onStatusChange("idle");
@@ -332,6 +305,15 @@ export class AzureSpeechProvider implements SpeechProvider {
     if (this.speechEndTimer) {
       clearTimeout(this.speechEndTimer);
       this.speechEndTimer = null;
+    }
+  }
+
+  /** Flush pending interim text as a final segment, if any. */
+  private flushPendingInterim(source: string): void {
+    if (this.lastInterimText && this.callbacks) {
+      traceEvent("warn", `flush-${source}`, `Flushing interim (${this.lastInterimText.length} chars): ${this.lastInterimText.slice(0, 100)}${this.lastInterimText.length > 100 ? "\u2026" : ""}`);
+      this.callbacks.onFinal(this.lastInterimText);
+      this.lastInterimText = "";
     }
   }
 

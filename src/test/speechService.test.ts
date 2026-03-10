@@ -327,3 +327,173 @@ describe("WhisperSpeechProvider start()", () => {
     expect((provider as any).running).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AzureSpeechProvider — flushPendingInterim helper
+// ---------------------------------------------------------------------------
+
+describe("AzureSpeechProvider flushPendingInterim", () => {
+  it("calls onFinal and clears lastInterimText when interim is pending", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    // Set up internal state via any cast
+    (provider as any).callbacks = callbacks;
+    (provider as any).lastInterimText = "pending speech";
+
+    // Call the private method
+    (provider as any).flushPendingInterim("test-source");
+
+    expect(callbacks.onFinal).toHaveBeenCalledWith("pending speech");
+    expect((provider as any).lastInterimText).toBe("");
+  });
+
+  it("does nothing when no interim text is pending", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    (provider as any).callbacks = callbacks;
+    (provider as any).lastInterimText = "";
+
+    (provider as any).flushPendingInterim("test-source");
+
+    expect(callbacks.onFinal).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when callbacks is null", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    (provider as any).callbacks = null;
+    (provider as any).lastInterimText = "orphaned text";
+
+    // Should not throw
+    (provider as any).flushPendingInterim("test-source");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AzureSpeechProvider — speechEnd timeout (1.2s)
+// ---------------------------------------------------------------------------
+
+describe("AzureSpeechProvider speechEnd timeout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("flushes pending interim after 1200ms speechEnd timeout", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    (provider as any).callbacks = callbacks;
+    (provider as any).lastInterimText = "hello world";
+
+    // Simulate speechEndDetected handler setting the timeout
+    (provider as any).speechEndTimer = setTimeout(() => {
+      (provider as any).flushPendingInterim("speechEnd-timeout");
+    }, 1200);
+
+    // Not yet flushed at 1199ms
+    vi.advanceTimersByTime(1199);
+    expect(callbacks.onFinal).not.toHaveBeenCalled();
+
+    // Flushed at 1200ms
+    vi.advanceTimersByTime(1);
+    expect(callbacks.onFinal).toHaveBeenCalledWith("hello world");
+    expect((provider as any).lastInterimText).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AzureSpeechProvider — turn-boundary flush heuristic
+// ---------------------------------------------------------------------------
+
+describe("AzureSpeechProvider turn-boundary detection", () => {
+  it("sharePrefix returns true for matching prefix", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    expect((provider as any).sharePrefix("Hello world test", "Hello world")).toBe(true);
+  });
+
+  it("sharePrefix returns false for non-matching prefix", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    expect((provider as any).sharePrefix("The quick brown fox", "Another sentence")).toBe(false);
+  });
+
+  it("sharePrefix returns false for very short strings", () => {
+    const provider = new AzureSpeechProvider("key", "westus", ["en-US"], 30);
+    expect((provider as any).sharePrefix("Hi", "Hi")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WhisperSpeechProvider — stop() with pending lastInterim
+// ---------------------------------------------------------------------------
+
+describe("WhisperSpeechProvider stop with pending lastInterim", () => {
+  it("promotes lastInterim to final even if stability threshold not met", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    // Mock whisper_load_model to fail (we don't need actual init)
+    vi.mocked(invoke).mockRejectedValue(new Error("not needed"));
+
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    // Set internal state to simulate mid-recording with pending interim
+    (provider as any).callbacks = callbacks;
+    (provider as any).running = false; // Already stopped
+    (provider as any).lastInterim = "unstable speech";
+    (provider as any).sessionChunks = [];
+    (provider as any).sessionSampleCount = 0;
+    (provider as any).committedSamples = 0;
+    (provider as any).decoding = false;
+
+    await provider.stop();
+
+    // The stop-safety net should have promoted lastInterim
+    expect(callbacks.onFinal).toHaveBeenCalledWith("unstable speech");
+    expect((provider as any).lastInterim).toBe("");
+  });
+
+  it("does not promote lastInterim on skipFlush=true", async () => {
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const callbacks = {
+      onInterim: vi.fn(),
+      onFinal: vi.fn(),
+      onError: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+
+    (provider as any).callbacks = callbacks;
+    (provider as any).running = false;
+    (provider as any).lastInterim = "should be discarded";
+    (provider as any).sessionChunks = [];
+    (provider as any).sessionSampleCount = 0;
+
+    await provider.stop(true);
+
+    // skipFlush skips the final flush entirely
+    expect(callbacks.onFinal).not.toHaveBeenCalled();
+  });
+});

@@ -66,11 +66,16 @@
 
   // Track user's edited text separately from speech output
   let editedText = $state("");
-  let userHasEdited = $state(false);
   let lastSyncedSegmentCount = $state(0);
 
   // Cursor position tracking for insert-at-cursor during dictation
   let cursorPosition = $state(0);
+
+  // Dictation anchor: position in editedText where speech inserts and ghost overlay renders
+  let dictationAnchor = $state(0);
+
+  // Ghost overlay scroll sync
+  let ghostScrollTop = $state(0);
 
   // Usage tracking: record start time of current recognition session
   let sessionStartTime: number | null = null;
@@ -114,7 +119,7 @@
   let showCopiedToast = $state(false);
 
   // Undo clear
-  let undoSnapshot: { segments: string[]; text: string; wasEdited: boolean; syncCount: number } | null = $state(null);
+  let undoSnapshot: { segments: string[]; text: string; syncCount: number } | null = $state(null);
   let showUndoToast = $state(false);
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -229,42 +234,25 @@
     return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
+  // Insert new final segments at the dictation anchor.
+  // editedText never contains interim — interim is shown in the ghost overlay.
   $effect(() => {
     const segmentCount = finalSegments.length;
-    const currentInterim = interimText;
-
-    if (!userHasEdited) {
-      const oldText = editedText;
-      editedText =
-        finalSegments.join(" ") +
-        (currentInterim ? (segmentCount ? " " : "") + currentInterim : "");
-      cursorPosition = editedText.length;
-      lastSyncedSegmentCount = segmentCount;
-      if (oldText !== editedText) {
-        const delta = editedText.length - oldText.length;
-        traceEvent("data", "popup:rebuild", `segments=${segmentCount}, interim=${currentInterim.length} chars | old=${oldText.length} → new=${editedText.length} chars (${delta >= 0 ? "+" : ""}${delta})`);
-        // Detect visible text loss: user-visible text got shorter
-        if (editedText.length < oldText.length && oldText.length > 0) {
-          const lost = oldText.length - editedText.length;
-          // Find what text disappeared
-          const oldEnd = oldText.slice(-Math.min(lost + 30, oldText.length));
-          const newEnd = editedText.slice(-Math.min(30, editedText.length));
-          traceEvent("warn", "⚠ TEXT-LOSS", `Visible text shrank by ${lost} chars! old=${oldText.length} → new=${editedText.length} | old tail: "${oldEnd}" | new tail: "${newEnd}"`);
-        }
-      }
-    } else if (segmentCount > lastSyncedSegmentCount) {
+    if (segmentCount > lastSyncedSegmentCount) {
       const newSegments = finalSegments.slice(lastSyncedSegmentCount);
       if (newSegments.length > 0) {
         const addition = newSegments.join(" ");
-        const pos = cursorPosition;
+        const pos = dictationAnchor;
         const before = editedText.slice(0, pos);
         const after = editedText.slice(pos);
         const needsSpace = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n");
         const insertText = (needsSpace ? " " : "") + addition;
         const oldText = editedText;
         editedText = before + insertText + after;
-        cursorPosition = pos + insertText.length;
-        traceEvent("data", "popup:insert", `${newSegments.length} new segment(s) at cursor ${pos} | +${insertText.length} chars | old=${oldText.length} → new=${editedText.length} chars`);
+        const newAnchor = pos + insertText.length;
+        dictationAnchor = newAnchor;
+        cursorPosition = newAnchor;
+        traceEvent("data", "popup:insert", `${newSegments.length} new segment(s) at anchor ${pos} | +${insertText.length} chars | old=${oldText.length} → new=${editedText.length} chars`);
       }
       lastSyncedSegmentCount = segmentCount;
     }
@@ -273,7 +261,7 @@
   // Restore cursor position and scroll after reactive text updates during recording
   $effect(() => {
     const _ = editedText;
-    if (textareaEl && status === "listening" && userHasEdited) {
+    if (textareaEl && status === "listening") {
       const savedScroll = textareaEl.scrollTop;
       const savedCursor = cursorPosition;
       const savedLen = editedText.length;
@@ -303,11 +291,12 @@
     }
   });
 
-  // Track if user scrolled up manually
+  // Track if user scrolled up manually + sync ghost overlay scroll
   function handleTextareaScroll() {
     if (!textareaEl) return;
     const { scrollTop, scrollHeight, clientHeight } = textareaEl;
     userScrolledUp = scrollHeight - scrollTop - clientHeight > 30;
+    ghostScrollTop = scrollTop;
   }
 
   // Elapsed timer for recording state
@@ -453,9 +442,16 @@
   function handleTextInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
     const oldLen = editedText.length;
+    // Commit-on-edit: promote pending interim to final before applying edit
+    if (interimText) {
+      traceEvent("info", "popup:commit-on-edit", `Promoting interim (${interimText.length} chars) to final before user edit`);
+      finalSegments = [...finalSegments, interimText];
+      interimText = "";
+      lastSyncedSegmentCount = finalSegments.length;
+    }
     editedText = target.value;
-    userHasEdited = true;
     cursorPosition = target.selectionStart;
+    dictationAnchor = target.selectionStart;
     traceEvent("event", "popup:userEdit", `User typed | old=${oldLen} chars → new=${editedText.length} chars`);
     // Typing counts as user activity — reset the silence timer so it
     // doesn't auto-stop recording while the user is actively editing.
@@ -467,6 +463,7 @@
   function handleCursorChange() {
     if (textareaEl) {
       cursorPosition = textareaEl.selectionStart;
+      dictationAnchor = textareaEl.selectionStart;
     }
   }
 
@@ -552,6 +549,13 @@
       activeProvider.dispose();
       activeProvider = null;
     }
+    // Commit-on-stop: promote any remaining interim after provider stop
+    if (interimText) {
+      traceEvent("info", "popup:commit-on-stop", `Promoting leftover interim (${interimText.length} chars) to final after stop`);
+      finalSegments = [...finalSegments, interimText];
+      interimText = "";
+      lastSyncedSegmentCount = finalSegments.length;
+    }
     status = "idle";
     clearSilenceTimer();
     clearMaxRecordingTimer();
@@ -612,6 +616,8 @@
     }
     interimText = "";
     lastSyncedSegmentCount = finalSegments.length;
+    // Reset dictation anchor to end of text so new speech appends
+    dictationAnchor = editedText.length;
     userScrolledUp = false;
 
     const provider = createSpeechProvider(settings);
@@ -696,7 +702,6 @@
       undoSnapshot = {
         segments: [...finalSegments],
         text: editedText,
-        wasEdited: userHasEdited,
         syncCount: lastSyncedSegmentCount,
       };
       showUndoToast = true;
@@ -710,9 +715,9 @@
     finalSegments = [];
     interimText = "";
     editedText = "";
-    userHasEdited = false;
     lastSyncedSegmentCount = 0;
     cursorPosition = 0;
+    dictationAnchor = 0;
     userScrolledUp = false;
     // Clear enhancement undo stack
     enhanceUndoStack = [];
@@ -725,8 +730,8 @@
     traceEvent("info", "popup:undoClear", `Restored | old=0 chars → new=${undoSnapshot.text.length} chars, ${undoSnapshot.segments.length} segments`);
     finalSegments = undoSnapshot.segments;
     editedText = undoSnapshot.text;
-    userHasEdited = true;
     lastSyncedSegmentCount = undoSnapshot.syncCount;
+    dictationAnchor = undoSnapshot.text.length;
     undoSnapshot = null;
     showUndoToast = false;
     if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
@@ -851,7 +856,7 @@
   function insertHistoryEntry(text: string) {
     traceEvent("info", "popup:history", `Inserted from history | old=${editedText.length} chars → new=${text.length} chars`);
     editedText = text;
-    userHasEdited = true;
+    dictationAnchor = text.length;
     historyOpen = false;
   }
 
@@ -874,9 +879,9 @@
   function selectTemplate(t: PromptTemplate) {
     traceEvent("info", "popup:template", `Applied template | old=${editedText.length} chars → new=${t.text.length} chars`);
     editedText = t.text.replace(/\r\n/g, "\n");
-    userHasEdited = true;
     templatesOpen = false;
     cursorPosition = editedText.length;
+    dictationAnchor = editedText.length;
   }
 
   async function saveAsTemplate(name: string) {
@@ -991,9 +996,9 @@
       finalSegments = [];
       interimText = "";
       editedText = event.payload.context_input ?? "";
-      userHasEdited = !!event.payload.context_input;
       lastSyncedSegmentCount = 0;
       cursorPosition = editedText.length;
+      dictationAnchor = editedText.length;
 
       focusTextareaAtEnd();
     }).then((fn) => { unlisten = fn; });
@@ -1018,7 +1023,7 @@
     traceEvent("info", "popup:undoEnhance", `Undo enhancement | old=${editedText.length} chars → restored=${restored.length} chars`);
     editedText = restored;
     enhanceUndoStack = enhanceUndoStack.slice(0, -1);
-    userHasEdited = true;
+    dictationAnchor = restored.length;
     showEnhanceToast = false;
     if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
   }
@@ -1045,7 +1050,7 @@
       enhanceUndoStack = [...enhanceUndoStack, editedText];
       traceEvent("data", "popup:enhance", `Copilot enhanced | old=${editedText.length} chars → new=${result.length} chars`);
       editedText = result;
-      userHasEdited = true;
+      dictationAnchor = result.length;
       // Show enhancement toast
       showEnhanceToast = true;
       if (enhanceToastTimer) clearTimeout(enhanceToastTimer);
@@ -1327,6 +1332,16 @@
           disabled={enhancing}
           style="font-family: {popupFontFamily}"
         ></textarea>
+
+        <!-- Ghost overlay: shows interim speech text + blinking voice cursor -->
+        {#if status === "listening" || interimText}
+          <div class="ghost-overlay" aria-hidden="true">
+            <div
+              class="ghost-overlay-inner"
+              style="font-family: {popupFontFamily}; transform: translateY(-{ghostScrollTop}px)"
+            ><span class="ghost-prefix">{editedText.slice(0, dictationAnchor)}</span><span class="voice-cursor" class:active={status === "listening"}></span>{#if interimText}<span class="ghost-interim">{interimText}</span>{/if}</div>
+          </div>
+        {/if}
 
         <!-- Enhancing overlay -->
         {#if enhancing}
@@ -1958,6 +1973,64 @@
 
   textarea::placeholder {
     color: var(--text-muted);
+  }
+
+  /* ---- Ghost Overlay (interim speech text + voice cursor) ---- */
+  .ghost-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 2;
+    border-radius: 8px;
+    /* Match textarea border offset */
+    border: 1px solid transparent;
+  }
+
+  .ghost-overlay-inner {
+    /* Mirror textarea typography exactly */
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 10px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    width: 100%;
+    box-sizing: border-box;
+    /* Account for mic float padding */
+    padding-right: 28px;
+  }
+
+  .ghost-prefix {
+    visibility: hidden;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .voice-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    vertical-align: text-bottom;
+    background: var(--recording);
+    opacity: 0;
+  }
+
+  .voice-cursor.active {
+    opacity: 1;
+    animation: voiceCursorBlink 1s step-end infinite;
+  }
+
+  @keyframes voiceCursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .ghost-interim {
+    color: var(--text-muted);
+    opacity: 0.6;
+    font-style: italic;
   }
 
   /* ---- Error Bar ---- */

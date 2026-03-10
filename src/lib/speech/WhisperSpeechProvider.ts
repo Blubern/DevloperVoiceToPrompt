@@ -391,6 +391,14 @@ export class WhisperSpeechProvider implements SpeechProvider {
       new Promise<void>((r) => setTimeout(r, 500)),
     ]);
 
+    // Final safety net after flush timeout: promote any remaining lastInterim
+    if (this.lastInterim && this.callbacks) {
+      traceEvent("warn", "stop-safety", `Promoting leftover interim after stop (${this.lastInterim.length} chars): ${this.lastInterim.slice(0, 100)}`);
+      this.callbacks.onFinal(this.lastInterim);
+      this.callbacks.onInterim?.("");
+      this.lastInterim = "";
+    }
+
     await this._cleanup();
     this.callbacks?.onStatusChange("idle");
   }
@@ -425,10 +433,19 @@ export class WhisperSpeechProvider implements SpeechProvider {
           traceEvent("data", "flush-final", `final flush (${newText.length} chars): ${newText.slice(0, 120)}${newText.length > 120 ? "…" : ""}`);
           this.callbacks.onFinal(newText);
           this.callbacks.onInterim?.("");
+          this.lastInterim = "";
         }
       }
     } catch {
       // Swallow errors on final flush — we're stopping anyway.
+    }
+    // Safety net: if lastInterim still has content that never hit stability,
+    // promote it as final so it isn't lost.
+    if (this.lastInterim && this.callbacks) {
+      traceEvent("warn", "flush-safety", `Promoting unstable interim (${this.lastInterim.length} chars): ${this.lastInterim.slice(0, 100)}`);
+      this.callbacks.onFinal(this.lastInterim);
+      this.callbacks.onInterim?.("");
+      this.lastInterim = "";
     }
   }
 
