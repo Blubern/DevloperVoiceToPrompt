@@ -619,7 +619,7 @@ fn first_existing_path(paths: impl IntoIterator<Item = PathBuf>) -> Option<PathB
 fn brew_prefix_candidates() -> Vec<PathBuf> {
     let mut prefixes = Vec::new();
 
-    for args in [["--prefix", "whisper-cpp"], ["--prefix"]] {
+    for args in [&["--prefix", "whisper-cpp"] as &[&str], &["--prefix"]] {
         if let Ok(output) = std::process::Command::new("brew").args(args).output() {
             if output.status.success() {
                 let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
