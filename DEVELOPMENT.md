@@ -34,7 +34,7 @@ This document covers local setup, build requirements, troubleshooting, and the h
 | `tauri-plugin-clipboard-manager` | Clipboard backend |
 | `tauri-plugin-store` | JSON-based persistence |
 | `tauri-plugin-process` | Process lifecycle support |
-| `whisper-rs` | Local Whisper transcription |
+| `zip` | ZIP extraction for CLI binary management |
 | `serde` / `serde_json` | Serialization |
 
 ## Prerequisites
@@ -43,7 +43,6 @@ This document covers local setup, build requirements, troubleshooting, and the h
 | --- | --- |
 | Node.js 18+ | Frontend toolchain |
 | Rust toolchain | Backend compilation |
-| LLVM | Required for `whisper-rs-sys` bindgen |
 | Windows: VS Build Tools 2022+ | Required C++ toolchain for linking |
 
 ## Windows Setup
@@ -54,7 +53,6 @@ Install these dependencies before trying to run `npx tauri dev`:
 | --- | --- | --- | --- |
 | Node.js LTS | Yes | `winget install OpenJS.NodeJS.LTS` | https://nodejs.org/ |
 | Rust toolchain (`rustup`) | Yes | `winget install Rustlang.Rustup` | https://rustup.rs/ |
-| LLVM | Yes | `winget install LLVM.LLVM` | https://llvm.org/ |
 | Visual Studio 2022 Build Tools | Yes | `winget install Microsoft.VisualStudio.2022.BuildTools` | https://visualstudio.microsoft.com/downloads/ |
 
 After installing Visual Studio Build Tools, open the Visual Studio Installer and make sure the `Desktop development with C++` workload is installed. The Rust linker step for Tauri will fail without it.
@@ -66,12 +64,6 @@ node --version
 npm --version
 rustc --version
 cargo --version
-```
-
-Install LLVM on Windows with:
-
-```powershell
-winget install LLVM.LLVM
 ```
 
 ## Getting Started
@@ -97,7 +89,6 @@ cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxilia
         [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
     }
 }
-$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
 ```
 
 4. Start the app in development mode.
@@ -146,8 +137,8 @@ Current test files include:
 │  │ Tray      │  │ Shortcut │  │ local JSON data  │  │
 │  └───────────┘  └──────────┘  └──────────────────┘  │
 │  ┌──────────────────┐  ┌──────────────────────────┐  │
-│  │ Whisper Engine   │  │ Copilot Bridge (Node.js) │  │
-│  │ whisper-rs / CPU │  │ JSON-RPC stdin/stdout    │  │
+│  │ whisper-server   │  │ Copilot Bridge (Node.js) │  │
+│  │ whisper.cpp CLI  │  │ JSON-RPC stdin/stdout    │  │
 │  └──────────────────┘  └──────────────────────────┘  │
 │          IPC commands (invoke / listen)               │
 ├──────────────────────────────────────────────────────┤
@@ -192,7 +183,7 @@ Current test files include:
 | Prompt enhancement | `src/lib/copilotStore.ts` |
 | Rust app bootstrap | `src-tauri/src/lib.rs` |
 | Rust settings | `src-tauri/src/settings.rs` |
-| Whisper integration | `src-tauri/src/whisper.rs` |
+| Whisper integration | `src-tauri/src/whisper_cli.rs` |
 | MCP server | `src-tauri/src/mcp.rs` |
 
 ## MCP Notes
@@ -227,7 +218,7 @@ Cause:
 
 Fix:
 
-Run the `vcvarsall.bat` command from the Build Tools install in the same terminal before building, then set `LIBCLANG_PATH`.
+Run the `vcvarsall.bat` command from the Build Tools install in the same terminal before building.
 
 ```powershell
 cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 && set' 2>&1 | ForEach-Object {
@@ -235,7 +226,6 @@ cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxilia
         [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
     }
 }
-$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
 ```
 
 Important:
@@ -264,13 +254,6 @@ If needed, force usage of the local package script:
 ```powershell
 npm run tauri -- dev
 ```
-
-### `LIBCLANG_PATH` not set
-
-If the build fails in `whisper-rs-sys` or bindgen, make sure:
-
-- LLVM is installed
-- `LIBCLANG_PATH` points to `C:\Program Files\LLVM\bin`
 
 ## Build and Style Notes
 

@@ -1,7 +1,7 @@
 use std::fs;
 use tauri::Manager;
 
-use crate::{logging, whisper};
+use crate::{logging, whisper_cli};
 
 /// Returns the app data directory path as a string for display in the UI.
 #[tauri::command]
@@ -37,7 +37,7 @@ pub async fn open_app_data_folder(app: tauri::AppHandle) -> Result<(), String> {
 /// Deletes all downloaded Whisper model (.bin) files without removing the models directory.
 #[tauri::command]
 pub async fn delete_all_whisper_models(app: tauri::AppHandle) -> Result<(), String> {
-    let dir = whisper::models_dir(&app)?;
+    let dir = whisper_cli::models_dir(&app)?;
 
     let entries = fs::read_dir(&dir)
         .map_err(|e| format!("Failed to read models directory: {e}"))?;
@@ -65,6 +65,12 @@ pub async fn wipe_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
     let models_dir = data_dir.join("whisper-models");
     if models_dir.exists() {
         let _ = fs::remove_dir_all(&models_dir);
+    }
+
+    // Remove the Whisper CLI directory (downloaded whisper-server binary)
+    let cli_dir = data_dir.join("whisper-cli");
+    if cli_dir.exists() {
+        let _ = fs::remove_dir_all(&cli_dir);
     }
 
     // Remove all tauri-plugin-store JSON files

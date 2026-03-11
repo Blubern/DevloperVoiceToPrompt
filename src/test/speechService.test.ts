@@ -289,7 +289,7 @@ describe("createSpeechProvider", () => {
 
 describe("WhisperSpeechProvider start()", () => {
   it("does not set running=true before async initialization completes", () => {
-    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1, false);
 
     const callbacks = {
       onInterim: vi.fn(),
@@ -309,7 +309,7 @@ describe("WhisperSpeechProvider start()", () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke).mockRejectedValueOnce(new Error("model not found"));
 
-    const provider = new WhisperSpeechProvider("nonexistent", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("nonexistent", "en", 3, 1, false);
 
     const callbacks = {
       onInterim: vi.fn(),
@@ -563,10 +563,10 @@ describe("AzureSpeechProvider time-gap flush", () => {
 describe("WhisperSpeechProvider stop with pending lastInterim", () => {
   it("promotes lastInterim to final even if stability threshold not met", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
-    // Mock whisper_load_model to fail (we don't need actual init)
+    // Mock invoke to fail (we don't need actual init)
     vi.mocked(invoke).mockRejectedValue(new Error("not needed"));
 
-    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1, false);
     const callbacks = {
       onInterim: vi.fn(),
       onFinal: vi.fn(),
@@ -591,7 +591,7 @@ describe("WhisperSpeechProvider stop with pending lastInterim", () => {
   });
 
   it("does not promote lastInterim on skipFlush=true", async () => {
-    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1, false);
     const callbacks = {
       onInterim: vi.fn(),
       onFinal: vi.fn(),
@@ -628,7 +628,7 @@ describe("WhisperSpeechProvider microphone trace events", () => {
   });
 
   it("traces microphone mute, unmute, and ended events from the media track", () => {
-    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1, false);
     const track = {
       enabled: true,
       readyState: "live",
@@ -654,7 +654,7 @@ describe("WhisperSpeechProvider microphone trace events", () => {
   });
 
   it("clears track listeners during teardown so manual stop does not emit mic ended", () => {
-    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1, false);
     const stop = vi.fn();
     const track = {
       enabled: true,
@@ -680,7 +680,7 @@ describe("WhisperSpeechProvider microphone trace events", () => {
   });
 
   it("traces the requested stop reason", async () => {
-    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1);
+    const provider = new WhisperSpeechProvider("tiny", "en", 3, 1, false);
     (provider as any).callbacks = {
       onInterim: vi.fn(),
       onFinal: vi.fn(),

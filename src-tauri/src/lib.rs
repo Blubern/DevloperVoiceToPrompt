@@ -6,7 +6,7 @@ pub mod logging;
 pub mod mcp;
 pub mod settings;
 mod tray;
-mod whisper;
+mod whisper_cli;
 pub mod window_manager;
 
 // Re-export for use by other modules (e.g., mcp.rs)
@@ -42,7 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
-        .manage(whisper::WhisperState::default())
+        .manage(whisper_cli::WhisperServerState::default())
         .manage(copilot::CopilotState::default())
         .manage(mcp::McpState::default())
         .manage(mcp::McpServerHandle::default())
@@ -56,8 +56,14 @@ pub fn run() {
             commands::whisper_list_models,
             commands::whisper_download_model,
             commands::whisper_delete_model,
-            commands::whisper_load_model,
+            commands::whisper_start_server,
+            commands::whisper_stop_server,
             commands::whisper_transcribe,
+            commands::whisper_check_cli,
+            commands::whisper_detect_gpu,
+            commands::whisper_download_cli,
+            commands::whisper_delete_cli,
+            commands::whisper_server_status,
             copilot::copilot_init,
             copilot::copilot_restart,
             copilot::copilot_is_connected,
@@ -143,9 +149,22 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
             eprintln!("Fatal application error: {e}");
             std::process::exit(1);
+        })
+        .run(|app, event| {
+            // Kill whisper-server on app exit to prevent orphan processes
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<whisper_cli::WhisperServerState>() {
+                    if let Ok(mut guard) = state.lock() {
+                        if let Some(mut proc) = guard.take() {
+                            tracing::info!("Killing whisper-server on app exit");
+                            proc.kill();
+                        }
+                    }
+                }
+            }
         });
 }

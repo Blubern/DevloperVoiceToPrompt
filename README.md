@@ -158,11 +158,13 @@ Choose the engine that matches your workflow.
 | Custom phrase boost | ❌ | ✅ | ✅ |
 | Silence auto-stop | ✅ | ✅ | ✅ |
 | Microphone selection | ✅ | ✅ | ✅ |
+| GPU acceleration | ❌ | ❌ | ✅[^3] |
 | Zero setup | ✅ | ❌ | ❌ |
 | Local offline use | :question:[^2] | ❌ | ✅ |
 
 [^1]: Whisper is not true real-time transcription, so some latency can occur while speaking.
 [^2]: Web Speech can be local or cloud-backed depending on the platform WebView implementation.
+[^3]: CUDA on Windows (download the CUDA variant); Metal on macOS Apple Silicon (via Homebrew).
 
 Azure is especially useful when your spoken language and your technical vocabulary do not match cleanly, for example when you speak one language but say English framework names, class names, or code terms.
 
@@ -196,11 +198,39 @@ That makes it the fastest way to start using the app.
 | Capability | What you need | Why you would use it |
 | --- | --- | --- |
 | Azure Speech | Azure Speech key and region, free tier available | Better speech recognition, punctuation, phrase boosting, multi-language scenarios |
-| Whisper local | Download a model in Settings | Local offline transcription and privacy |
+| Whisper local | Download the whisper-server binary + a model in Settings (see [Whisper Setup](#whisper-setup)) | Local offline transcription, privacy, GPU acceleration |
 | Prompt enhancement | GitHub Copilot CLI installed and logged in, plus a Copilot plan (including free tier). The Full installer bundles Node.js; Lite requires Node.js 20+ separately. | Turn rough dictation into cleaner prompts |
 | MCP voice input | An MCP-capable client running on the same machine | Let AI tools request voice input through the popup |
 
 Without Azure, Whisper, Copilot, or MCP, the app is still useful as a standalone dictation and prompt-template tool.
+
+## Whisper Setup
+
+Whisper runs entirely on your device using [whisper.cpp](https://github.com/ggml-org/whisper.cpp). No data is sent to any cloud service. Setup differs by platform:
+
+### Windows
+
+1. Open **Settings → Speech → Whisper (Local)**.
+2. Click **Detect GPU** to see your hardware and get a recommended binary variant (CPU, OpenBLAS, CUDA 11.8, or CUDA 12.4).
+3. Select the variant and click **Download whisper-server**. The app downloads the pre-built binary from the [whisper.cpp GitHub releases](https://github.com/ggml-org/whisper.cpp/releases).
+4. Download a model (e.g. "Base" for a good balance of speed and accuracy).
+5. Select Whisper as your speech provider and start dictating.
+
+### macOS
+
+Pre-built macOS binaries are not available in whisper.cpp releases. Install via [Homebrew](https://brew.sh/) instead:
+
+```bash
+brew install whisper-cpp
+```
+
+This installs `whisper-server` with Metal acceleration on Apple Silicon. The app detects the Homebrew installation automatically.
+
+Then open Settings, download a model, and select Whisper as your speech provider.
+
+### How It Works
+
+The app manages a local `whisper-server` process that loads the model once and stays running during your dictation session. Audio is captured in the browser via an AudioWorklet, sent to the Rust backend, and forwarded as WAV via HTTP POST to the local server. This keeps the model in memory for fast inference (~50–150ms per decode cycle) without reloading on every request.
 
 ## Downloads
 

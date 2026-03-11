@@ -236,6 +236,29 @@
 .whisper-delete-btn { color: var(--error, #f56c6c) !important; border-color: var(--error, #f56c6c) !important; }
 .whisper-delete-btn:hover { background: rgba(245, 108, 108, 0.1); }
 
+/* Whisper CLI setup */
+.whisper-cli-setup { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.whisper-cli-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.cli-field { display: flex; flex-direction: column; gap: 2px; }
+.cli-label { font-size: 0.8em; color: var(--text-secondary); }
+.cli-field input, .cli-field select { font-size: 0.9em; }
+.gpu-info { padding: 6px 10px; border-radius: 6px; background: var(--bg-secondary, #1e1e1e); }
+.gpu-badge { font-size: 0.85em; color: var(--text-secondary); }
+
+/* Whisper server control bar */
+.server-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.server-status-dot.running { background: #48c78e; box-shadow: 0 0 6px rgba(72, 199, 142, 0.5); }
+.server-status-dot.stopped { background: #888; }
+.server-status-text { font-size: 0.88em; flex: 1; }
+.server-actions { display: flex; gap: 6px; }
+
+/* Whisper setup checklist */
+.whisper-setup-checklist { padding: 10px 14px; border-radius: 6px; background: rgba(62, 142, 208, 0.08); border: 1px solid rgba(62, 142, 208, 0.2); margin-bottom: 4px; }
+.whisper-setup-checklist strong { font-size: 0.88em; color: var(--text-primary); }
+.whisper-setup-checklist ul { list-style: none; padding: 4px 0 0 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.whisper-setup-checklist li { font-size: 0.85em; color: var(--text-secondary); }
+.whisper-setup-checklist li.done { color: #48c78e; }
+
 /* Copilot styles */
 .info-box { background: var(--bg-secondary); border: 1px solid var(--border-color, #333); border-radius: 8px; padding: 12px 16px; margin-top: 8px; }
 .info-box p { margin: 4px 0; }

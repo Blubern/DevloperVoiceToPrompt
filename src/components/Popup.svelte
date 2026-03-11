@@ -74,6 +74,19 @@
   // Dictation anchor: position in editedText where speech inserts and ghost overlay renders
   let dictationAnchor = $state(0);
 
+  // True when the user clicked mid-text and dictation will insert there instead of appending
+  let insertingAtCursor = $derived(status === "listening" && editedText.length > 0 && dictationAnchor < editedText.length);
+
+  // Context snippet for the insert-at-cursor tooltip
+  let insertContextHint = $derived.by(() => {
+    if (!insertingAtCursor) return "";
+    const before = editedText.slice(Math.max(0, dictationAnchor - 20), dictationAnchor).trim();
+    const after = editedText.slice(dictationAnchor, dictationAnchor + 20).trim();
+    const b = before.length > 0 ? `…${before}` : "(start)";
+    const a = after.length > 0 ? `${after}…` : "(end)";
+    return `Inserting between: "${b}" ▸ "${a}"\nClick to resume appending at end.`;
+  });
+
   // Ghost overlay scroll sync
   let ghostScrollTop = $state(0);
 
@@ -464,6 +477,15 @@
     if (textareaEl) {
       cursorPosition = textareaEl.selectionStart;
       dictationAnchor = textareaEl.selectionStart;
+    }
+  }
+
+  function snapAnchorToEnd() {
+    dictationAnchor = editedText.length;
+    cursorPosition = editedText.length;
+    if (textareaEl) {
+      textareaEl.selectionStart = editedText.length;
+      textareaEl.selectionEnd = editedText.length;
     }
   }
 
@@ -1261,6 +1283,11 @@
         <div class="recording-bar">
           <span class="rec-dot"></span>
           <span class="rec-label">Listening...</span>
+          {#if insertingAtCursor}
+            <button type="button" class="insert-at-cursor-badge" onclick={snapAnchorToEnd} title={insertContextHint}>
+              ↳ Inserting at cursor <span class="badge-snap">· End ↵</span>
+            </button>
+          {/if}
           <div class="level-meter">
             <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
           </div>
@@ -1340,7 +1367,7 @@
             <div
               class="ghost-overlay-inner"
               style="font-family: {popupFontFamily}; transform: translateY(-{ghostScrollTop}px)"
-            ><span class="ghost-prefix">{editedText.slice(0, dictationAnchor)}</span><span class="voice-cursor" class:active={status === "listening"}></span>{#if interimText}<span class="ghost-interim">{interimText}</span>{/if}</div>
+            ><span class="ghost-prefix">{editedText.slice(0, dictationAnchor)}</span><span class="voice-cursor" class:active={status === "listening"}></span>{#if interimText}<span class="ghost-interim">{interimText}</span>{/if}{#if dictationAnchor < editedText.length}<span class="ghost-after">{editedText.slice(dictationAnchor)}</span>{/if}</div>
           </div>
         {/if}
 
@@ -1826,6 +1853,27 @@
     color: var(--recording);
   }
 
+  .insert-at-cursor-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 4px;
+    padding: 1px 7px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .insert-at-cursor-badge:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border-color: var(--accent);
+  }
+  .badge-snap { opacity: 0.65; font-size: 10px; }
+
   .level-meter {
     flex: 1;
     height: 6px;
@@ -2032,6 +2080,15 @@
     color: var(--text-muted);
     opacity: 0.6;
     font-style: italic;
+  }
+
+  .ghost-after {
+    color: var(--text-primary);
+    opacity: 0.4;
+    background: var(--bg-primary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
   }
 
   /* ---- Error Bar ---- */

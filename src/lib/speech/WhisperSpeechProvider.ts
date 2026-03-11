@@ -114,6 +114,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     private language: string,
     private decodeIntervalSeconds: number,
     private contextOverlapSeconds: number,
+    private useGpu: boolean,
     private microphoneDeviceId?: string,
     private phraseList?: string[],
   ) {
@@ -134,8 +135,18 @@ export class WhisperSpeechProvider implements SpeechProvider {
   }
 
   private async _startAsync(callbacks: SpeechCallbacks): Promise<void> {
-    // Ensure model is loaded
-    await invoke("whisper_load_model", { modelName: this.modelName });
+    // Verify CLI is installed
+    const cliStatus = await invoke<{ installed: boolean; source: string }>("whisper_check_cli");
+    if (!cliStatus.installed) {
+      throw new Error("whisper-server not installed. Download it from Settings → Speech → Whisper.");
+    }
+
+    // Start whisper-server (idempotent — skips if already running with same model)
+    await invoke("whisper_start_server", {
+      modelName: this.modelName,
+      language: this.language,
+      useGpu: this.useGpu,
+    });
 
     this.running = true;
 
@@ -424,8 +435,16 @@ export class WhisperSpeechProvider implements SpeechProvider {
   /** Flush whatever is in the session buffer as a final transcription. */
   private async _flushFinal(): Promise<void> {
     if (!this.callbacks) return;
-    const start = Math.max(0, this.committedSamples - this.overlapSamples);
-    if (this.sessionSampleCount - start < 1600) return;
+
+    // Only flush NEW audio beyond what's already committed — no overlap.
+    // The flush is the last decode, so there's no next window to bridge to.
+    // Including overlap would re-transcribe already-committed speech and
+    // cause duplication (lastCommittedWords is too narrow to catch it).
+    const start = this.committedSamples;
+    const newSampleCount = this.sessionSampleCount - start;
+
+    // Skip if less than 0.5s of uncommitted audio (nothing meaningful)
+    if (newSampleCount < 8000) return;
 
     const sessionBuffer = this._buildSessionBuffer();
     const samples = sessionBuffer.slice(start);

@@ -1,10 +1,12 @@
-use crate::whisper::{self, WhisperModelInfo, WhisperState, WHISPER_MODELS};
+use crate::whisper_cli::{
+    self, CliStatus, GpuInfo, WhisperModelInfo, WhisperServerState, WHISPER_MODELS,
+};
 
 #[tauri::command]
 pub fn whisper_list_models(app: tauri::AppHandle) -> Result<Vec<WhisperModelInfo>, String> {
     let mut models = Vec::new();
     for (name, label, size_mb) in WHISPER_MODELS {
-        let path = whisper::model_file_path(&app, name)?;
+        let path = whisper_cli::model_file_path(&app, name)?;
         models.push(WhisperModelInfo {
             name: name.to_string(),
             label: label.to_string(),
@@ -16,50 +18,83 @@ pub fn whisper_list_models(app: tauri::AppHandle) -> Result<Vec<WhisperModelInfo
 }
 
 #[tauri::command]
-pub async fn whisper_load_model(
+pub async fn whisper_start_server(
     app: tauri::AppHandle,
-    state: tauri::State<'_, WhisperState>,
+    state: tauri::State<'_, WhisperServerState>,
     model_name: String,
+    language: String,
+    use_gpu: bool,
 ) -> Result<(), String> {
-    tracing::info!(model = %model_name, "Loading Whisper model");
-    let path = whisper::model_file_path(&app, &model_name)?;
-    if !path.exists() {
+    tracing::info!(model = %model_name, "Starting whisper-server");
+
+    let model_path = whisper_cli::model_file_path(&app, &model_name)?;
+    if !model_path.exists() {
         return Err(format!(
             "Model '{}' not downloaded. Please download it first.",
             model_name
         ));
     }
 
-    // Check if already loaded (quick lock)
+    let server_path = whisper_cli::server_executable_path(&app)?;
+
+    // Check if already running with same model (idempotent)
     {
         let guard = state.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-        if let Some(engine) = guard.as_ref() {
-            if engine.model_name() == model_name {
+        if let Some(proc) = guard.as_ref() {
+            if proc.model_name == model_name {
+                tracing::info!(model = %model_name, port = proc.port, "Server already running with same model");
                 return Ok(());
             }
         }
     }
 
-    // Load model on a blocking thread (CPU-intensive)
-    let path_clone = path.clone();
-    let name_clone = model_name.clone();
-    let engine = tokio::task::spawn_blocking(move || {
-        whisper::WhisperEngine::load(&path_clone, &name_clone)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {e}"))??;
+    // Stop old server if running with different model
+    {
+        let mut guard = state.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        if let Some(mut proc) = guard.take() {
+            tracing::info!(model = %proc.model_name, "Stopping old whisper-server");
+            proc.kill();
+        }
+    }
+
+    let port = whisper_cli::find_available_port()?;
+
+    let process = whisper_cli::start_server(
+        &server_path,
+        &model_path,
+        &model_name,
+        &language,
+        use_gpu,
+        port,
+    )
+    .await?;
 
     let mut guard = state.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-    *guard = Some(engine);
+    *guard = Some(process);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn whisper_stop_server(
+    state: tauri::State<'_, WhisperServerState>,
+) -> Result<(), String> {
+    let taken = {
+        let mut guard = state.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        guard.take()
+    };
+    if let Some(mut proc) = taken {
+        tracing::info!(model = %proc.model_name, port = proc.port, "Stopping whisper-server");
+        proc.kill_and_wait(3000).await;
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn whisper_transcribe(
-    state: tauri::State<'_, WhisperState>,
+    state: tauri::State<'_, WhisperServerState>,
     audio_b64: String,
     sample_rate: u32,
-    language: Option<String>,
+    _language: Option<String>,
     initial_prompt: Option<String>,
 ) -> Result<String, String> {
     // Input validation
@@ -67,8 +102,6 @@ pub async fn whisper_transcribe(
         return Err("Invalid sample rate: must be greater than 0".into());
     }
 
-    // Guard against extreme values that would cause the resampler to allocate
-    // gigabytes of memory (e.g. sample_rate=1 → 16000× input length).
     const MIN_SAMPLE_RATE: u32 = 8_000;
     const MAX_SAMPLE_RATE: u32 = 192_000;
     if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
@@ -108,24 +141,79 @@ pub async fn whisper_transcribe(
         pcm_f32
     };
 
-    // Clone the Arc so we can move it into spawn_blocking
-    let state_clone = state.inner().clone();
-
-    // Transcribe on a blocking thread (CPU-bound)
-    tokio::task::spawn_blocking(move || {
-        let guard = state_clone
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {e}"))?;
-        let engine = guard
+    // Get port from state
+    let port = {
+        let guard = state.lock().map_err(|e| {
+            tracing::error!("Whisper state lock poisoned during transcribe");
+            format!("Lock poisoned: {e}")
+        })?;
+        guard
             .as_ref()
-            .ok_or("No Whisper model loaded. Load a model first.")?;
+            .ok_or_else(|| {
+                tracing::error!("Transcription attempted but whisper-server is not running");
+                "whisper-server not running. Start the server first.".to_string()
+            })?
+            .port
+    };
 
-        let lang = language.as_deref();
-        let prompt = initial_prompt.as_deref();
-        engine.transcribe(&samples, lang, prompt)
+    // Convert to WAV and send to server
+    let wav_bytes = whisper_cli::write_wav_16bit(&samples, 16000);
+    let prompt = initial_prompt.as_deref();
+
+    whisper_cli::transcribe_via_server(port, wav_bytes, prompt).await
+}
+
+#[tauri::command]
+pub fn whisper_check_cli(app: tauri::AppHandle) -> Result<CliStatus, String> {
+    whisper_cli::find_server_executable(&app)
+}
+
+#[tauri::command]
+pub fn whisper_detect_gpu() -> GpuInfo {
+    whisper_cli::detect_gpu()
+}
+
+#[derive(serde::Serialize)]
+pub struct ServerStatus {
+    pub running: bool,
+    pub model_name: Option<String>,
+    pub port: Option<u16>,
+}
+
+#[tauri::command]
+pub fn whisper_server_status(
+    state: tauri::State<'_, WhisperServerState>,
+) -> Result<ServerStatus, String> {
+    let mut guard = state.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+
+    // Check if the process is still alive; clear state if it died unexpectedly
+    let alive = if let Some(proc) = guard.as_mut() {
+        match proc.try_wait() {
+            Ok(Some(status)) => {
+                tracing::warn!(port = proc.port, model = %proc.model_name, ?status, "whisper-server exited unexpectedly");
+                false
+            }
+            Ok(None) => true,  // still running
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+
+    if !alive {
+        // Clear dead process from state
+        if guard.is_some() {
+            *guard = None;
+        }
+        return Ok(ServerStatus { running: false, model_name: None, port: None });
+    }
+
+    let proc = guard.as_ref().unwrap();
+    Ok(ServerStatus {
+        running: true,
+        model_name: Some(proc.model_name.clone()),
+        port: Some(proc.port),
     })
-    .await
-    .map_err(|e| format!("Task join error: {e}"))?
 }
 
 /// Resample `input` from `from_rate` Hz to `to_rate` Hz.
@@ -143,8 +231,6 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     let mut output = Vec::with_capacity(out_len);
 
     if from_rate > to_rate {
-        // Downsampling: average the input samples that fall inside each output
-        // window.  This is a simple rectangular (box) anti-alias filter.
         for i in 0..out_len {
             let src_start = (i as f64 * ratio) as usize;
             let src_end = (((i + 1) as f64 * ratio) as usize).min(input.len());
@@ -157,7 +243,6 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
             output.push(sum / count);
         }
     } else {
-        // Upsampling: linear interpolation between adjacent samples.
         for i in 0..out_len {
             let src_idx = i as f64 * ratio;
             let idx = src_idx as usize;
@@ -192,7 +277,6 @@ mod tests {
 
     #[test]
     fn resample_48k_to_16k_length() {
-        // 48 kHz → 16 kHz is a 3:1 ratio, so output should be ~1/3 the input length.
         let input: Vec<f32> = (0..4800).map(|i| (i as f32).sin()).collect();
         let out = resample(&input, 48000, 16000);
         assert_eq!(out.len(), 1600);
@@ -200,7 +284,6 @@ mod tests {
 
     #[test]
     fn resample_preserves_dc_signal() {
-        // A constant signal should remain constant after resampling.
         let input = vec![0.5_f32; 4800];
         let out = resample(&input, 48000, 16000);
         for &s in &out {

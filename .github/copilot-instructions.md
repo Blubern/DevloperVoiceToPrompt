@@ -1,6 +1,6 @@
 # Developer Voice to Prompt — Copilot Instructions
 
-A Tauri 2 + Svelte 5 desktop dictation app with three speech providers (Web Speech API, Azure Cognitive Services, local Whisper via whisper-rs).
+A Tauri 2 + Svelte 5 desktop dictation app with three speech providers (Web Speech API, Azure Cognitive Services, local Whisper via whisper.cpp server).
 
 ## Architecture
 
@@ -33,7 +33,7 @@ src/                        # Svelte 5 frontend (TypeScript)
       speechHelpers.ts      # Microphone permission, device enumeration, Azure connection test
       OsSpeechProvider.ts   # Web Speech API provider
       AzureSpeechProvider.ts # Azure Cognitive Services provider
-      WhisperSpeechProvider.ts # Local Whisper rolling-window realtime provider
+      WhisperSpeechProvider.ts # Local Whisper rolling-window realtime provider (talks to whisper-server)
     historyStore.ts         # Transcription history CRUD (Tauri store)
     usageStore.ts           # Per-provider usage tracking
     templateStore.ts        # Prompt template CRUD
@@ -58,7 +58,7 @@ src-tauri/                  # Rust backend
     window_manager.rs       # Popup/settings window lifecycle, geometry persistence
     tray.rs                 # System tray icon + menu setup
     settings.rs             # AppSettings serde struct + load/save (single JSON object in store)
-    whisper.rs              # WhisperEngine, model paths, transcription
+    whisper_cli.rs           # WhisperServerProcess, CLI/model paths, WAV writer, GPU detection
     copilot/                # GitHub Copilot bridge (directory module)
       mod.rs                # Tauri command handlers + re-exports
       bridge.rs             # BridgeProcess struct, JSON-RPC protocol, CopilotState
@@ -67,8 +67,8 @@ src-tauri/                  # Rust backend
     commands/               # Tauri IPC command handlers
       mod.rs                # Re-exports
       settings_cmd.rs       # get_settings, save_settings, update_shortcut
-      whisper_cmd.rs        # whisper_load_model, whisper_transcribe, whisper_list_models
-      models.rs             # whisper_download_model, whisper_delete_model
+      whisper_cmd.rs        # whisper_start_server, whisper_stop_server, whisper_transcribe, whisper_check_cli, whisper_detect_gpu
+      models.rs             # whisper_download_model, whisper_delete_model, whisper_download_cli, whisper_delete_cli
       window.rs             # toggle_popup, hide_popup, show_settings
 ```
 
@@ -77,7 +77,7 @@ Two windows: `"main"` (Settings, hidden by default) and `"popup"` (dictation, no
 ## Dev Environment Setup (Windows)
 
 ### Prerequisites
-- Node.js 18+, Rust toolchain (rustup), LLVM (`winget install LLVM.LLVM`)
+- Node.js 18+, Rust toolchain (rustup)
 - VS BuildTools 2022+ with "Desktop development with C++" workload
 
 ### First-time setup
@@ -93,9 +93,8 @@ cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxilia
         [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
     }
 }
-$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
 ```
-> **Why**: Rust's `vswhere` may find a VS Enterprise install that lacks C++ headers. Sourcing `vcvarsall.bat` from BuildTools overrides `PATH`/`LIB`/`INCLUDE`. `LIBCLANG_PATH` is needed by `whisper-rs-sys` (bindgen).
+> **Why**: Rust's `vswhere` may find a VS Enterprise install that lacks C++ headers. Sourcing `vcvarsall.bat` from BuildTools overrides `PATH`/`LIB`/`INCLUDE`.
 
 ### Run in dev mode
 ```powershell
@@ -158,13 +157,13 @@ Output: `src-tauri/target/release/bundle/` (NSIS installer).
 - **Settings**: Single serde struct `AppSettings` in `src-tauri/src/settings.rs` with `#[serde(default)]`. Stored as one JSON object under `"app_settings"` key. Adding a field = add to struct + `Default` impl only.
 - **Commands**: Organized by domain in `src-tauri/src/commands/`. Each file has focused Tauri commands.
 - **Error handling**: Commands return `Result<T, String>`. Use `?` with `.map_err(|e| format!(...))`.
-- **Whisper**: CPU-bound work in `tokio::task::spawn_blocking`. Model names validated against `WHISPER_MODELS` constant to prevent path traversal.
+- **Whisper**: Uses a long-running `whisper-server` child process (from whisper.cpp). Rust manages server lifecycle (start/stop), sends audio via HTTP POST to `localhost:<port>/inference`. Model names validated against `WHISPER_MODELS` constant to prevent path traversal. Server killed on app exit via Drop + RunEvent::Exit handler.
 - **Copilot bridge**: JSON-RPC over stdin/stdout to `copilot-bridge.mjs` (Node.js). 30-second timeout on calls.
 
 ## Pitfalls
 
 - **VS Enterprise vs BuildTools (`msvcrt.lib` linker error)**: Rust's `vswhere` picks Enterprise first but it lacks C++ headers and CRT libraries. This causes `LINK : fatal error LNK1104: cannot open file 'msvcrt.lib'` during `cargo build` / `cargo run` / `npx tauri dev`. Note that `cargo check` still passes because it only compiles without linking. Always source `vcvarsall.bat` from BuildTools **in the same terminal session** before building. The environment variables (`PATH`, `LIB`, `INCLUDE`) do not persist across terminals.
-- **`LIBCLANG_PATH`**: Must be set to `C:\Program Files\LLVM\bin` for `whisper-rs-sys` bindgen. Without it, `cargo build` fails on `whisper-rs-sys`. Install LLVM with `winget install LLVM.LLVM`.
 - **`tauri_plugin_store::StoreExt`**: Must be imported to call `.store()` on `AppHandle`.
 - **Global shortcut `on_shortcut`**: Takes `&str`, not `&String` — use `.as_str()`.
 - **Settings migration**: Old per-field store keys are auto-migrated to single `"app_settings"` object on first load. Both formats work.
+- **whisper-server orphans**: The `WhisperServerProcess` implements `Drop` to kill the child process. Additionally, the `RunEvent::Exit` handler in `lib.rs` explicitly kills the server. If the app crashes without running either, the server may persist as an orphan — this is by design (OS will clean up on reboot).

@@ -49,6 +49,7 @@ export function createSpeechProvider(settings: AppSettings): SpeechProvider {
       settings.whisper_language,
       settings.whisper_decode_interval,
       settings.whisper_context_overlap,
+      settings.whisper_use_gpu,
       settings.microphone_device_id || undefined,
       settings.phrase_list.length > 0 ? settings.phrase_list : undefined,
     );

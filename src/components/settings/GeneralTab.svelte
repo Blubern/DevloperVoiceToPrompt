@@ -72,26 +72,36 @@
 
   // --- Storage & Data section ---
   type WhisperModelInfo = { name: string; label: string; size_mb: number; downloaded: boolean };
+  type CliStatus = { installed: boolean; version: string | null; variant: string | null; source: string; path: string | null };
+  type ServerStatus = { running: boolean; model_name: string | null; port: number | null };
 
   let dataPath = $state<string | null>(null);
   let logPath = $state<string | null>(null);
   let whisperModels = $state<WhisperModelInfo[]>([]);
+  let cliStatus = $state<CliStatus | null>(null);
+  let serverStatus = $state<ServerStatus | null>(null);
   let showDeleteModelsConfirm = $state(false);
   let deletingModels = $state(false);
+  let showDeleteCliConfirm = $state(false);
+  let deletingCli = $state(false);
   let showWipeConfirm = $state(false);
 
   let downloadedModels = $derived(whisperModels.filter(m => m.downloaded));
   let totalModelMb = $derived(downloadedModels.reduce((sum, m) => sum + m.size_mb, 0));
 
   async function loadStorageInfo() {
-    const [path, logs, models] = await Promise.all([
+    const [path, logs, models, cli, server] = await Promise.all([
       invoke<string>('get_app_data_path'),
       invoke<string>('get_log_path'),
       invoke<WhisperModelInfo[]>('whisper_list_models'),
+      invoke<CliStatus>('whisper_check_cli').catch(() => null),
+      invoke<ServerStatus>('whisper_server_status').catch(() => null),
     ]);
     dataPath = path;
     logPath = logs;
     whisperModels = models;
+    cliStatus = cli;
+    serverStatus = server;
   }
 
   $effect(() => {
@@ -412,13 +422,48 @@
       <div class="usage-actions">
         {#if downloadedModels.length > 0}
           <span class="reset-confirm-text">{downloadedModels.length} downloaded ({totalModelMb} MB)</span>
-          <button type="button" class="toggle-btn" onclick={() => (showDeleteModelsConfirm = true)}>Delete All</button>
+          <button type="button" class="toggle-btn" onclick={() => (showDeleteModelsConfirm = true)}
+            disabled={serverStatus?.running === true}
+            title={serverStatus?.running ? 'Stop the server from Speech settings first' : ''}>Delete All</button>
         {:else}
           <span class="reset-confirm-text">No models downloaded</span>
         {/if}
       </div>
     {/if}
-    <span class="hint">Whisper speech recognition models. Can be re-downloaded from the Speech settings.</span>
+    <span class="hint">Whisper speech recognition models. Can be re-downloaded from the Speech settings.{#if serverStatus?.running} Stop the server to delete models.{/if}</span>
+  </div>
+
+  <div class="field">
+    <span class="label">whisper-server Binary</span>
+    {#if showDeleteCliConfirm}
+      <div class="usage-actions">
+        <span class="reset-confirm-text">Delete the downloaded whisper-server binary?</span>
+        <button type="button" class="toggle-btn reset-yes" disabled={deletingCli} onclick={async () => {
+          deletingCli = true;
+          await invoke('whisper_delete_cli');
+          cliStatus = await invoke<CliStatus>('whisper_check_cli').catch(() => null);
+          deletingCli = false;
+          showDeleteCliConfirm = false;
+        }}>{deletingCli ? 'Deleting\u2026' : 'Yes, delete'}</button>
+        <button type="button" class="toggle-btn" onclick={() => (showDeleteCliConfirm = false)}>Cancel</button>
+      </div>
+    {:else}
+      <div class="usage-actions">
+        {#if cliStatus?.installed}
+          <span class="reset-confirm-text">
+            Installed{cliStatus.version ? ` (v${cliStatus.version})` : ''}{cliStatus.variant ? ` \u2014 ${cliStatus.variant}` : ''}{cliStatus.source === 'homebrew' ? ' via Homebrew' : ''}
+          </span>
+          {#if cliStatus.source === 'download'}
+            <button type="button" class="toggle-btn" onclick={() => (showDeleteCliConfirm = true)}
+              disabled={serverStatus?.running === true}
+              title={serverStatus?.running ? 'Stop the server from Speech settings first' : ''}>Delete</button>
+          {/if}
+        {:else}
+          <span class="reset-confirm-text">Not installed</span>
+        {/if}
+      </div>
+    {/if}
+    <span class="hint">The whisper-server binary used for local speech recognition. Install or update from the Speech settings.{#if serverStatus?.running} Stop the server to delete.{/if}</span>
   </div>
 
   <div class="field">

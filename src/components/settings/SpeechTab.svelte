@@ -3,7 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { testAzureConnection, webSpeechAvailable, type AudioDevice } from "../../lib/speechService";
-  import { EVENT_WHISPER_DOWNLOAD_PROGRESS, PROVIDER_AZURE, PROVIDER_WHISPER } from "../../lib/constants";
+  import { EVENT_WHISPER_DOWNLOAD_PROGRESS, EVENT_WHISPER_CLI_DOWNLOAD_PROGRESS, PROVIDER_AZURE, PROVIDER_WHISPER, WHISPER_CLI_VARIANTS, WHISPER_DEFAULT_CLI_VERSION } from "../../lib/constants";
   import { onMount } from "svelte";
 
   let {
@@ -21,6 +21,9 @@
     whisperChunkSeconds = $bindable(),
     whisperDecodeInterval = $bindable(),
     whisperContextOverlap = $bindable(),
+    whisperCliVersion = $bindable(),
+    whisperCliVariant = $bindable(),
+    whisperUseGpu = $bindable(),
     speechTracing = $bindable(),
     audioDevices,
     micWarning,
@@ -40,6 +43,9 @@
     whisperChunkSeconds: number;
     whisperDecodeInterval: number;
     whisperContextOverlap: number;
+    whisperCliVersion: string;
+    whisperCliVariant: string;
+    whisperUseGpu: boolean;
     speechTracing: boolean;
     audioDevices: AudioDevice[];
     micWarning: string;
@@ -62,6 +68,39 @@
   let whisperDownloading = $state<string | null>(null);
   let whisperDownloadProgress = $state(0);
   let whisperDownloadTotal = $state(0);
+
+  // CLI binary state
+  interface CliStatus {
+    installed: boolean;
+    version: string | null;
+    variant: string | null;
+    source: string;
+    path: string | null;
+  }
+  interface GpuInfo {
+    has_nvidia: boolean;
+    gpu_name: string | null;
+    cuda_version: string | null;
+    recommended_variant: string;
+  }
+  let cliStatus = $state<CliStatus | null>(null);
+  let gpuInfo = $state<GpuInfo | null>(null);
+  let cliDownloading = $state(false);
+  let cliDownloadProgress = $state(0);
+  let cliDownloadTotal = $state(0);
+  let gpuDetecting = $state(false);
+
+  // Server status
+  interface ServerStatus {
+    running: boolean;
+    model_name: string | null;
+    port: number | null;
+  }
+  let serverStatus = $state<ServerStatus | null>(null);
+  let serverStarting = $state(false);
+  let serverStopping = $state(false);
+
+  let hasDownloadedModel = $derived(whisperModels.some(m => m.downloaded));
 
   let browserEngine = $derived.by(() => {
     const ua = navigator.userAgent;
@@ -140,7 +179,105 @@
   }
 
   // Load models on mount
-  onMount(() => { refreshWhisperModels(); });
+  onMount(() => {
+    refreshWhisperModels();
+    refreshCliStatus();
+    refreshServerStatus();
+  });
+
+  async function refreshServerStatus() {
+    try { serverStatus = await invoke<ServerStatus>("whisper_server_status"); }
+    catch { serverStatus = null; }
+  }
+
+  async function refreshCliStatus() {
+    try { cliStatus = await invoke<CliStatus>("whisper_check_cli"); }
+    catch { cliStatus = null; }
+  }
+
+  async function detectGpu() {
+    gpuDetecting = true;
+    try {
+      gpuInfo = await invoke<GpuInfo>("whisper_detect_gpu");
+      // Auto-select recommended variant
+      if (gpuInfo?.recommended_variant) {
+        whisperCliVariant = gpuInfo.recommended_variant;
+      }
+    } catch { gpuInfo = null; }
+    finally { gpuDetecting = false; }
+  }
+
+  async function downloadCli() {
+    cliDownloading = true;
+    cliDownloadProgress = 0;
+    cliDownloadTotal = 0;
+    const unlisten = await listen<{ downloaded: number; total: number }>(
+      EVENT_WHISPER_CLI_DOWNLOAD_PROGRESS,
+      (event) => {
+        cliDownloadProgress = event.payload.downloaded;
+        cliDownloadTotal = event.payload.total;
+      }
+    );
+    try {
+      await invoke("whisper_download_cli", { version: whisperCliVersion, variant: whisperCliVariant });
+      await refreshCliStatus();
+      // Auto-enable GPU when downloading a CUDA variant
+      if (whisperCliVariant.startsWith('cuda')) {
+        whisperUseGpu = true;
+      }
+    } catch (e) { error = `CLI download failed: ${e}`; }
+    finally { unlisten(); cliDownloading = false; }
+  }
+
+  async function deleteCli() {
+    try {
+      await invoke("whisper_delete_cli");
+      await refreshCliStatus();
+      await refreshServerStatus();
+    } catch (e) { error = `CLI delete failed: ${e}`; }
+  }
+
+  async function startServer() {
+    serverStarting = true;
+    error = "";
+    try {
+      const selectedModel = whisperModels.find(m => m.name === whisperModel && m.downloaded);
+      if (!selectedModel) { error = "Select a downloaded model first."; return; }
+      await invoke("whisper_start_server", {
+        modelName: whisperModel,
+        language: whisperLanguage,
+        useGpu: whisperUseGpu,
+      });
+      await refreshServerStatus();
+    } catch (e) { error = `Server start failed: ${e}`; }
+    finally { serverStarting = false; }
+  }
+
+  async function stopServer() {
+    serverStopping = true;
+    error = "";
+    try {
+      await invoke("whisper_stop_server");
+      await refreshServerStatus();
+    } catch (e) { error = `Server stop failed: ${e}`; }
+    finally { serverStopping = false; }
+  }
+
+  async function restartServer() {
+    serverStopping = true;
+    serverStarting = true;
+    error = "";
+    try {
+      await invoke("whisper_stop_server");
+      await invoke("whisper_start_server", {
+        modelName: whisperModel,
+        language: whisperLanguage,
+        useGpu: whisperUseGpu,
+      });
+      await refreshServerStatus();
+    } catch (e) { error = `Server restart failed: ${e}`; }
+    finally { serverStopping = false; serverStarting = false; }
+  }
 </script>
 
 <div class="section">
@@ -174,9 +311,137 @@
     </div>
     <div class="notice-content">
       <strong>Local Speech Recognition</strong>
-      <p>Whisper runs entirely on your device using <a href="https://github.com/ggerganov/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via <a href="https://github.com/tazz4843/whisper-rs" target="_blank" rel="noopener noreferrer">whisper-rs</a>. No data is sent to any cloud service. Download a model below to get started.</p>
+      <p>Whisper runs entirely on your device using <a href="https://github.com/ggml-org/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via a local whisper-server process. No data is sent to any cloud service. Download the CLI binary and a model below to get started.</p>
     </div>
   </div>
+
+  {#if !cliStatus?.installed || !hasDownloadedModel}
+  <div class="whisper-setup-checklist">
+    <strong>Setup required</strong>
+    <ul>
+      <li class:done={cliStatus?.installed}>{cliStatus?.installed ? '✓' : '①'} Download the whisper-server binary</li>
+      <li class:done={hasDownloadedModel}>{hasDownloadedModel ? '✓' : '②'} Download at least one model</li>
+    </ul>
+  </div>
+  {/if}
+
+  <!-- CLI Binary Management -->
+  <div class="field">
+    <span class="label">whisper-server Binary</span>
+    {#if cliStatus?.installed}
+      <div class="whisper-model-row">
+        <span class="whisper-model-badge downloaded">
+          Installed{cliStatus.version ? ` (v${cliStatus.version})` : ''}{cliStatus.variant ? ` — ${cliStatus.variant}` : ''}{cliStatus.source === 'homebrew' ? ' via Homebrew' : ''}
+        </span>
+        {#if cliStatus.source === 'download'}
+          <button type="button" class="toggle-btn whisper-delete-btn" onclick={deleteCli}
+            disabled={serverStatus?.running === true}
+            title={serverStatus?.running ? 'Stop the server before removing' : ''}>Remove</button>
+        {/if}
+      </div>
+    {:else if cliDownloading}
+      <div class="whisper-model-row">
+        <span class="whisper-model-badge downloading">
+          {#if cliDownloadTotal > 0}{Math.round(cliDownloadProgress / cliDownloadTotal * 100)}%{:else}Downloading...{/if}
+        </span>
+      </div>
+    {:else}
+      <div class="whisper-cli-setup">
+        <div class="whisper-cli-row">
+          <label class="cli-field">
+            <span class="cli-label">Version</span>
+            <input type="text" bind:value={whisperCliVersion} style="width: 56px;" />
+          </label>
+          <label class="cli-field">
+            <span class="cli-label">Variant</span>
+            <select bind:value={whisperCliVariant}>
+              {#each WHISPER_CLI_VARIANTS as v}
+                <option value={v.id}>
+                  {v.label} ({v.sizeMb} MB)
+                  {#if gpuInfo?.recommended_variant === v.id} ★ Recommended{/if}
+                </option>
+              {/each}
+            </select>
+          </label>
+          <button type="button" class="toggle-btn" onclick={detectGpu} disabled={gpuDetecting}>
+            {gpuDetecting ? 'Detecting...' : 'Detect GPU'}
+          </button>
+        </div>
+        {#if gpuInfo}
+          <div class="gpu-info">
+            {#if gpuInfo.has_nvidia}
+              <span class="gpu-badge">🖥️ {gpuInfo.gpu_name ?? 'NVIDIA GPU'} (Driver: {gpuInfo.cuda_version})</span>
+            {:else if gpuInfo.gpu_name}
+              <span class="gpu-badge">🖥️ {gpuInfo.gpu_name}</span>
+            {:else}
+              <span class="gpu-badge">No dedicated GPU detected — CPU recommended</span>
+            {/if}
+          </div>
+        {/if}
+        <button type="button" class="toggle-btn" onclick={downloadCli}>
+          Download whisper-server (v{whisperCliVersion}, {WHISPER_CLI_VARIANTS.find(v => v.id === whisperCliVariant)?.label ?? whisperCliVariant})
+        </button>
+      </div>
+    {/if}
+    <span class="hint">
+      {#if cliStatus?.installed}whisper-server is ready.{:else}
+        Download the whisper-server binary from <a href="https://github.com/ggml-org/whisper.cpp/releases" target="_blank" rel="noopener noreferrer">whisper.cpp releases</a>.
+        On macOS, you can also install via <code>brew install whisper-cpp</code>.
+      {/if}
+    </span>
+  </div>
+
+  <!-- Server Control Bar -->
+  {#if cliStatus?.installed && hasDownloadedModel}
+  <div class="field">
+    <span class="label">Server</span>
+    <div class="whisper-model-row">
+      {#if serverStatus?.running}
+        <span class="server-status-dot running" title="Running"></span>
+        <span class="server-status-text">Running — {serverStatus.model_name ?? 'unknown'} (port {serverStatus.port})</span>
+      {:else}
+        <span class="server-status-dot stopped" title="Stopped"></span>
+        <span class="server-status-text">Stopped</span>
+      {/if}
+      <div class="server-actions">
+        {#if serverStatus?.running}
+          <button type="button" class="toggle-btn" onclick={stopServer} disabled={serverStopping}>
+            {serverStopping ? 'Stopping…' : 'Stop'}
+          </button>
+          <button type="button" class="toggle-btn" onclick={restartServer} disabled={serverStarting || serverStopping}>
+            {serverStarting ? 'Restarting…' : 'Restart'}
+          </button>
+        {:else}
+          <button type="button" class="toggle-btn" onclick={startServer} disabled={serverStarting}>
+            {serverStarting ? 'Starting…' : 'Start'}
+          </button>
+        {/if}
+      </div>
+    </div>
+    <span class="hint">
+      {#if serverStatus?.running}The server stays running across dictation sessions for fast inference. Stop it to free resources or before deleting files.
+      {:else}Start the server to pre-load the model for faster dictation startup.
+      {/if}
+    </span>
+  </div>
+  {/if}
+
+  <label class="field toggle-field">
+    <span class="label">Use GPU</span>
+    <div class="toggle-row">
+      <input type="checkbox" bind:checked={whisperUseGpu} class="toggle-checkbox"
+        disabled={whisperCliVariant === 'cpu' || whisperCliVariant === 'blas'} />
+      <span class="toggle-label">{whisperUseGpu ? 'On' : 'Off'}</span>
+    </div>
+    <span class="hint">
+      {#if whisperCliVariant === 'cpu' || whisperCliVariant === 'blas'}
+        GPU acceleration requires a CUDA variant. Download a CUDA variant above to enable.
+      {:else}
+        Enable GPU acceleration via CUDA. Requires a compatible NVIDIA GPU.
+      {/if}
+    </span>
+  </label>
+
   <div class="field">
     <span class="label">Model</span>
     <select bind:value={whisperModel}>
@@ -193,7 +458,11 @@
           <span class="whisper-model-name">{m.label}</span>
           {#if m.downloaded}
             <span class="whisper-model-badge downloaded">Downloaded</span>
-            <button type="button" class="toggle-btn whisper-delete-btn" onclick={() => deleteWhisperModel(m.name)}>Delete</button>
+            {#if serverStatus?.running && serverStatus.model_name === m.name}
+              <span class="whisper-model-badge downloading" title="Stop the server to delete this model">In use</span>
+            {:else}
+              <button type="button" class="toggle-btn whisper-delete-btn" onclick={() => deleteWhisperModel(m.name)}>Delete</button>
+            {/if}
           {:else if whisperDownloading === m.name}
             <span class="whisper-model-badge downloading">
               {#if whisperDownloadTotal > 0}{Math.round(whisperDownloadProgress / whisperDownloadTotal * 100)}%{:else}Downloading...{/if}

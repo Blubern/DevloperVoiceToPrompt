@@ -28,6 +28,7 @@ export const EVENT_TEMPLATES_UPDATED = "templates-updated" as const;
 export const EVENT_ENHANCER_TEMPLATES_UPDATED = "enhancer-templates-updated" as const;
 export const EVENT_CHECK_FIRST_RUN = "check-first-run" as const;
 export const EVENT_WHISPER_DOWNLOAD_PROGRESS = "whisper-download-progress" as const;
+export const EVENT_WHISPER_CLI_DOWNLOAD_PROGRESS = "whisper-cli-download-progress" as const;
 export const EVENT_MCP_VOICE_REQUEST = "mcp-voice-request" as const;
 export const EVENT_COPILOT_BRIDGE_STATE = "copilot-bridge-state" as const;
 
@@ -96,6 +97,22 @@ export interface McpVoiceRequest {
 // About section
 export const APP_GITHUB_URL = "https://github.com/Blubern/DevloperVoiceToPrompt";
 
+// Whisper CLI variant definitions (mirror whisper_cli.rs CLI_VARIANTS)
+export interface WhisperCliVariant {
+  id: string;
+  label: string;
+  sizeMb: number;
+}
+
+export const WHISPER_CLI_VARIANTS: WhisperCliVariant[] = [
+  { id: "cpu", label: "CPU", sizeMb: 4 },
+  { id: "blas", label: "OpenBLAS", sizeMb: 16 },
+  { id: "cuda-11.8", label: "CUDA 11.8", sizeMb: 62 },
+  { id: "cuda-12.4", label: "CUDA 12.4", sizeMb: 460 },
+];
+
+export const WHISPER_DEFAULT_CLI_VERSION = "1.8.3";
+
 export interface LibraryInfo {
   name: string;
   description: string;
@@ -109,7 +126,7 @@ export const ABOUT_LIBRARIES: LibraryInfo[] = [
   { name: "Vite", description: "Next-generation frontend build tool", url: "https://github.com/vitejs/vite", category: "Framework" },
   { name: "TypeScript", description: "Typed superset of JavaScript", url: "https://github.com/microsoft/TypeScript", category: "Framework" },
   { name: "Azure Speech SDK", description: "Cloud speech-to-text service", url: "https://github.com/microsoft/cognitive-services-speech-sdk-js", category: "Speech" },
-  { name: "whisper-rs", description: "Rust bindings for OpenAI Whisper", url: "https://github.com/tazz4843/whisper-rs", category: "Speech" },
+  { name: "whisper.cpp", description: "Local speech-to-text via whisper-server", url: "https://github.com/ggml-org/whisper.cpp", category: "Speech" },
   { name: "Web Speech API", description: "Browser-native speech recognition", category: "Speech" },
   { name: "GitHub Copilot SDK", description: "AI-powered prompt enhancement", category: "AI" },
   { name: "Tokio", description: "Async runtime for Rust", url: "https://github.com/tokio-rs/tokio", category: "Backend" },

@@ -15,6 +15,9 @@ export interface AppSettings {
   whisper_chunk_seconds: number;
   whisper_decode_interval: number;
   whisper_context_overlap: number;
+  whisper_cli_version: string;
+  whisper_cli_variant: string;
+  whisper_use_gpu: boolean;
   languages: string[];
   shortcut: string;
   microphone_device_id: string;
@@ -61,6 +64,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   whisper_chunk_seconds: 3,
   whisper_decode_interval: 1,
   whisper_context_overlap: 1,
+  whisper_cli_version: "1.8.3",
+  whisper_cli_variant: "cpu",
+  whisper_use_gpu: false,
   languages: ["en-US"],
   shortcut: "CommandOrControl+Alt+V",
   microphone_device_id: "",
