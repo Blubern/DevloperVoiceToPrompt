@@ -281,6 +281,18 @@ describe("dictationEditorState", () => {
       expect(isInsertingAtCursor(view, 5)).toBe(true);
     });
 
+    it("returns false when anchor is at end with trailing whitespace", () => {
+      const view = createView("Hello   ");
+      // Anchor at 5, committed end at 8, but only spaces after anchor
+      expect(isInsertingAtCursor(view, 5)).toBe(false);
+    });
+
+    it("returns false when anchor is inside trailing whitespace", () => {
+      const view = createView("Hello   ");
+      // Anchor at 6 (middle of trailing spaces)
+      expect(isInsertingAtCursor(view, 6)).toBe(false);
+    });
+
     it("returns false when only interim text is after anchor", () => {
       const view = createView("Hello.");
       insertInterim({ view, anchor: 6 }, "World");
