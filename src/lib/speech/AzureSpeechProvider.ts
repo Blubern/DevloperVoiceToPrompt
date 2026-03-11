@@ -25,18 +25,12 @@ const SEGMENTATION_SILENCE_MS = "500";
 // long utterances significantly, which looks like text loss to the user.
 const INTERIM_PREFER_RATIO = 0.5;
 
-// If no new recognizing event arrives within this duration, flush the pending
-// interim as a final segment.  This is a real standalone timer that fires
-// independently of incoming events (primary path when BackgroundThrottling is
-// disabled on the popup window).  Semantic Segmentation is the upstream fix;
-// this timer is the defense-in-depth fallback for unsupported locales.
-const TIME_GAP_FLUSH_MS = 2000;
-
-// On-arrival stale check: if a recognizing event arrives and the previous
-// interim is older than this, flush it first.  This is the fallback for any
-// environment where the standalone timer is delayed (e.g. OS-level throttling
-// outside our control).  Shorter than TIME_GAP_FLUSH_MS so it fires first.
-const STALE_CHECK_MS = 1500;
+// Deadline-based flush: if no new recognizing event has arrived within this
+// duration, the interim is considered expired.  Checked on every event that
+// wakes the renderer (recognizing, recognized, speechEndDetected,
+// visibilitychange, focus) instead of relying on timers which are suspended
+// when the WebView is backgrounded.
+const INTERIM_DEADLINE_MS = 2000;
 
 // When a new interim is shorter than this fraction of the previous interim
 // AND shares no common prefix, treat it as a turn boundary and flush.
@@ -51,8 +45,9 @@ export class AzureSpeechProvider implements SpeechProvider {
   private lastResultId: string | null = null;
   private lastInterimText = "";
   private lastInterimTimestamp = 0;
-  private interimAgeTimer: ReturnType<typeof setTimeout> | null = null;
-  private speechEndTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bound event handlers for visibilitychange / focus so they can be removed. */
+  private onVisibilityChange: (() => void) | null = null;
+  private onFocus: (() => void) | null = null;
 
   constructor(
     private key: string,
@@ -83,6 +78,16 @@ export class AzureSpeechProvider implements SpeechProvider {
     this.lastInterimText = "";
     this.lastInterimTimestamp = 0;
 
+    // Listen for page resume events — when the renderer wakes from a
+    // backgrounded/frozen state, immediately check if any interim has expired.
+    this.removePageListeners();
+    this.onVisibilityChange = () => {
+      if (document.visibilityState === "visible") this.maybeFlushExpired("visibilitychange");
+    };
+    this.onFocus = () => this.maybeFlushExpired("focus");
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+    window.addEventListener("focus", this.onFocus);
+
     this.audioConfig = this.microphoneDeviceId
       ? sdk.AudioConfig.fromMicrophoneInput(this.microphoneDeviceId)
       : sdk.AudioConfig.fromDefaultMicrophoneInput();
@@ -90,10 +95,13 @@ export class AzureSpeechProvider implements SpeechProvider {
     this.createAndStartRecognizer(true);
   }
 
+  clearPendingInterim(): void {
+    this.lastInterimText = "";
+    this.lastInterimTimestamp = 0;
+  }
+
   stop(_skipFlush = false, reason = "unspecified"): Promise<void> {
     this.intentionallyStopped = true;
-    this.clearInterimAgeTimer();
-    this.clearSpeechEndTimer();
     traceEvent("info", "session:stop-requested", `Azure Speech stop requested (reason=${reason})`);
     return new Promise((resolve) => {
       if (this.recognizer) {
@@ -106,8 +114,7 @@ export class AzureSpeechProvider implements SpeechProvider {
 
   dispose(): void {
     this.intentionallyStopped = true;
-    this.clearInterimAgeTimer();
-    this.clearSpeechEndTimer();
+    this.removePageListeners();
     this.disposeRecognizer();
     if (this.audioConfig) {
       this.audioConfig.close();
@@ -184,24 +191,16 @@ export class AzureSpeechProvider implements SpeechProvider {
     // --- Event handlers ---
 
     rec.recognizing = (_s, e) => {
-      this.clearSpeechEndTimer();
       const newText = e.result.text;
-      // Ignore empty recognizing events that some SDK versions emit — they
-      // would cancel the age timer and overwrite lastInterimText with "".
+      // Ignore empty recognizing events that some SDK versions emit.
       if (!newText) return;
 
       const now = Date.now();
 
-      // On-arrival stale check: if the previous interim is older than
-      // STALE_CHECK_MS, Azure failed to emit a finalization (or the standalone
-      // timer was OS-throttled).  Flush before accepting the new turn.
-      if (
-        this.lastInterimText &&
-        this.lastInterimTimestamp > 0 &&
-        now - this.lastInterimTimestamp > STALE_CHECK_MS
-      ) {
-        this.flushPendingInterim("time-gap");
-      }
+      // Deadline-based flush: if the previous interim has expired, flush it
+      // before accepting the new turn.  This is the primary commit mechanism
+      // when the user pauses and then resumes speaking.
+      this.maybeFlushExpired("time-gap");
 
       // Detect turn boundary: Azure started a new recognition turn WITHOUT
       // firing a `recognized` event for the previous one.  This happens when
@@ -218,18 +217,13 @@ export class AzureSpeechProvider implements SpeechProvider {
 
       this.lastInterimText = newText;
       this.lastInterimTimestamp = now;
-      // Reset the age timer on every new interim: if no further events arrive
-      // within TIME_GAP_FLUSH_MS, flush as final.  This fires independently
-      // of incoming events so the user doesn't have to start speaking again
-      // to trigger the commit.
-      this.resetInterimAgeTimer();
       traceEvent("event", "result:interim", `interim (${newText.length} chars): ${newText.slice(0, 80)}${newText.length > 80 ? "…" : ""}`);
       cb.onInterim(newText);
     };
 
     rec.recognized = (_s, e) => {
-      this.clearSpeechEndTimer();
-      this.clearInterimAgeTimer();
+      // Check deadline on every WebSocket event that wakes the renderer.
+      this.maybeFlushExpired("recognized-check");
 
       if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
         // Deduplicate: the SDK can fire the same result more than once.
@@ -286,7 +280,7 @@ export class AzureSpeechProvider implements SpeechProvider {
     };
 
     rec.canceled = (_s, e) => {
-      this.clearInterimAgeTimer();
+      this.maybeFlushExpired("canceled-check");
       if (e.reason === sdk.CancellationReason.Error) {
         traceEvent("warn", "canceled", `Error: ${e.errorDetails || "unknown"} (code=${e.errorCode})`);
         cb.onError(e.errorDetails || "Recognition error");
@@ -297,15 +291,13 @@ export class AzureSpeechProvider implements SpeechProvider {
       }
     };
 
-    // Safety net: if speech ends but no recognized event follows within 2 s,
-    // flush any pending interim text so it isn't lost in the gap.
+    // speechEndDetected: Azure detected the end of speech.  Flush immediately
+    // — this event arrives via WebSocket so the renderer is guaranteed to be
+    // awake right now.  No timer delay needed.
     rec.speechEndDetected = () => {
       traceEvent("event", "speechEndDetected", `pending interim: ${this.lastInterimText.length} chars`);
       if (this.lastInterimText) {
-        this.clearSpeechEndTimer();
-        this.speechEndTimer = setTimeout(() => {
-          this.flushPendingInterim("speechEnd-timeout");
-        }, 1200);
+        this.flushPendingInterim("speechEnd");
       }
     };
 
@@ -315,8 +307,6 @@ export class AzureSpeechProvider implements SpeechProvider {
         "session:stopped",
         `intentional=${this.intentionallyStopped}, restarts=${this.restartCount}, pending interim=${this.lastInterimText.length} chars`,
       );
-      this.clearInterimAgeTimer();
-      this.clearSpeechEndTimer();
       this.flushPendingInterim("sessionStopped");
 
       if (this.intentionallyStopped) {
@@ -368,26 +358,26 @@ export class AzureSpeechProvider implements SpeechProvider {
     }
   }
 
-  private resetInterimAgeTimer(): void {
-    this.clearInterimAgeTimer();
-    if (this.lastInterimText) {
-      this.interimAgeTimer = setTimeout(() => {
-        this.flushPendingInterim("time-gap");
-      }, TIME_GAP_FLUSH_MS);
+  /** Check if the pending interim has exceeded the deadline and flush if so.
+   *  Called on every event that wakes the renderer. */
+  private maybeFlushExpired(source: string): void {
+    if (
+      this.lastInterimText &&
+      this.lastInterimTimestamp > 0 &&
+      Date.now() - this.lastInterimTimestamp >= INTERIM_DEADLINE_MS
+    ) {
+      this.flushPendingInterim(source);
     }
   }
 
-  private clearInterimAgeTimer(): void {
-    if (this.interimAgeTimer) {
-      clearTimeout(this.interimAgeTimer);
-      this.interimAgeTimer = null;
+  private removePageListeners(): void {
+    if (this.onVisibilityChange) {
+      document.removeEventListener("visibilitychange", this.onVisibilityChange);
+      this.onVisibilityChange = null;
     }
-  }
-
-  private clearSpeechEndTimer(): void {
-    if (this.speechEndTimer) {
-      clearTimeout(this.speechEndTimer);
-      this.speechEndTimer = null;
+    if (this.onFocus) {
+      window.removeEventListener("focus", this.onFocus);
+      this.onFocus = null;
     }
   }
 

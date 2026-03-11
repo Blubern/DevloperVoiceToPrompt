@@ -698,6 +698,11 @@ describe("WhisperSpeechProvider microphone trace events", () => {
         (entry) => entry.event === "session:stop-requested" && entry.detail.includes("reason=user-toggle"),
       ),
     ).toBe(true);
+    expect(
+      getTraceEntries().some(
+        (entry) => entry.event === "session:stopped" && entry.detail.includes("reason=user-toggle"),
+      ),
+    ).toBe(true);
   });
 });
 

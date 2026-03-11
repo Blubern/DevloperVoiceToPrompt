@@ -20,9 +20,11 @@
     disabled: boolean;
     recording: boolean;
     oninput?: () => void;
+    /** Called when interim text is auto-committed (e.g. cursor move). */
+    oncommit?: () => void;
   }
 
-  let { text = $bindable(), fontFamily, disabled, recording, oninput }: Props = $props();
+  let { text = $bindable(), fontFamily, disabled, recording, oninput, oncommit }: Props = $props();
 
   // --- CM6 setup ---
 
@@ -164,6 +166,7 @@
     if (cursor >= range.from && cursor <= range.to) return;
     // Commit: clear the decoration, anchor moves to cursor
     commitInterim();
+    oncommit?.();
     dictationAnchor = cursor;
   }
 

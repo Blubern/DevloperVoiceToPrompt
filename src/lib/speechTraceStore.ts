@@ -16,6 +16,8 @@ export interface SpeechTraceEntry {
 }
 
 const DEFAULT_MAX_ENTRIES = 500;
+const SESSION_START_EVENT = "session:start";
+const SESSION_STOPPED_EVENT = "session:stopped";
 
 let _maxEntries = DEFAULT_MAX_ENTRIES;
 let _entries: SpeechTraceEntry[] = [];
@@ -77,6 +79,30 @@ export function getTraceEntries(): SpeechTraceEntry[] {
   return _entries;
 }
 
+export function getLatestCompletedSessionEntries(): SpeechTraceEntry[] {
+  const sessions = getSessionRanges();
+  const latestCompletedSession = [...sessions].reverse().find((session) => session.completed);
+
+  return latestCompletedSession ? _entries.slice(latestCompletedSession.start, latestCompletedSession.end) : [];
+}
+
+export function getCurrentActiveSessionEntries(): SpeechTraceEntry[] {
+  const sessions = getSessionRanges();
+  const latestSession = sessions.at(-1);
+
+  if (!latestSession || latestSession.completed) {
+    return [];
+  }
+
+  return _entries.slice(latestSession.start, latestSession.end);
+}
+
+export function formatTraceEntries(entries: SpeechTraceEntry[]): string {
+  return entries
+    .map((entry) => `${entry.time} [${entry.level}] ${entry.event}: ${entry.detail}`)
+    .join("\n");
+}
+
 export function getTraceVersion(): number {
   return _version;
 }
@@ -95,4 +121,25 @@ export function subscribeTrace(fn: () => void): () => void {
 
 function _notify(): void {
   for (const fn of _listeners) fn();
+}
+
+function getSessionRanges(): Array<{ start: number; end: number; completed: boolean }> {
+  const starts: number[] = [];
+
+  for (let index = 0; index < _entries.length; index++) {
+    if (_entries[index]?.event === SESSION_START_EVENT) {
+      starts.push(index);
+    }
+  }
+
+  return starts.map((start, index) => {
+    const nextStart = starts[index + 1] ?? _entries.length;
+    const completed = _entries.slice(start, nextStart).some((entry) => entry.event === SESSION_STOPPED_EVENT);
+
+    return {
+      start,
+      end: nextStart,
+      completed,
+    };
+  });
 }
