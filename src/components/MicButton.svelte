@@ -66,11 +66,11 @@
   .mic-button.idle {
     border-color: var(--accent);
     color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
   }
 
   .mic-button.idle:hover {
-    box-shadow: 0 0 0 5px rgba(137, 180, 250, 0.15);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .mic-button.listening {

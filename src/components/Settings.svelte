@@ -243,7 +243,7 @@
   .settings-body { flex: 1; overflow-y: auto; padding: 16px 0 8px; }
   .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   h1 { margin: 0; font-size: 20px; font-weight: 600; }
-  .tab-bar { display: flex; gap: 2px; background: var(--bg-secondary); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
+  .tab-bar { display: flex; gap: 2px; background: var(--bg-sidebar); border-radius: 8px; padding: 3px; border: 1px solid var(--border); }
   .tab { flex: 1; padding: 7px 0; background: none; border: none; color: var(--text-secondary); font-size: 12px; font-weight: 500; cursor: pointer; border-radius: 6px; transition: all 0.15s; }
   .tab:hover { color: var(--text-primary); background: var(--surface-hover); }
   .tab.active { background: var(--accent); color: var(--bg-primary); font-weight: 600; }

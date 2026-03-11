@@ -1,17 +1,31 @@
 :root,
 [data-theme="dark"] {
-  /* Catppuccin Mocha */
-  --bg-primary: #1e1e2e;
-  --bg-secondary: #181825;
-  --input-bg: #11111b;
-  --text-primary: #cdd6f4;
-  --text-secondary: #a6adc8;
-  --text-muted: #b0b4cc;
-  --border: #45475a;
-  --surface: #313244;
-  --surface-hover: #585b70;
+  /* Catppuccin Mocha — Background hierarchy (dark → light) */
+  --bg-sidebar: #11111b;     /* Crust  — navigation, sidebars */
+  --bg-secondary: #181825;   /* Mantle — panels, secondary containers */
+  --bg-primary: #1e1e2e;     /* Base   — main content area */
+
+  /* Surface interaction states (3-step: normal → hover → active) */
+  --surface: #313244;        /* Surface0 — cards, inputs, default controls */
+  --surface-hover: #45475a;  /* Surface1 — hover state */
+  --surface-active: #585b70; /* Surface2 — active / pressed / selected */
+
+  /* Inputs use surface layer (integrated, not sunken) */
+  --input-bg: var(--surface);
+
+  /* Text hierarchy (high → low contrast) */
+  --text-primary: #cdd6f4;   /* Text */
+  --text-secondary: #a6adc8; /* Subtext0 — labels, descriptions */
+  --text-muted: #bac2de;     /* Subtext1 — metadata, hints */
+
+  /* Borders */
+  --border: #45475a;         /* Surface1 — structural separation */
+
+  /* Accent (unchanged) */
   --accent: #89b4fa;
   --accent-hover: #74c7ec;
+
+  /* Semantic states */
   --error: #f38ba8;
   --error-bg: rgba(243, 139, 168, 0.1);
   --error-border: rgba(243, 139, 168, 0.2);
@@ -20,29 +34,55 @@
   --success-border: rgba(166, 227, 161, 0.2);
   --warning: #f9e2af;
   --warning-bg: rgba(249, 226, 175, 0.05);
+
+  /* Recording */
   --recording: #f38ba8;
   --recording-glow: rgba(243, 139, 168, 0.15);
   --mic-listening-bg: #1e1e2e;
+
+  /* Catppuccin named colors */
   --orange: #fab387;
+  --green: #a6e3a1;
+  --yellow: #f9e2af;
+  --peach: #fab387;
+  --red: #f38ba8;
+
+  /* UI element tokens */
   --lang-tag-bg: rgba(137, 180, 250, 0.12);
   --lang-tag-border: rgba(137, 180, 250, 0.25);
+
+  /* Scrollbar */
   --scrollbar-track: #181825;
-  --scrollbar-thumb: #313244;
+  --scrollbar-thumb: #45475a;
 }
 
 [data-theme="light"] {
-  /* Catppuccin Latte */
-  --bg-primary: #eff1f5;
-  --bg-secondary: #e6e9ef;
-  --input-bg: #dce0e8;
+  /* Catppuccin Latte — Background hierarchy (light → dark) */
+  --bg-sidebar: #dce0e8;     /* Crust  — navigation, sidebars */
+  --bg-secondary: #e6e9ef;   /* Mantle — panels, secondary containers */
+  --bg-primary: #eff1f5;     /* Base   — main content area */
+
+  /* Surface interaction states (3-step) */
+  --surface: #ccd0da;        /* Surface0 */
+  --surface-hover: #bcc0cc;  /* Surface1 — hover */
+  --surface-active: #acb0be; /* Surface2 — active / pressed / selected */
+
+  /* Inputs use surface layer */
+  --input-bg: var(--surface);
+
+  /* Text hierarchy */
   --text-primary: #4c4f69;
   --text-secondary: #6c6f85;
   --text-muted: #7c7f93;
+
+  /* Borders */
   --border: #bcc0cc;
-  --surface: #ccd0da;
-  --surface-hover: #acb0be;
+
+  /* Accent (unchanged) */
   --accent: #1e66f5;
   --accent-hover: #2a6ef6;
+
+  /* Semantic states */
   --error: #d20f39;
   --error-bg: rgba(210, 15, 57, 0.08);
   --error-border: rgba(210, 15, 57, 0.15);
@@ -51,12 +91,24 @@
   --success-border: rgba(64, 160, 43, 0.15);
   --warning: #df8e1d;
   --warning-bg: rgba(223, 142, 29, 0.08);
+
+  /* Recording */
   --recording: #d20f39;
   --recording-glow: rgba(210, 15, 57, 0.1);
   --mic-listening-bg: #eff1f5;
+
+  /* Catppuccin named colors */
   --orange: #fe640b;
+  --green: #40a02b;
+  --yellow: #df8e1d;
+  --peach: #fe640b;
+  --red: #d20f39;
+
+  /* UI element tokens */
   --lang-tag-bg: rgba(30, 102, 245, 0.08);
   --lang-tag-border: rgba(30, 102, 245, 0.2);
+
+  /* Scrollbar */
   --scrollbar-track: #e6e9ef;
-  --scrollbar-thumb: #ccd0da;
+  --scrollbar-thumb: #bcc0cc;
 }

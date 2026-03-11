@@ -5,7 +5,7 @@
   min-width: 260px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-secondary);
+  background: var(--bg-sidebar);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;

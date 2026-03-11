@@ -284,7 +284,7 @@
     {:else if !copilotInitialized}
       <button type="button" class="toggle-btn" onclick={() => { copilotAutoConnectArmed = false; connectCopilot(); }}>Connect to GitHub Copilot</button>
     {:else}
-      <div class="info-box" style="border-color: var(--accent-primary); display: flex; align-items: center; gap: 12px;">
+      <div class="info-box" style="border-color: var(--accent); display: flex; align-items: center; gap: 12px;">
         {#if copilotAuth?.login}
           <img src="https://github.com/{copilotAuth.login}.png?size=80" alt="{copilotAuth.login}" style="width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;" />
         {/if}
