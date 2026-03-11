@@ -1,12 +1,21 @@
 <script lang="ts">
-  import { getTraceEntries, clearTrace, subscribeTrace, type SpeechTraceEntry } from "../../lib/speechTraceStore";
+  import {
+    clearTrace,
+    formatTraceEntries,
+    getCurrentActiveSessionEntries,
+    getLatestCompletedSessionEntries,
+    getTraceEntries,
+    subscribeTrace,
+    type SpeechTraceEntry,
+  } from "../../lib/speechTraceStore";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { onMount } from "svelte";
 
   let entries = $state<SpeechTraceEntry[]>(getTraceEntries());
   let scrollEl: HTMLDivElement | undefined = $state();
   let autoScroll = $state(true);
-  let copied = $state(false);
+  let copiedAction = $state<"all" | "last-session" | "active-session" | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
   onMount(() => {
     return subscribeTrace(() => {
@@ -30,13 +39,36 @@
     autoScroll = atBottom;
   }
 
+  function setCopiedAction(action: "all" | "last-session" | "active-session") {
+    copiedAction = action;
+    if (copiedTimer !== null) {
+      clearTimeout(copiedTimer);
+    }
+    copiedTimer = setTimeout(() => {
+      copiedAction = null;
+      copiedTimer = null;
+    }, 1500);
+  }
+
   async function copyAll() {
-    const text = entries
-      .map((e) => `${e.time} [${e.level}] ${e.event}: ${e.detail}`)
-      .join("\n");
-    await writeText(text);
-    copied = true;
-    setTimeout(() => { copied = false; }, 1500);
+    await writeText(formatTraceEntries(entries));
+    setCopiedAction("all");
+  }
+
+  async function copyLastSession() {
+    const lastSessionEntries = getLatestCompletedSessionEntries();
+    if (lastSessionEntries.length === 0) return;
+
+    await writeText(formatTraceEntries(lastSessionEntries));
+    setCopiedAction("last-session");
+  }
+
+  async function copyCurrentActiveSession() {
+    const currentActiveSessionEntries = getCurrentActiveSessionEntries();
+    if (currentActiveSessionEntries.length === 0) return;
+
+    await writeText(formatTraceEntries(currentActiveSessionEntries));
+    setCopiedAction("active-session");
   }
 
   function levelClass(level: SpeechTraceEntry["level"]): string {
@@ -60,8 +92,16 @@
       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
       Speech Trace
       <span class="trace-count">{entries.length}</span>
+    </span>
+    <span class="trace-actions">
       <button class="trace-btn" onclick={copyAll} title="Copy all entries" disabled={entries.length === 0}>
-        {copied ? "Copied!" : "Copy"}
+        {copiedAction === "all" ? "Copied!" : "Copy All"}
+      </button>
+      <button class="trace-btn" onclick={copyLastSession} title="Copy the latest completed session" disabled={getLatestCompletedSessionEntries().length === 0}>
+        {copiedAction === "last-session" ? "Copied!" : "Copy Last Session"}
+      </button>
+      <button class="trace-btn" onclick={copyCurrentActiveSession} title="Copy the current active session" disabled={getCurrentActiveSessionEntries().length === 0}>
+        {copiedAction === "active-session" ? "Copied!" : "Copy Current Active Session"}
       </button>
       <button class="trace-btn" onclick={clearTrace} title="Clear trace">Clear</button>
     </span>
@@ -96,7 +136,9 @@
   .trace-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
     padding: 4px 10px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
@@ -111,6 +153,15 @@
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-wrap: wrap;
+  }
+
+  .trace-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .trace-count {
@@ -135,6 +186,11 @@
   .trace-btn:hover {
     color: var(--text-primary);
     border-color: var(--text-muted);
+  }
+
+  .trace-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 
   .trace-body {

@@ -66,6 +66,11 @@ pub fn create_or_toggle_popup(app: &tauri::AppHandle) {
             .resizable(true)
             .skip_taskbar(!show_in_dock)
             .always_on_top(on_top)
+            // Prevent WebView2/Chromium from throttling or suspending JS timers
+            // when the popup loses OS focus.  Without this, setTimeout callbacks
+            // (e.g. interimAgeTimer) can be delayed by 10+ seconds, causing
+            // interim speech text to sit uncommitted while the user types elsewhere.
+            .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
             .visible(true);
 
         // Restore saved position, or center if none saved

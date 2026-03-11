@@ -93,6 +93,11 @@ export class WhisperSpeechProvider implements SpeechProvider {
 
   /** Last interim text emitted — used for stability detection. */
   private lastInterim = "";
+
+  clearPendingInterim(): void {
+    this.lastInterim = "";
+    this.stabilityHits = 0;
+  }
   /** How many consecutive decodes returned the same interim suffix. */
   private stabilityHits = 0;
   /** Last few words committed as final — used for overlap matching. */
@@ -438,6 +443,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
       // Fast path for restart: don't wait for in-flight decode or flush.
       // The generation bump ensures any in-flight decode result is discarded.
       await this._cleanup();
+      traceEvent("event", "session:stopped", `Whisper session stopped (reason=${reason}, skipFlush=${skipFlush})`);
       this.callbacks?.onStatusChange("idle");
       return;
     }
@@ -470,6 +476,7 @@ export class WhisperSpeechProvider implements SpeechProvider {
     }
 
     await this._cleanup();
+    traceEvent("event", "session:stopped", `Whisper session stopped (reason=${reason}, skipFlush=${skipFlush})`);
     this.callbacks?.onStatusChange("idle");
   }
 

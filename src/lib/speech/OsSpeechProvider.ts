@@ -130,6 +130,10 @@ export class OsSpeechProvider implements SpeechProvider {
     });
   }
 
+  clearPendingInterim(): void {
+    // Web Speech API manages interim/final internally — no client state to clear.
+  }
+
   dispose(): void {
     this.intentionallyStopped = true;
     if (this.recognition) {

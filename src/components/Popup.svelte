@@ -401,6 +401,9 @@
     if (dictationEditor?.hasInterim()) {
       traceEvent("info", "popup:commit-on-edit", `Promoting interim to final before user edit`);
       dictationEditor.commitInterim();
+      // Tell the provider the interim is already committed so it won't
+      // flush the same text again (which would cause duplication).
+      activeProvider?.clearPendingInterim();
     }
     traceEvent("event", "popup:userEdit", `User typed | old=${oldLen} chars → new=${editedText.length} chars`);
     // Typing counts as user activity — reset the silence timer so it
@@ -491,7 +494,9 @@
       activeProvider.dispose();
       activeProvider = null;
     }
-    // Commit-on-stop: promote any remaining interim after provider stop
+    // Commit-on-stop: promote any remaining interim after provider stop.
+    // No need to call clearPendingInterim here — the provider is already
+    // stopped and disposed above.
     if (dictationEditor?.hasInterim()) {
       traceEvent("info", "popup:commit-on-stop", `Promoting leftover interim to final after stop`);
       dictationEditor.commitInterim();
@@ -557,6 +562,7 @@
     if (dictationEditor?.hasInterim()) {
       traceEvent("info", "popup:promote", `Promoting leftover interim to final segment before new session`);
       dictationEditor.commitInterim();
+      activeProvider?.clearPendingInterim();
     }
     lastSyncedSegmentCount = finalSegments.length;
     // Reset dictation anchor to end of text so new speech appends
@@ -1306,6 +1312,7 @@
           disabled={enhancing}
           recording={status === "listening"}
           oninput={handleEditorInput}
+          oncommit={() => activeProvider?.clearPendingInterim()}
         />
 
         <!-- Enhancing overlay -->
