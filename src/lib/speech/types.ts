@@ -44,7 +44,4 @@ export interface SpeechProvider {
   start(callbacks: SpeechCallbacks): void;
   stop(skipFlush?: boolean, reason?: string): Promise<void>;
   dispose(): void;
-  /** Clear internal pending-interim state so the provider won't flush
-   *  text that the UI already committed (e.g. on user edit or cursor move). */
-  clearPendingInterim(): void;
 }

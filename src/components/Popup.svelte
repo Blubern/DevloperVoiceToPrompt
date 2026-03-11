@@ -51,6 +51,7 @@
   import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
   import { AudioLevelMeter } from "../lib/audioLevelMeter";
   import { copilotEnhance, type CopilotAuthStatus } from "../lib/copilotStore";
+  import { InterimCommitManager } from "../lib/interimCommitManager";
 
   interface Props {
     settings: AppSettings;
@@ -87,6 +88,7 @@
   // Usage tracking: record start time of current recognition session
   let sessionStartTime: number | null = null;
   let activeProvider: SpeechProvider | null = null;
+  const interimManager = new InterimCommitManager();
 
   // Audio level meter
   let audioLevel = $state(0);
@@ -399,11 +401,7 @@
     const oldLen = editedText.length;
     // Commit-on-edit: promote pending interim to final before the edit is applied
     if (dictationEditor?.hasInterim()) {
-      traceEvent("info", "popup:commit-on-edit", `Promoting interim to final before user edit`);
-      dictationEditor.commitInterim();
-      // Tell the provider the interim is already committed so it won't
-      // flush the same text again (which would cause duplication).
-      activeProvider?.clearPendingInterim();
+      interimManager.commitFromUI("user-edit");
     }
     traceEvent("event", "popup:userEdit", `User typed | old=${oldLen} chars → new=${editedText.length} chars`);
     // Typing counts as user activity — reset the silence timer so it
@@ -495,12 +493,10 @@
       activeProvider = null;
     }
     // Commit-on-stop: promote any remaining interim after provider stop.
-    // No need to call clearPendingInterim here — the provider is already
-    // stopped and disposed above.
     if (dictationEditor?.hasInterim()) {
-      traceEvent("info", "popup:commit-on-stop", `Promoting leftover interim to final after stop`);
-      dictationEditor.commitInterim();
+      interimManager.commitFromUI("stop");
     }
+    interimManager.detach();
     status = "idle";
     clearSilenceTimer();
     clearMaxRecordingTimer();
@@ -560,10 +556,9 @@
     // Promote any leftover interim text to committed so it isn't lost
     // when starting a new recording session.
     if (dictationEditor?.hasInterim()) {
-      traceEvent("info", "popup:promote", `Promoting leftover interim to final segment before new session`);
-      dictationEditor.commitInterim();
-      activeProvider?.clearPendingInterim();
+      interimManager.commitFromUI("new-session");
     }
+    interimManager.detach();
     lastSyncedSegmentCount = finalSegments.length;
     // Reset dictation anchor to end of text so new speech appends
     dictationEditor?.resetAnchorToEnd();
@@ -571,20 +566,30 @@
 
     const provider = createSpeechProvider(settings);
 
+    // Attach the interim commit manager to coordinate provider ↔ editor
+    interimManager.attach(
+      {
+        insertInterim: (text) => dictationEditor?.insertInterim(text),
+        finalizeInterim: (text) => dictationEditor?.finalizeInterim(text),
+        commitInterim: () => { dictationEditor?.commitInterim(); },
+        hasInterim: () => dictationEditor?.hasInterim() ?? false,
+      },
+      (text) => {
+        finalSegments = [...finalSegments, text];
+        lastSyncedSegmentCount = finalSegments.length;
+      },
+    );
+
     const callbacks: SpeechCallbacks = {
       onInterim: (text) => {
         traceEvent("event", "popup:onInterim", `set interim (${text.length} chars), resetSilenceTimer`);
-        dictationEditor?.insertInterim(text);
+        interimManager.onProviderInterim(text);
         resetSilenceTimer();
       },
       onFinal: (text) => {
         if (text) {
           traceEvent("data", "popup:onFinal", `finalize segment #${finalSegments.length} (${text.length} chars): ${text.slice(0, 100)}${text.length > 100 ? "…" : ""}`);
-          // Finalize interim in-place: replaces the decorated interim range
-          // with the provider's final text (no separate insertion needed)
-          dictationEditor?.finalizeInterim(text);
-          finalSegments = [...finalSegments, text];
-          lastSyncedSegmentCount = finalSegments.length;
+          interimManager.onProviderFinal(text);
           resetSilenceTimer();
         }
       },
@@ -1312,7 +1317,7 @@
           disabled={enhancing}
           recording={status === "listening"}
           oninput={handleEditorInput}
-          oncommit={() => activeProvider?.clearPendingInterim()}
+          oncommit={() => interimManager.commitFromUI("cursor-move")}
         />
 
         <!-- Enhancing overlay -->
