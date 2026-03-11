@@ -17,19 +17,20 @@ const MAX_AUTO_RESTARTS = 5;
 
 // Shorter segmentation → more frequent final results → less text at risk per
 // turn if a connection drop or post-processing trim happens.
-const SEGMENTATION_SILENCE_MS = "800";
+// Used as fallback when Semantic Segmentation is unavailable for the locale.
+const SEGMENTATION_SILENCE_MS = "500";
 
 // If the final recognized text is shorter than this fraction of the last
 // interim text, prefer the interim.  Azure's language model sometimes trims
 // long utterances significantly, which looks like text loss to the user.
 const INTERIM_PREFER_RATIO = 0.5;
 
-// If a new recognizing event arrives more than this many ms after the last
-// one, flush the previous interim as a final segment.  The JS browser SDK
-// does not reliably honor Speech_SegmentationSilenceTimeoutMs (confirmed by
-// Microsoft Q&A and multiple SDK bug reports), so this client-side gap
-// detection is the primary safety net against interim text loss.
-const TIME_GAP_FLUSH_MS = 3000;
+// If no new recognizing event arrives within this duration, flush the pending
+// interim as a final segment.  This is a real standalone timer (not a
+// check-on-next-event) so it fires even when the user stops speaking and
+// Azure sends no further events.  Semantic Segmentation is the primary fix;
+// this timer is the defense-in-depth fallback for unsupported locales.
+const TIME_GAP_FLUSH_MS = 2000;
 
 // When a new interim is shorter than this fraction of the previous interim
 // AND shares no common prefix, treat it as a turn boundary and flush.
@@ -43,7 +44,7 @@ export class AzureSpeechProvider implements SpeechProvider {
   private restartCount = 0;
   private lastResultId: string | null = null;
   private lastInterimText = "";
-  private lastInterimTimestamp = 0;
+  private interimAgeTimer: ReturnType<typeof setTimeout> | null = null;
   private speechEndTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -73,7 +74,6 @@ export class AzureSpeechProvider implements SpeechProvider {
     this.restartCount = 0;
     this.lastResultId = null;
     this.lastInterimText = "";
-    this.lastInterimTimestamp = 0;
 
     this.audioConfig = this.microphoneDeviceId
       ? sdk.AudioConfig.fromMicrophoneInput(this.microphoneDeviceId)
@@ -84,6 +84,7 @@ export class AzureSpeechProvider implements SpeechProvider {
 
   stop(_skipFlush = false, reason = "unspecified"): Promise<void> {
     this.intentionallyStopped = true;
+    this.clearInterimAgeTimer();
     this.clearSpeechEndTimer();
     traceEvent("info", "session:stop-requested", `Azure Speech stop requested (reason=${reason})`);
     return new Promise((resolve) => {
@@ -97,6 +98,7 @@ export class AzureSpeechProvider implements SpeechProvider {
 
   dispose(): void {
     this.intentionallyStopped = true;
+    this.clearInterimAgeTimer();
     this.clearSpeechEndTimer();
     this.disposeRecognizer();
     if (this.audioConfig) {
@@ -123,9 +125,14 @@ export class AzureSpeechProvider implements SpeechProvider {
     const sdkTimeoutMs = String(Math.max(60000, (this.silenceTimeoutSeconds + 15) * 1000));
     speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, sdkTimeoutMs);
     // EndSilenceTimeoutMs is deprecated in the JS SDK and unreliable — omitted.
-    // Speech_SegmentationSilenceTimeoutMs: hint for turn splitting.  The JS
-    // browser SDK does not reliably honor this; TIME_GAP_FLUSH_MS is the
-    // client-side backstop.
+    // Semantic Segmentation (SDK 1.41+, MS best practice for dictation): segments
+    // on sentence-ending punctuation instead of waiting for silence gaps.  This
+    // is the primary fix for interim text that stays uncommitted for many seconds.
+    // Falls back to silence-based segmentation for unsupported locales.
+    speechConfig.setProperty("Speech_SegmentationStrategy", "Semantic");
+    // Speech_SegmentationSilenceTimeoutMs: fallback hint for locales where
+    // Semantic Segmentation is unavailable.  The JS browser SDK does not
+    // reliably honor this; interimAgeTimer is the client-side backstop.
     speechConfig.setProperty("Speech_SegmentationSilenceTimeoutMs", SEGMENTATION_SILENCE_MS);
 
     // Enable dictation mode for better punctuation, capitalization, and
@@ -171,18 +178,6 @@ export class AzureSpeechProvider implements SpeechProvider {
     rec.recognizing = (_s, e) => {
       this.clearSpeechEndTimer();
       const newText = e.result.text;
-      const now = Date.now();
-
-      // Time-gap flush: if the previous interim arrived more than
-      // TIME_GAP_FLUSH_MS ago, the SDK failed to emit a finalization
-      // event during the silence gap — flush the old interim as final.
-      if (
-        this.lastInterimText &&
-        this.lastInterimTimestamp > 0 &&
-        now - this.lastInterimTimestamp > TIME_GAP_FLUSH_MS
-      ) {
-        this.flushPendingInterim("time-gap");
-      }
 
       // Detect turn boundary: Azure started a new recognition turn WITHOUT
       // firing a `recognized` event for the previous one.  This happens when
@@ -198,13 +193,18 @@ export class AzureSpeechProvider implements SpeechProvider {
       }
 
       this.lastInterimText = newText;
-      this.lastInterimTimestamp = now;
+      // Reset the age timer on every new interim: if no further events arrive
+      // within TIME_GAP_FLUSH_MS, flush as final.  This fires independently
+      // of incoming events so the user doesn't have to start speaking again
+      // to trigger the commit.
+      this.resetInterimAgeTimer();
       traceEvent("event", "result:interim", `interim (${newText.length} chars): ${newText.slice(0, 80)}${newText.length > 80 ? "…" : ""}`);
       cb.onInterim(newText);
     };
 
     rec.recognized = (_s, e) => {
       this.clearSpeechEndTimer();
+      this.clearInterimAgeTimer();
 
       if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
         // Deduplicate: the SDK can fire the same result more than once.
@@ -233,7 +233,6 @@ export class AzureSpeechProvider implements SpeechProvider {
         }
 
         this.lastInterimText = "";
-        this.lastInterimTimestamp = 0;
         // Reset restart budget on every successful recognition so long
         // sessions don't exhaust the limit.
         this.restartCount = 0;
@@ -261,6 +260,7 @@ export class AzureSpeechProvider implements SpeechProvider {
     };
 
     rec.canceled = (_s, e) => {
+      this.clearInterimAgeTimer();
       if (e.reason === sdk.CancellationReason.Error) {
         traceEvent("warn", "canceled", `Error: ${e.errorDetails || "unknown"} (code=${e.errorCode})`);
         cb.onError(e.errorDetails || "Recognition error");
@@ -289,6 +289,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         "session:stopped",
         `intentional=${this.intentionallyStopped}, restarts=${this.restartCount}, pending interim=${this.lastInterimText.length} chars`,
       );
+      this.clearInterimAgeTimer();
       this.clearSpeechEndTimer();
       this.flushPendingInterim("sessionStopped");
 
@@ -338,6 +339,22 @@ export class AzureSpeechProvider implements SpeechProvider {
         () => { try { rec.close(); } catch { /* ignore */ } },
         () => { try { rec.close(); } catch { /* ignore */ } },
       );
+    }
+  }
+
+  private resetInterimAgeTimer(): void {
+    this.clearInterimAgeTimer();
+    if (this.lastInterimText) {
+      this.interimAgeTimer = setTimeout(() => {
+        this.flushPendingInterim("time-gap");
+      }, TIME_GAP_FLUSH_MS);
+    }
+  }
+
+  private clearInterimAgeTimer(): void {
+    if (this.interimAgeTimer) {
+      clearTimeout(this.interimAgeTimer);
+      this.interimAgeTimer = null;
     }
   }
 

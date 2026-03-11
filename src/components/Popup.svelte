@@ -1217,6 +1217,32 @@
             <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
           </div>
           <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
+          {#if settings.speech_provider === PROVIDER_WHISPER}
+            <span class="rec-bar-badges">
+              {#if decodeLatencyMs > 0}
+                <span
+                  class="latency-badge"
+                  class:fast={decodeLatencyMs < 300}
+                  class:medium={decodeLatencyMs >= 300 && decodeLatencyMs < 800}
+                  class:slow={decodeLatencyMs >= 800}
+                  class:faded={!decodeActive}
+                >{decodeLatencyMs}ms</span>
+              {/if}
+              {#if whisperAvgRtf > 0}
+                <span
+                  class="rtf-badge"
+                  class:rtf-good={performanceState === 'good'}
+                  class:rtf-warning={performanceState === 'warning'}
+                  class:rtf-critical={performanceState === 'critical'}
+                  class:faded={!decodeActive}
+                  title="Real-Time Factor — lower is faster. >1.0 means hardware can't keep up."
+                >{whisperAvgRtf.toFixed(1)}x</span>
+              {/if}
+              {#if whisperBackend}
+                <span class="backend-badge" class:faded={!decodeActive}>{whisperBackend}</span>
+              {/if}
+            </span>
+          {/if}
         </div>
       {/if}
 
@@ -1300,28 +1326,6 @@
             ></div>
           {/if}
           <MicButton {status} onToggle={toggleMic} disabled={enhancing || !!micWarning} />
-          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && decodeLatencyMs > 0}
-            <span
-              class="latency-badge"
-              class:fast={decodeLatencyMs < 300}
-              class:medium={decodeLatencyMs >= 300 && decodeLatencyMs < 800}
-              class:slow={decodeLatencyMs >= 800}
-              class:faded={!decodeActive}
-            >{decodeLatencyMs}ms</span>
-          {/if}
-          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && whisperAvgRtf > 0}
-            <span
-              class="rtf-badge"
-              class:rtf-good={performanceState === 'good'}
-              class:rtf-warning={performanceState === 'warning'}
-              class:rtf-critical={performanceState === 'critical'}
-              class:faded={!decodeActive}
-              title="Real-Time Factor — lower is faster. >1.0 means hardware can't keep up."
-            >{whisperAvgRtf.toFixed(1)}x</span>
-          {/if}
-          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && whisperBackend}
-            <span class="backend-badge" class:faded={!decodeActive}>{whisperBackend}</span>
-          {/if}
         </div>
       </div>
 
@@ -2181,9 +2185,17 @@
     opacity: 0.15;
   }
 
+  /* ---- Recording bar badges container ---- */
+  .rec-bar-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
   /* ---- Latency Badge ---- */
   .latency-badge {
-    margin-top: 2px;
     font-size: 10px;
     font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
     padding: 1px 6px;
@@ -2191,7 +2203,6 @@
     line-height: 1.4;
     white-space: nowrap;
     transition: opacity 0.4s ease, background 0.3s ease, color 0.3s ease;
-    z-index: 2;
   }
 
   .latency-badge.fast {
@@ -2215,7 +2226,6 @@
 
   /* RTF (Real-Time Factor) badge */
   .rtf-badge {
-    margin-top: 2px;
     font-size: 10px;
     font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
     padding: 1px 6px;
@@ -2223,7 +2233,6 @@
     line-height: 1.4;
     white-space: nowrap;
     transition: opacity 0.4s ease, background 0.3s ease, color 0.3s ease;
-    z-index: 2;
   }
   .rtf-badge.rtf-good {
     background: color-mix(in srgb, var(--green) 20%, transparent);
@@ -2243,7 +2252,6 @@
 
   /* Backend badge (CPU / CUDA / Metal) */
   .backend-badge {
-    margin-top: 2px;
     font-size: 9px;
     font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
     padding: 1px 5px;
@@ -2253,7 +2261,6 @@
     background: color-mix(in srgb, var(--accent) 15%, transparent);
     color: var(--accent);
     transition: opacity 0.4s ease;
-    z-index: 2;
   }
   .backend-badge.faded {
     opacity: 0.4;
