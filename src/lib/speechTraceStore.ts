@@ -79,22 +79,22 @@ export function getTraceEntries(): SpeechTraceEntry[] {
   return _entries;
 }
 
-export function getLatestCompletedSessionEntries(): SpeechTraceEntry[] {
-  const sessions = getSessionRanges();
+export function getLatestCompletedSessionEntries(entries: SpeechTraceEntry[] = _entries): SpeechTraceEntry[] {
+  const sessions = getSessionRanges(entries);
   const latestCompletedSession = [...sessions].reverse().find((session) => session.completed);
 
-  return latestCompletedSession ? _entries.slice(latestCompletedSession.start, latestCompletedSession.end) : [];
+  return latestCompletedSession ? entries.slice(latestCompletedSession.start, latestCompletedSession.end) : [];
 }
 
-export function getCurrentActiveSessionEntries(): SpeechTraceEntry[] {
-  const sessions = getSessionRanges();
+export function getCurrentActiveSessionEntries(entries: SpeechTraceEntry[] = _entries): SpeechTraceEntry[] {
+  const sessions = getSessionRanges(entries);
   const latestSession = sessions.at(-1);
 
   if (!latestSession || latestSession.completed) {
     return [];
   }
 
-  return _entries.slice(latestSession.start, latestSession.end);
+  return entries.slice(latestSession.start, latestSession.end);
 }
 
 export function formatTraceEntries(entries: SpeechTraceEntry[]): string {
@@ -123,18 +123,18 @@ function _notify(): void {
   for (const fn of _listeners) fn();
 }
 
-function getSessionRanges(): Array<{ start: number; end: number; completed: boolean }> {
+function getSessionRanges(entries: SpeechTraceEntry[]): Array<{ start: number; end: number; completed: boolean }> {
   const starts: number[] = [];
 
-  for (let index = 0; index < _entries.length; index++) {
-    if (_entries[index]?.event === SESSION_START_EVENT) {
+  for (let index = 0; index < entries.length; index++) {
+    if (entries[index]?.event === SESSION_START_EVENT) {
       starts.push(index);
     }
   }
 
   return starts.map((start, index) => {
-    const nextStart = starts[index + 1] ?? _entries.length;
-    const completed = _entries.slice(start, nextStart).some((entry) => entry.event === SESSION_STOPPED_EVENT);
+    const nextStart = starts[index + 1] ?? entries.length;
+    const completed = entries.slice(start, nextStart).some((entry) => entry.event === SESSION_STOPPED_EVENT);
 
     return {
       start,

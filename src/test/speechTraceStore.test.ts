@@ -4,6 +4,7 @@ import {
   formatTraceEntries,
   getCurrentActiveSessionEntries,
   getLatestCompletedSessionEntries,
+  getTraceEntries,
   setMaxEntries,
   setTracingEnabled,
   traceEvent,
@@ -84,5 +85,34 @@ describe("speechTraceStore session selectors", () => {
 
     expect(formatted).toContain("[info] session:start: session 1");
     expect(formatted).toContain("[event] session:stopped: stopped 1");
+  });
+
+  it("derives session slices correctly from an explicit entry snapshot", () => {
+    traceEvent("info", "session:start", "snapshot session");
+    traceEvent("event", "result:interim", "in progress");
+
+    const snapshot = [...getTraceEntries()];
+
+    expect(getCurrentActiveSessionEntries(snapshot).map((entry) => entry.event)).toEqual([
+      "session:start",
+      "result:interim",
+    ]);
+    expect(getLatestCompletedSessionEntries(snapshot)).toEqual([]);
+  });
+
+  it("keeps the latest completed session bounded even when a new active session exists", () => {
+    traceEvent("info", "session:start", "session 1");
+    traceEvent("data", "result:final", "done 1");
+    traceEvent("event", "session:stopped", "stopped 1");
+    traceEvent("info", "session:start", "session 2");
+    traceEvent("event", "result:interim", "listening 2");
+
+    const completedSession = getLatestCompletedSessionEntries();
+
+    expect(completedSession.map((entry) => entry.detail)).toEqual([
+      "session 1",
+      "done 1",
+      "stopped 1",
+    ]);
   });
 });

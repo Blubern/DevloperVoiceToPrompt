@@ -19,9 +19,12 @@
 
   onMount(() => {
     return subscribeTrace(() => {
-      entries = getTraceEntries();
+      entries = [...getTraceEntries()];
     });
   });
+
+  const latestCompletedSessionEntries = $derived(getLatestCompletedSessionEntries(entries));
+  const currentActiveSessionEntries = $derived(getCurrentActiveSessionEntries(entries));
 
   // Auto-scroll to bottom when new entries arrive and autoScroll is on
   $effect(() => {
@@ -56,15 +59,13 @@
   }
 
   async function copyLastSession() {
-    const lastSessionEntries = getLatestCompletedSessionEntries();
-    if (lastSessionEntries.length === 0) return;
+    if (latestCompletedSessionEntries.length === 0) return;
 
-    await writeText(formatTraceEntries(lastSessionEntries));
+    await writeText(formatTraceEntries(latestCompletedSessionEntries));
     setCopiedAction("last-session");
   }
 
   async function copyCurrentActiveSession() {
-    const currentActiveSessionEntries = getCurrentActiveSessionEntries();
     if (currentActiveSessionEntries.length === 0) return;
 
     await writeText(formatTraceEntries(currentActiveSessionEntries));
@@ -97,10 +98,10 @@
       <button class="trace-btn" onclick={copyAll} title="Copy all entries" disabled={entries.length === 0}>
         {copiedAction === "all" ? "Copied!" : "Copy All"}
       </button>
-      <button class="trace-btn" onclick={copyLastSession} title="Copy the latest completed session" disabled={getLatestCompletedSessionEntries().length === 0}>
+      <button class="trace-btn" onclick={copyLastSession} title="Copy the latest completed session" disabled={latestCompletedSessionEntries.length === 0}>
         {copiedAction === "last-session" ? "Copied!" : "Copy Last Session"}
       </button>
-      <button class="trace-btn" onclick={copyCurrentActiveSession} title="Copy the current active session" disabled={getCurrentActiveSessionEntries().length === 0}>
+      <button class="trace-btn" onclick={copyCurrentActiveSession} title="Copy the current active session" disabled={currentActiveSessionEntries.length === 0}>
         {copiedAction === "active-session" ? "Copied!" : "Copy Current Active Session"}
       </button>
       <button class="trace-btn" onclick={clearTrace} title="Clear trace">Clear</button>
