@@ -169,8 +169,12 @@ export function isInsertingAtCursor(view: EditorView, anchor: number): boolean {
   const range = view.state.field(interimField);
   const docLen = view.state.doc.length;
   let committedEnd = docLen;
-  if (range && range.to === docLen) {
-    committedEnd = range.from;
+  if (range) {
+    // Interim is "at the tail" when nothing but whitespace follows it
+    const afterInterim = view.state.doc.sliceString(range.to, docLen);
+    if (afterInterim.trim().length === 0) {
+      committedEnd = range.from;
+    }
   }
   if (anchor >= committedEnd) return false;
   // If only whitespace remains between anchor and committedEnd, treat as "at end"

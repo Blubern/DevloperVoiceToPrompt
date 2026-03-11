@@ -293,6 +293,14 @@ describe("dictationEditorState", () => {
       expect(isInsertingAtCursor(view, 6)).toBe(false);
     });
 
+    it("returns false when trailing space exists after interim", () => {
+      // Simulate: user typed a space, then speech added interim text
+      const view = createView("Hello ");
+      insertInterim({ view, anchor: 5 }, "something");
+      // Doc: "Hello something " — interim range with trailing space after it
+      expect(isInsertingAtCursor(view, 5)).toBe(false);
+    });
+
     it("returns false when only interim text is after anchor", () => {
       const view = createView("Hello.");
       insertInterim({ view, anchor: 6 }, "World");
