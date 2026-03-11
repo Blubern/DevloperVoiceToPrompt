@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { invoke } from "@tauri-apps/api/core";
-import { WHISPER_SILENCE_RMS_THRESHOLD, WHISPER_STABILITY_COUNT } from "../constants";
+import { WHISPER_SILENCE_RMS_THRESHOLD, WHISPER_STABILITY_COUNT, WHISPER_RTF_WINDOW_SIZE } from "../constants";
 import type { SpeechCallbacks, SpeechProvider } from "./types";
 import { traceEvent } from "../speechTraceStore";
 import {
@@ -109,6 +109,17 @@ export class WhisperSpeechProvider implements SpeechProvider {
    *  allocating a new Float32Array on every decode cycle. */
   private sessionBuffer: Float32Array = new Float32Array(0);
 
+  /** Rolling RTF (Real-Time Factor) samples for computing average. */
+  private rtfSamples: number[] = [];
+  /** Backend detected from whisper-server ("CUDA", "Metal", "CPU"). */
+  private detectedBackend: string | undefined = undefined;
+
+  /** Response shape from whisper_transcribe Tauri command. */
+  private static readonly _transcribeResponseShape = {} as {
+    text: string;
+    inference_ms: number;
+  };
+
   constructor(
     private modelName: string,
     private language: string,
@@ -148,7 +159,16 @@ export class WhisperSpeechProvider implements SpeechProvider {
       useGpu: this.useGpu,
     });
 
+    // Fetch hardware info (backend type) from server if available.
+    // Non-blocking: if it fails, we just won't have backend info yet.
+    invoke<{ backend: string; n_threads: number | null; n_threads_total: number | null; accel_features: string[] } | null>("whisper_hardware_info")
+      .then((info) => {
+        if (info) this.detectedBackend = info.backend;
+      })
+      .catch(() => {});
+
     this.running = true;
+    this.rtfSamples = [];
 
     // Open mic at 16 kHz
     const constraints: MediaStreamConstraints = {
@@ -290,20 +310,41 @@ export class WhisperSpeechProvider implements SpeechProvider {
     this.decoding = true;
     const gen = this.generation;
     const t0 = performance.now();
+    const audioDurationS = (windowEnd - windowStart) / 16000;
 
     try {
-      const fullText = await invoke<string>("whisper_transcribe", {
+      const result = await invoke<{ text: string; inference_ms: number }>("whisper_transcribe", {
         audioB64,
         sampleRate: 16000,
         language: this.language,
         initialPrompt,
       });
 
+      const fullText = result.text;
+
       // Report decode latency to UI.
       if (gen === this.generation && this.running) {
         const latency = performance.now() - t0;
         this.callbacks?.onDecodeLatency?.(latency);
-        traceEvent("event", "decode", `latency=${Math.round(latency)}ms, window=${Math.round((windowEnd - windowStart) / 16000 * 10) / 10}s, result=${fullText ? fullText.length : 0} chars`);
+
+        // Compute RTF (Real-Time Factor) = inference_time / audio_duration.
+        // Uses server-reported inference_ms for accuracy (excludes base64 encoding overhead).
+        if (audioDurationS > 0) {
+          const rtf = result.inference_ms / (audioDurationS * 1000);
+          this.rtfSamples.push(rtf);
+          if (this.rtfSamples.length > WHISPER_RTF_WINDOW_SIZE) {
+            this.rtfSamples.shift();
+          }
+          const avgRtf = this.rtfSamples.reduce((a, b) => a + b, 0) / this.rtfSamples.length;
+          this.callbacks?.onPerformanceUpdate?.({
+            rtf,
+            avgRtf,
+            inferenceMs: result.inference_ms,
+            backend: this.detectedBackend,
+          });
+        }
+
+        traceEvent("event", "decode", `latency=${Math.round(latency)}ms, inference=${result.inference_ms}ms, window=${Math.round(audioDurationS * 10) / 10}s, rtf=${audioDurationS > 0 ? (result.inference_ms / (audioDurationS * 1000)).toFixed(2) : '?'}, result=${fullText ? fullText.length : 0} chars`);
       }
 
       // Drop result if generation changed (user stopped / restarted).

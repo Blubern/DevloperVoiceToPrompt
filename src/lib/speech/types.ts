@@ -13,6 +13,17 @@ export interface SpeechCallbacks {
   onDecodeLatency?: (ms: number) => void;
   /** Called with a normalized 0–1 audio level (Whisper provider only). */
   onAudioLevel?: (level: number) => void;
+  /**
+   * Called after each Whisper decode with performance metrics.
+   * `rtf` = Real-Time Factor (inference_time / audio_duration). < 1.0 = real-time capable.
+   * `backend` = "CUDA" | "Metal" | "CPU" | undefined (from server hardware info).
+   */
+  onPerformanceUpdate?: (info: {
+    rtf: number;
+    avgRtf: number;
+    inferenceMs: number;
+    backend?: string;
+  }) => void;
 }
 
 export interface AudioDevice {

@@ -64,6 +64,7 @@ pub fn run() {
             commands::whisper_download_cli,
             commands::whisper_delete_cli,
             commands::whisper_server_status,
+            commands::whisper_hardware_info,
             copilot::copilot_init,
             copilot::copilot_restart,
             copilot::copilot_is_connected,

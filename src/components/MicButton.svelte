@@ -1,6 +1,6 @@
 <script lang="ts">
   interface Props {
-    status: "idle" | "listening" | "error";
+    status: "idle" | "starting" | "listening" | "error";
     onToggle: () => void;
     disabled?: boolean;
   }
@@ -11,13 +11,14 @@
 <button
   class="mic-button"
   class:listening={status === "listening"}
+  class:starting={status === "starting"}
   class:error={status === "error"}
   class:idle={status === "idle"}
   class:disabled={disabled}
   onclick={onToggle}
   {disabled}
-  aria-label={status === "listening" ? "Stop dictation" : "Start dictation"}
-  title={disabled ? "Enhancement in progress" : status === "listening" ? "Click to stop" : "Click to start dictation"}
+  aria-label={status === "listening" ? "Stop dictation" : status === "starting" ? "Starting..." : "Start dictation"}
+  title={disabled ? "Enhancement in progress" : status === "listening" ? "Click to stop" : status === "starting" ? "Starting microphone..." : "Click to start dictation"}
 >
   <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -29,6 +30,9 @@
   {#if status === "listening"}
     <span class="pulse-ring"></span>
     <span class="pulse-ring delay"></span>
+  {/if}
+  {#if status === "starting"}
+    <span class="starting-ring"></span>
   {/if}
 </button>
 
@@ -78,6 +82,25 @@
   .mic-button.error {
     border-color: var(--orange);
     color: var(--orange);
+  }
+
+  .mic-button.starting {
+    border-color: var(--accent);
+    color: var(--accent);
+    opacity: 0.8;
+  }
+
+  .starting-ring {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .pulse-ring {

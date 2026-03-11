@@ -11,10 +11,78 @@ use tokio::process::{Child, Command};
 /// Managed state holding the running whisper-server child process.
 pub type WhisperServerState = Arc<Mutex<Option<WhisperServerProcess>>>;
 
+/// Result from transcribe_via_server including inference timing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionResult {
+    pub text: String,
+    pub inference_ms: u64,
+}
+
+/// Hardware info parsed from whisper-server stderr output.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WhisperHardwareInfo {
+    /// Backend in use: "CUDA", "Metal", "CPU", or "Unknown"
+    pub backend: String,
+    /// Number of threads whisper-server is using
+    pub n_threads: Option<u32>,
+    /// Hardware concurrency (total threads available)
+    pub n_threads_total: Option<u32>,
+    /// SIMD/acceleration features detected (e.g. "AVX2", "NEON", "BLAS")
+    pub accel_features: Vec<String>,
+}
+
+/// Parse whisper-server system_info line from stderr.
+/// Example: "system_info: n_threads = 4 / 8 | AVX2 = 1 | NEON = 0 | BLAS = 1 | CUDA = 1 |"
+fn parse_system_info(line: &str) -> Option<WhisperHardwareInfo> {
+    if !line.contains("system_info:") {
+        return None;
+    }
+    let mut info = WhisperHardwareInfo {
+        backend: "CPU".into(),
+        ..Default::default()
+    };
+
+    // Parse n_threads = X / Y
+    if let Some(threads_part) = line.split("n_threads =").nth(1) {
+        let threads_str = threads_part.split('|').next().unwrap_or("").trim();
+        let parts: Vec<&str> = threads_str.split('/').map(|s| s.trim()).collect();
+        if let Some(first) = parts.first() {
+            info.n_threads = first.parse().ok();
+        }
+        if let Some(second) = parts.get(1) {
+            info.n_threads_total = second.parse().ok();
+        }
+    }
+
+    // Parse feature flags: KEY = 0|1
+    let feature_flags = ["AVX", "AVX2", "AVX512", "NEON", "FP16_VA", "WASM_SIMD", "BLAS", "CUDA", "Metal"];
+    for flag in &feature_flags {
+        let pattern = format!("{flag} = ");
+        if let Some(pos) = line.find(&pattern) {
+            let val_start = pos + pattern.len();
+            let val_char = line[val_start..].chars().next().unwrap_or('0');
+            if val_char == '1' {
+                info.accel_features.push(flag.to_string());
+            }
+        }
+    }
+
+    // Determine backend from features
+    if info.accel_features.contains(&"CUDA".to_string()) {
+        info.backend = "CUDA".into();
+    } else if info.accel_features.contains(&"Metal".to_string()) {
+        info.backend = "Metal".into();
+    }
+
+    Some(info)
+}
+
 pub struct WhisperServerProcess {
     child: Child,
     pub port: u16,
     pub model_name: String,
+    /// Hardware info parsed from first inference stderr output.
+    pub hardware_info: Arc<Mutex<Option<WhisperHardwareInfo>>>,
 }
 
 impl WhisperServerProcess {
@@ -110,9 +178,10 @@ pub async fn start_server(
         cmd.arg("--no-gpu");
     }
 
-    // Suppress server console output
+    // Capture stderr so we can parse system_info for hardware detection.
+    // stdout is unused by whisper-server; stdin not needed.
     cmd.stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .stdin(Stdio::null());
 
     // On Windows, prevent the child from creating a visible console window
@@ -121,7 +190,7 @@ pub async fn start_server(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn whisper-server: {e}"))?;
 
@@ -140,10 +209,33 @@ pub async fn start_server(
         "Spawned whisper-server process"
     );
 
+    let hardware_info: Arc<Mutex<Option<WhisperHardwareInfo>>> = Arc::new(Mutex::new(None));
+
+    // Spawn a background task to read stderr and parse system_info
+    let hw_info_clone = hardware_info.clone();
+    let stderr = child.stderr.take();
+    if let Some(stderr) = stderr {
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Some(info) = parse_system_info(&line) {
+                    tracing::info!(backend = %info.backend, ?info.accel_features, "Parsed whisper-server hardware info");
+                    if let Ok(mut guard) = hw_info_clone.lock() {
+                        *guard = Some(info);
+                    }
+                    // Keep reading to prevent stderr buffer from filling up
+                }
+            }
+        });
+    }
+
     let mut process = WhisperServerProcess {
         child,
         port,
         model_name: model_name.to_string(),
+        hardware_info,
     };
 
     // Poll until the server is ready (max 15 seconds)
@@ -198,11 +290,12 @@ pub async fn start_server(
 }
 
 /// Transcribe audio via HTTP POST to the running whisper-server.
+/// Returns both the text and the server-side inference time in milliseconds.
 pub async fn transcribe_via_server(
     port: u16,
     wav_bytes: Vec<u8>,
     initial_prompt: Option<&str>,
-) -> Result<String, String> {
+) -> Result<TranscriptionResult, String> {
     let url = format!("http://127.0.0.1:{port}/inference");
 
     let mut form = reqwest::multipart::Form::new()
@@ -228,6 +321,8 @@ pub async fn transcribe_via_server(
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
+    let t0 = std::time::Instant::now();
+
     let resp = client
         .post(&url)
         .multipart(form)
@@ -249,8 +344,12 @@ pub async fn transcribe_via_server(
         .await
         .map_err(|e| format!("Failed to parse server response: {e}"))?;
 
+    let inference_ms = t0.elapsed().as_millis() as u64;
     let text = body["text"].as_str().unwrap_or("");
-    Ok(strip_hallucinations(text))
+    Ok(TranscriptionResult {
+        text: strip_hallucinations(text),
+        inference_ms,
+    })
 }
 
 // ---------------------------------------------------------------------------

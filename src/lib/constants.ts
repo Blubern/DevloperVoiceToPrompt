@@ -51,6 +51,14 @@ export const WHISPER_DEFAULT_CONTEXT_OVERLAP = 1;
 /** How many consecutive stable decode results before committing interim to final. */
 export const WHISPER_STABILITY_COUNT = 2;
 
+// Whisper performance monitoring thresholds
+/** Real-Time Factor at which to show a warning (approaching capacity). */
+export const WHISPER_RTF_WARNING = 0.8;
+/** Real-Time Factor at which hardware cannot keep up with real-time dictation. */
+export const WHISPER_RTF_CRITICAL = 1.0;
+/** Number of recent RTF samples to keep for rolling average. */
+export const WHISPER_RTF_WINDOW_SIZE = 5;
+
 // Prompt enhancer system prompt wrapper
 export const ENHANCE_SYSTEM_PROMPT_WRAPPER = `You are a text-only prompt enhancer. You have no access to files, tools, or external resources. Your sole task is to process the raw dictated text provided by the user. Apply the following enhancement instructions, then output ONLY the final enhanced text with no explanations, commentary, or markdown formatting.
 
@@ -59,7 +67,7 @@ Enhancement instructions:
 
 // Types
 export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER;
-export type RecordingStatus = "idle" | "listening" | "error";
+export type RecordingStatus = "idle" | "starting" | "listening" | "error";
 export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP;
 
 // Font options for the popup editor textarea

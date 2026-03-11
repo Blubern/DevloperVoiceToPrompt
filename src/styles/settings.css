@@ -251,6 +251,19 @@
 .server-status-dot.stopped { background: #888; }
 .server-status-text { font-size: 0.88em; flex: 1; }
 .server-actions { display: flex; gap: 6px; }
+.server-backend-badge {
+  font-size: 0.78em;
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.model-recommendation {
+  font-style: italic;
+  color: var(--accent);
+}
 
 /* Whisper setup checklist */
 .whisper-setup-checklist { padding: 10px 14px; border-radius: 6px; background: rgba(62, 142, 208, 0.08); border: 1px solid rgba(62, 142, 208, 0.2); margin-bottom: 4px; }

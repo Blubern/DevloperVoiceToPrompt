@@ -95,12 +95,37 @@
     running: boolean;
     model_name: string | null;
     port: number | null;
+    backend: string | null;
+  }
+  interface HardwareInfo {
+    backend: string;
+    n_threads: number | null;
+    n_threads_total: number | null;
+    accel_features: string[];
   }
   let serverStatus = $state<ServerStatus | null>(null);
+  let hardwareInfo = $state<HardwareInfo | null>(null);
   let serverStarting = $state(false);
   let serverStopping = $state(false);
 
   let hasDownloadedModel = $derived(whisperModels.some(m => m.downloaded));
+
+  // Heuristic model recommendation based on GPU info + CPU cores
+  let modelRecommendation = $derived.by(() => {
+    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 4;
+    if (gpuInfo?.has_nvidia) {
+      // Parse VRAM from gpu_name if available (nvidia-smi returns "name, memory.total")
+      // We approximate based on GPU name patterns
+      return { maxModel: 'large-v3', hint: `GPU: ${gpuInfo.gpu_name ?? 'NVIDIA'} — recommended up to Large v3` };
+    }
+    if (gpuInfo?.gpu_name?.includes('Metal')) {
+      return { maxModel: 'medium', hint: `${gpuInfo.gpu_name} — recommended up to Medium` };
+    }
+    if (cores >= 8) {
+      return { maxModel: 'small', hint: `CPU (${cores} threads) — recommended up to Small` };
+    }
+    return { maxModel: 'base', hint: `CPU (${cores} threads) — recommended Tiny or Base` };
+  });
 
   let browserEngine = $derived.by(() => {
     const ua = navigator.userAgent;
@@ -188,6 +213,13 @@
   async function refreshServerStatus() {
     try { serverStatus = await invoke<ServerStatus>("whisper_server_status"); }
     catch { serverStatus = null; }
+    // Also fetch hardware info whenever server status is refreshed
+    if (serverStatus?.running) {
+      try { hardwareInfo = await invoke<HardwareInfo | null>("whisper_hardware_info"); }
+      catch { hardwareInfo = null; }
+    } else {
+      hardwareInfo = null;
+    }
   }
 
   async function refreshCliStatus() {
@@ -399,6 +431,12 @@
       {#if serverStatus?.running}
         <span class="server-status-dot running" title="Running"></span>
         <span class="server-status-text">Running — {serverStatus.model_name ?? 'unknown'} (port {serverStatus.port})</span>
+        {#if serverStatus.backend || hardwareInfo}
+          <span class="server-backend-badge">
+            {hardwareInfo?.backend ?? serverStatus.backend ?? 'CPU'}
+            {#if hardwareInfo?.n_threads}({hardwareInfo.n_threads}{hardwareInfo.n_threads_total ? `/${hardwareInfo.n_threads_total}` : ''} threads){/if}
+          </span>
+        {/if}
       {:else}
         <span class="server-status-dot stopped" title="Stopped"></span>
         <span class="server-status-text">Stopped</span>
@@ -448,6 +486,9 @@
       {#each whisperModels as m}<option value={m.name} disabled={!m.downloaded}>{m.label}{m.downloaded ? '' : ' (not downloaded)'}</option>{/each}
     </select>
     <span class="hint">Select the Whisper model to use. Larger models are more accurate but slower.</span>
+    {#if gpuInfo || (typeof navigator !== 'undefined' && navigator.hardwareConcurrency)}
+      <span class="hint model-recommendation">💡 {modelRecommendation.hint}</span>
+    {/if}
   </div>
   <div class="field">
     <span class="label">Model Management</span>

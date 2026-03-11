@@ -1,5 +1,6 @@
 use crate::whisper_cli::{
-    self, CliStatus, GpuInfo, WhisperModelInfo, WhisperServerState, WHISPER_MODELS,
+    self, CliStatus, GpuInfo, WhisperHardwareInfo, WhisperModelInfo, WhisperServerState,
+    WHISPER_MODELS,
 };
 
 #[tauri::command]
@@ -89,6 +90,12 @@ pub async fn whisper_stop_server(
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct TranscribeResponse {
+    pub text: String,
+    pub inference_ms: u64,
+}
+
 #[tauri::command]
 pub async fn whisper_transcribe(
     state: tauri::State<'_, WhisperServerState>,
@@ -96,7 +103,7 @@ pub async fn whisper_transcribe(
     sample_rate: u32,
     _language: Option<String>,
     initial_prompt: Option<String>,
-) -> Result<String, String> {
+) -> Result<TranscribeResponse, String> {
     // Input validation
     if sample_rate == 0 {
         return Err("Invalid sample rate: must be greater than 0".into());
@@ -111,7 +118,7 @@ pub async fn whisper_transcribe(
     }
 
     if audio_b64.is_empty() {
-        return Ok(String::new());
+        return Ok(TranscribeResponse { text: String::new(), inference_ms: 0 });
     }
 
     // Decode base64 → raw bytes → f32 PCM samples (little-endian)
@@ -119,7 +126,7 @@ pub async fn whisper_transcribe(
         .map_err(|e| format!("Invalid base64 audio data: {e}"))?;
 
     if bytes.len() < 4 {
-        return Ok(String::new());
+        return Ok(TranscribeResponse { text: String::new(), inference_ms: 0 });
     }
 
     if bytes.len() % 4 != 0 {
@@ -160,7 +167,11 @@ pub async fn whisper_transcribe(
     let wav_bytes = whisper_cli::write_wav_16bit(&samples, 16000);
     let prompt = initial_prompt.as_deref();
 
-    whisper_cli::transcribe_via_server(port, wav_bytes, prompt).await
+    let result = whisper_cli::transcribe_via_server(port, wav_bytes, prompt).await?;
+    Ok(TranscribeResponse {
+        text: result.text,
+        inference_ms: result.inference_ms,
+    })
 }
 
 #[tauri::command]
@@ -178,6 +189,8 @@ pub struct ServerStatus {
     pub running: bool,
     pub model_name: Option<String>,
     pub port: Option<u16>,
+    /// Backend detected from whisper-server stderr (e.g. "CUDA", "Metal", "CPU").
+    pub backend: Option<String>,
 }
 
 #[tauri::command]
@@ -205,15 +218,30 @@ pub fn whisper_server_status(
         if guard.is_some() {
             *guard = None;
         }
-        return Ok(ServerStatus { running: false, model_name: None, port: None });
+        return Ok(ServerStatus { running: false, model_name: None, port: None, backend: None });
     }
 
     let proc = guard.as_ref().unwrap();
+    let backend = proc.hardware_info.lock().ok().and_then(|g| g.as_ref().map(|h| h.backend.clone()));
     Ok(ServerStatus {
         running: true,
         model_name: Some(proc.model_name.clone()),
         port: Some(proc.port),
+        backend,
     })
+}
+
+#[tauri::command]
+pub fn whisper_hardware_info(
+    state: tauri::State<'_, WhisperServerState>,
+) -> Result<Option<WhisperHardwareInfo>, String> {
+    let guard = state.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+    if let Some(proc) = guard.as_ref() {
+        let hw = proc.hardware_info.lock().ok().and_then(|g| g.clone());
+        Ok(hw)
+    } else {
+        Ok(None)
+    }
 }
 
 /// Resample `input` from `from_rate` Hz to `to_rate` Hz.

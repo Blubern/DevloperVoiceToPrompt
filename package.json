@@ -18,6 +18,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.2",
+    "@codemirror/language": "^6.12.2",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/view": "^6.39.17",
     "@github/copilot-sdk": "^0.1.33-unstable.1",
     "microsoft-cognitiveservices-speech-sdk": "^1.42.0"
   },

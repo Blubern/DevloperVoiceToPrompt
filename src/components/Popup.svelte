@@ -29,12 +29,15 @@
   import HistoryPanel from "./popup/HistoryPanel.svelte";
   import CopilotEnhanceBar from "./popup/CopilotEnhanceBar.svelte";
   import SpeechTracePanel from "./popup/SpeechTracePanel.svelte";
+  import DictationEditor from "./popup/DictationEditor.svelte";
   import { setTracingEnabled, clearTrace } from "../lib/speechTraceStore";
   import { traceEvent, setMaxEntries } from "../lib/speechTraceStore";
   import {
     PROVIDER_AZURE,
     PROVIDER_OS,
     PROVIDER_WHISPER,
+    WHISPER_RTF_WARNING,
+    WHISPER_RTF_CRITICAL,
     cycleProvider,
     providerLabel,
     EVENT_SETTINGS_UPDATED,
@@ -59,36 +62,27 @@
 
   let status = $state<RecordingStatus>("idle");
   let finalSegments = $state<string[]>([]);
-  let interimText = $state("");
   let errorMessage = $state("");
-  let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let dictationEditor: DictationEditor | undefined = $state();
   let copilotEnhanceBar: CopilotEnhanceBar | undefined = $state();
 
   // Track user's edited text separately from speech output
   let editedText = $state("");
   let lastSyncedSegmentCount = $state(0);
 
-  // Cursor position tracking for insert-at-cursor during dictation
-  let cursorPosition = $state(0);
-
-  // Dictation anchor: position in editedText where speech inserts and ghost overlay renders
-  let dictationAnchor = $state(0);
-
   // True when the user clicked mid-text and dictation will insert there instead of appending
-  let insertingAtCursor = $derived(status === "listening" && editedText.length > 0 && dictationAnchor < editedText.length);
+  let insertingAtCursor = $derived(status === "listening" && editedText.length > 0 && (dictationEditor?.isInsertingAtCursor() ?? false));
 
   // Context snippet for the insert-at-cursor tooltip
   let insertContextHint = $derived.by(() => {
     if (!insertingAtCursor) return "";
-    const before = editedText.slice(Math.max(0, dictationAnchor - 20), dictationAnchor).trim();
-    const after = editedText.slice(dictationAnchor, dictationAnchor + 20).trim();
+    const anchor = dictationEditor?.getAnchor() ?? editedText.length;
+    const before = editedText.slice(Math.max(0, anchor - 20), anchor).trim();
+    const after = editedText.slice(anchor, anchor + 20).trim();
     const b = before.length > 0 ? `…${before}` : "(start)";
     const a = after.length > 0 ? `${after}…` : "(end)";
     return `Inserting between: "${b}" ▸ "${a}"\nClick to resume appending at end.`;
   });
-
-  // Ghost overlay scroll sync
-  let ghostScrollTop = $state(0);
 
   // Usage tracking: record start time of current recognition session
   let sessionStartTime: number | null = null;
@@ -171,6 +165,16 @@
   let decodeCycleStart = 0;
   let decodeFadeTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Whisper performance monitoring
+  let whisperRtf = $state(0);
+  let whisperAvgRtf = $state(0);
+  let whisperBackend = $state<string | undefined>(undefined);
+  let performanceWarningDismissed = $state(false);
+  let performanceState = $derived<'good' | 'warning' | 'critical'>(
+    whisperAvgRtf >= WHISPER_RTF_CRITICAL ? 'critical' :
+    whisperAvgRtf >= WHISPER_RTF_WARNING ? 'warning' : 'good'
+  );
+
   // Language dropdown state
   let langDropdownOpen = $state(false);
   let langDropdownFilter = $state("");
@@ -247,70 +251,9 @@
     return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
-  // Insert new final segments at the dictation anchor.
-  // editedText never contains interim — interim is shown in the ghost overlay.
-  $effect(() => {
-    const segmentCount = finalSegments.length;
-    if (segmentCount > lastSyncedSegmentCount) {
-      const newSegments = finalSegments.slice(lastSyncedSegmentCount);
-      if (newSegments.length > 0) {
-        const addition = newSegments.join(" ");
-        const pos = dictationAnchor;
-        const before = editedText.slice(0, pos);
-        const after = editedText.slice(pos);
-        const needsSpace = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n");
-        const insertText = (needsSpace ? " " : "") + addition;
-        const oldText = editedText;
-        editedText = before + insertText + after;
-        const newAnchor = pos + insertText.length;
-        dictationAnchor = newAnchor;
-        cursorPosition = newAnchor;
-        traceEvent("data", "popup:insert", `${newSegments.length} new segment(s) at anchor ${pos} | +${insertText.length} chars | old=${oldText.length} → new=${editedText.length} chars`);
-      }
-      lastSyncedSegmentCount = segmentCount;
-    }
-  });
-
-  // Restore cursor position and scroll after reactive text updates during recording
-  $effect(() => {
-    const _ = editedText;
-    if (textareaEl && status === "listening") {
-      const savedScroll = textareaEl.scrollTop;
-      const savedCursor = cursorPosition;
-      const savedLen = editedText.length;
-      requestAnimationFrame(() => {
-        if (textareaEl) {
-          textareaEl.selectionStart = savedCursor;
-          textareaEl.selectionEnd = savedCursor;
-          // Keep scroll stable when cursor is not at the end
-          if (savedCursor < savedLen) {
-            textareaEl.scrollTop = savedScroll;
-          }
-        }
-      });
-    }
-  });
-
-  // Auto-scroll textarea to bottom on new text (only when cursor is at the end)
-  $effect(() => {
-    // Track editedText changes
-    const _ = editedText;
-    if (textareaEl && !userScrolledUp && cursorPosition >= editedText.length) {
-      requestAnimationFrame(() => {
-        if (textareaEl) {
-          textareaEl.scrollTop = textareaEl.scrollHeight;
-        }
-      });
-    }
-  });
-
-  // Track if user scrolled up manually + sync ghost overlay scroll
-  function handleTextareaScroll() {
-    if (!textareaEl) return;
-    const { scrollTop, scrollHeight, clientHeight } = textareaEl;
-    userScrolledUp = scrollHeight - scrollTop - clientHeight > 30;
-    ghostScrollTop = scrollTop;
-  }
+  // NOTE: Segment insertion $effect removed — text is now finalized in-place
+  // by the onFinal callback via dictationEditor.finalizeInterim(). The
+  // finalSegments array is still maintained for undo snapshot support.
 
   // Elapsed timer for recording state
   $effect(() => {
@@ -452,19 +395,13 @@
     }
   });
 
-  function handleTextInput(e: Event) {
-    const target = e.target as HTMLTextAreaElement;
+  function handleEditorInput() {
     const oldLen = editedText.length;
-    // Commit-on-edit: promote pending interim to final before applying edit
-    if (interimText) {
-      traceEvent("info", "popup:commit-on-edit", `Promoting interim (${interimText.length} chars) to final before user edit`);
-      finalSegments = [...finalSegments, interimText];
-      interimText = "";
-      lastSyncedSegmentCount = finalSegments.length;
+    // Commit-on-edit: promote pending interim to final before the edit is applied
+    if (dictationEditor?.hasInterim()) {
+      traceEvent("info", "popup:commit-on-edit", `Promoting interim to final before user edit`);
+      dictationEditor.commitInterim();
     }
-    editedText = target.value;
-    cursorPosition = target.selectionStart;
-    dictationAnchor = target.selectionStart;
     traceEvent("event", "popup:userEdit", `User typed | old=${oldLen} chars → new=${editedText.length} chars`);
     // Typing counts as user activity — reset the silence timer so it
     // doesn't auto-stop recording while the user is actively editing.
@@ -473,30 +410,13 @@
     }
   }
 
-  function handleCursorChange() {
-    if (textareaEl) {
-      cursorPosition = textareaEl.selectionStart;
-      dictationAnchor = textareaEl.selectionStart;
-    }
-  }
-
   function snapAnchorToEnd() {
-    dictationAnchor = editedText.length;
-    cursorPosition = editedText.length;
-    if (textareaEl) {
-      textareaEl.selectionStart = editedText.length;
-      textareaEl.selectionEnd = editedText.length;
-    }
+    dictationEditor?.snapAnchorToEnd();
   }
 
   function focusTextareaAtEnd() {
     requestAnimationFrame(() => {
-      if (!textareaEl) return;
-      textareaEl.focus();
-      const caretPosition = editedText.length;
-      textareaEl.selectionStart = caretPosition;
-      textareaEl.selectionEnd = caretPosition;
-      cursorPosition = caretPosition;
+      dictationEditor?.focusAtEnd();
     });
   }
 
@@ -565,22 +485,24 @@
   }
 
   async function stopAndRecordUsage(skipFlush = false, reason = "unspecified") {
-    traceEvent("info", "popup:stop", `reason=${reason}, skipFlush=${skipFlush}, segments=${finalSegments.length}, interim=${interimText.length} chars`);
+    traceEvent("info", "popup:stop", `reason=${reason}, skipFlush=${skipFlush}, segments=${finalSegments.length}, interim=${dictationEditor?.hasInterim() ? "yes" : "no"}`);
     if (activeProvider) {
       await activeProvider.stop(skipFlush, reason);
       activeProvider.dispose();
       activeProvider = null;
     }
     // Commit-on-stop: promote any remaining interim after provider stop
-    if (interimText) {
-      traceEvent("info", "popup:commit-on-stop", `Promoting leftover interim (${interimText.length} chars) to final after stop`);
-      finalSegments = [...finalSegments, interimText];
-      interimText = "";
-      lastSyncedSegmentCount = finalSegments.length;
+    if (dictationEditor?.hasInterim()) {
+      traceEvent("info", "popup:commit-on-stop", `Promoting leftover interim to final after stop`);
+      dictationEditor.commitInterim();
     }
     status = "idle";
     clearSilenceTimer();
     clearMaxRecordingTimer();
+    // Reset performance monitoring
+    whisperRtf = 0;
+    whisperAvgRtf = 0;
+    performanceWarningDismissed = false;
     if (levelMeter) {
       await levelMeter.stop();
       levelMeter = null;
@@ -597,7 +519,7 @@
     if (enhancing || toggling) return;
     toggling = true;
     try {
-    if (status === "listening") {
+    if (status === "listening" || status === "starting") {
       await stopAndRecordUsage(false, "user-toggle");
       return;
     }
@@ -630,37 +552,33 @@
 
     errorMessage = "";
     silenceMessage = "";
-    // Promote any leftover interim text to a final segment so it isn't lost
+    // Promote any leftover interim text to committed so it isn't lost
     // when starting a new recording session.
-    if (interimText) {
-      traceEvent("info", "popup:promote", `Promoting leftover interim (${interimText.length} chars) to final segment before new session`);
-      finalSegments = [...finalSegments, interimText];
+    if (dictationEditor?.hasInterim()) {
+      traceEvent("info", "popup:promote", `Promoting leftover interim to final segment before new session`);
+      dictationEditor.commitInterim();
     }
-    interimText = "";
     lastSyncedSegmentCount = finalSegments.length;
     // Reset dictation anchor to end of text so new speech appends
-    dictationAnchor = editedText.length;
+    dictationEditor?.resetAnchorToEnd();
     userScrolledUp = false;
 
     const provider = createSpeechProvider(settings);
 
     const callbacks: SpeechCallbacks = {
       onInterim: (text) => {
-        const oldInterim = interimText;
-        traceEvent("event", "popup:onInterim", `set interimText (${text.length} chars), resetSilenceTimer`);
-        // Detect interim shrink — this is the primary visible symptom of text loss:
-        // the user sees a long interim, then it suddenly gets replaced by a shorter one.
-        if (oldInterim.length > 0 && text.length < oldInterim.length * 0.5 && oldInterim.length > 20) {
-          traceEvent("warn", "⚠ INTERIM-SHRINK", `Interim shrank from ${oldInterim.length} to ${text.length} chars (${Math.round((1 - text.length / oldInterim.length) * 100)}% loss) | was: "${oldInterim.slice(0, 80)}…" | now: "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"`);
-        }
-        interimText = text;
+        traceEvent("event", "popup:onInterim", `set interim (${text.length} chars), resetSilenceTimer`);
+        dictationEditor?.insertInterim(text);
         resetSilenceTimer();
       },
       onFinal: (text) => {
         if (text) {
-          traceEvent("data", "popup:onFinal", `append segment #${finalSegments.length} (${text.length} chars): ${text.slice(0, 100)}${text.length > 100 ? "…" : ""}`);
+          traceEvent("data", "popup:onFinal", `finalize segment #${finalSegments.length} (${text.length} chars): ${text.slice(0, 100)}${text.length > 100 ? "…" : ""}`);
+          // Finalize interim in-place: replaces the decorated interim range
+          // with the provider's final text (no separate insertion needed)
+          dictationEditor?.finalizeInterim(text);
           finalSegments = [...finalSegments, text];
-          interimText = "";
+          lastSyncedSegmentCount = finalSegments.length;
           resetSilenceTimer();
         }
       },
@@ -701,9 +619,15 @@
       },
       // Whisper provider computes audio level inline — no separate AudioLevelMeter needed.
       onAudioLevel: (level: number) => { audioLevel = level; },
+      onPerformanceUpdate: (info) => {
+        whisperRtf = info.rtf;
+        whisperAvgRtf = info.avgRtf;
+        if (info.backend) whisperBackend = info.backend;
+      },
     };
 
     activeProvider = provider;
+    status = "starting";
     provider.start(callbacks);
 
     // For non-Whisper providers, start a standalone audio level meter.
@@ -736,11 +660,9 @@
     }
     traceEvent("info", "popup:clear", `Cleared text | old=${editedText.length} chars, ${finalSegments.length} segments`);
     finalSegments = [];
-    interimText = "";
     editedText = "";
     lastSyncedSegmentCount = 0;
-    cursorPosition = 0;
-    dictationAnchor = 0;
+    dictationEditor?.setCursorEnd();
     userScrolledUp = false;
     // Clear enhancement undo stack
     enhanceUndoStack = [];
@@ -754,14 +676,14 @@
     finalSegments = undoSnapshot.segments;
     editedText = undoSnapshot.text;
     lastSyncedSegmentCount = undoSnapshot.syncCount;
-    dictationAnchor = undoSnapshot.text.length;
+    dictationEditor?.resetAnchorToEnd();
     undoSnapshot = null;
     showUndoToast = false;
     if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
   }
 
   async function copyToClipboard() {
-    const text = editedText.trim();
+    const text = (dictationEditor?.getCommittedText() ?? editedText).trim();
     if (!text) return;
     try {
       await writeText(text);
@@ -773,7 +695,7 @@
   }
 
   async function copyAndClose() {
-    const text = editedText.trim();
+    const text = (dictationEditor?.getCommittedText() ?? editedText).trim();
     // Clipboard and history operations must not prevent MCP submission or popup close
     try {
       if (text) {
@@ -879,7 +801,7 @@
   function insertHistoryEntry(text: string) {
     traceEvent("info", "popup:history", `Inserted from history | old=${editedText.length} chars → new=${text.length} chars`);
     editedText = text;
-    dictationAnchor = text.length;
+    dictationEditor?.resetAnchorToEnd();
     historyOpen = false;
   }
 
@@ -903,8 +825,7 @@
     traceEvent("info", "popup:template", `Applied template | old=${editedText.length} chars → new=${t.text.length} chars`);
     editedText = t.text.replace(/\r\n/g, "\n");
     templatesOpen = false;
-    cursorPosition = editedText.length;
-    dictationAnchor = editedText.length;
+    dictationEditor?.setCursorEnd();
   }
 
   async function saveAsTemplate(name: string) {
@@ -1017,11 +938,9 @@
       // Start with context_input pre-filled, or empty editor if none provided.
       traceEvent("info", "popup:mcp", `MCP request | reason="${event.payload.input_reason}", context=${event.payload.context_input?.length ?? 0} chars, old=${editedText.length} chars`);
       finalSegments = [];
-      interimText = "";
       editedText = event.payload.context_input ?? "";
       lastSyncedSegmentCount = 0;
-      cursorPosition = editedText.length;
-      dictationAnchor = editedText.length;
+      dictationEditor?.setCursorEnd();
 
       focusTextareaAtEnd();
     }).then((fn) => { unlisten = fn; });
@@ -1046,7 +965,7 @@
     traceEvent("info", "popup:undoEnhance", `Undo enhancement | old=${editedText.length} chars → restored=${restored.length} chars`);
     editedText = restored;
     enhanceUndoStack = enhanceUndoStack.slice(0, -1);
-    dictationAnchor = restored.length;
+    dictationEditor?.resetAnchorToEnd();
     showEnhanceToast = false;
     if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
   }
@@ -1073,7 +992,7 @@
       enhanceUndoStack = [...enhanceUndoStack, editedText];
       traceEvent("data", "popup:enhance", `Copilot enhanced | old=${editedText.length} chars → new=${result.length} chars`);
       editedText = result;
-      dictationAnchor = result.length;
+      dictationEditor?.resetAnchorToEnd();
       // Show enhancement toast
       showEnhanceToast = true;
       if (enhanceToastTimer) clearTimeout(enhanceToastTimer);
@@ -1279,6 +1198,12 @@
       {/if}
 
       <!-- Recording status bar -->
+      {#if status === "starting"}
+        <div class="recording-bar starting-bar">
+          <svg class="starting-spinner" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <span class="rec-label">Starting microphone...</span>
+        </div>
+      {/if}
       {#if status === "listening"}
         <div class="recording-bar">
           <span class="rec-dot"></span>
@@ -1348,28 +1273,14 @@
           </div>
         {/if}
 
-        <textarea
-          bind:this={textareaEl}
-          value={editedText}
-          oninput={handleTextInput}
-          onmouseup={handleCursorChange}
-          onkeyup={handleCursorChange}
-          onscroll={handleTextareaScroll}
-          class:recording={status === "listening"}
-          class:empty-idle={showEmptyState}
+        <DictationEditor
+          bind:this={dictationEditor}
+          bind:text={editedText}
+          fontFamily={popupFontFamily}
           disabled={enhancing}
-          style="font-family: {popupFontFamily}"
-        ></textarea>
-
-        <!-- Ghost overlay: shows interim speech text + blinking voice cursor -->
-        {#if status === "listening" || interimText}
-          <div class="ghost-overlay" aria-hidden="true">
-            <div
-              class="ghost-overlay-inner"
-              style="font-family: {popupFontFamily}; transform: translateY(-{ghostScrollTop}px)"
-            ><span class="ghost-prefix">{editedText.slice(0, dictationAnchor)}</span><span class="voice-cursor" class:active={status === "listening"}></span>{#if interimText}<span class="ghost-interim">{interimText}</span>{/if}{#if dictationAnchor < editedText.length}<span class="ghost-after">{editedText.slice(dictationAnchor)}</span>{/if}</div>
-          </div>
-        {/if}
+          recording={status === "listening"}
+          oninput={handleEditorInput}
+        />
 
         <!-- Enhancing overlay -->
         {#if enhancing}
@@ -1398,8 +1309,30 @@
               class:faded={!decodeActive}
             >{decodeLatencyMs}ms</span>
           {/if}
+          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && whisperAvgRtf > 0}
+            <span
+              class="rtf-badge"
+              class:rtf-good={performanceState === 'good'}
+              class:rtf-warning={performanceState === 'warning'}
+              class:rtf-critical={performanceState === 'critical'}
+              class:faded={!decodeActive}
+              title="Real-Time Factor — lower is faster. >1.0 means hardware can't keep up."
+            >{whisperAvgRtf.toFixed(1)}x</span>
+          {/if}
+          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && whisperBackend}
+            <span class="backend-badge" class:faded={!decodeActive}>{whisperBackend}</span>
+          {/if}
         </div>
       </div>
+
+      <!-- Performance warning banner -->
+      {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && performanceState === 'critical' && !performanceWarningDismissed}
+        <div class="perf-warning-bar">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span class="perf-warning-text">Model too large for your hardware — consider switching to a smaller model in Settings.</span>
+          <button class="perf-warning-dismiss" onclick={() => performanceWarningDismissed = true}>Dismiss</button>
+        </div>
+      {/if}
 
       <!-- Error message with action -->
       {#if errorMessage}
@@ -1833,6 +1766,25 @@
     animation: fadeIn 0.15s ease-out;
   }
 
+  .recording-bar.starting-bar {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+
+  .starting-spinner {
+    flex-shrink: 0;
+    color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .starting-bar .rec-label {
+    color: var(--accent);
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   .rec-dot {
     width: 8px;
     height: 8px;
@@ -1983,112 +1935,6 @@
 
   .link-btn:hover {
     color: var(--accent-hover);
-  }
-
-  textarea {
-    width: 100%;
-    height: 100%;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px;
-    font-size: 14px;
-    font-family: var(--popup-font, inherit);
-    resize: none;
-    outline: none;
-    line-height: 1.5;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  textarea:focus {
-    border-color: var(--accent);
-  }
-
-  textarea.recording {
-    border-color: var(--recording);
-    box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 8%, transparent);
-    animation: recordingGlow 2s ease-in-out infinite;
-  }
-
-  textarea.empty-idle {
-    caret-color: var(--text-primary);
-  }
-
-  @keyframes recordingGlow {
-    0%, 100% { box-shadow: 0 0 0 2px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 8%, transparent); }
-    50% { box-shadow: 0 0 0 4px var(--recording-glow), inset 0 0 0 1px color-mix(in srgb, var(--recording) 15%, transparent); }
-  }
-
-  textarea::placeholder {
-    color: var(--text-muted);
-  }
-
-  /* ---- Ghost Overlay (interim speech text + voice cursor) ---- */
-  .ghost-overlay {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    overflow: hidden;
-    z-index: 2;
-    border-radius: 8px;
-    /* Match textarea border offset */
-    border: 1px solid transparent;
-  }
-
-  .ghost-overlay-inner {
-    /* Mirror textarea typography exactly */
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 10px;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    width: 100%;
-    box-sizing: border-box;
-    /* Account for mic float padding */
-    padding-right: 28px;
-  }
-
-  .ghost-prefix {
-    visibility: hidden;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
-
-  .voice-cursor {
-    display: inline-block;
-    width: 2px;
-    height: 1.1em;
-    vertical-align: text-bottom;
-    background: var(--recording);
-    opacity: 0;
-  }
-
-  .voice-cursor.active {
-    opacity: 1;
-    animation: voiceCursorBlink 1s step-end infinite;
-  }
-
-  @keyframes voiceCursorBlink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-  }
-
-  .ghost-interim {
-    color: var(--text-muted);
-    opacity: 0.6;
-    font-style: italic;
-  }
-
-  .ghost-after {
-    color: var(--text-primary);
-    opacity: 0.4;
-    background: var(--bg-primary);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
   }
 
   /* ---- Error Bar ---- */
@@ -2365,6 +2211,86 @@
 
   .latency-badge.faded {
     opacity: 0.4;
+  }
+
+  /* RTF (Real-Time Factor) badge */
+  .rtf-badge {
+    margin-top: 2px;
+    font-size: 10px;
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.4;
+    white-space: nowrap;
+    transition: opacity 0.4s ease, background 0.3s ease, color 0.3s ease;
+    z-index: 2;
+  }
+  .rtf-badge.rtf-good {
+    background: color-mix(in srgb, var(--green) 20%, transparent);
+    color: var(--green);
+  }
+  .rtf-badge.rtf-warning {
+    background: color-mix(in srgb, var(--yellow) 20%, transparent);
+    color: var(--yellow);
+  }
+  .rtf-badge.rtf-critical {
+    background: color-mix(in srgb, var(--red) 20%, transparent);
+    color: var(--red);
+  }
+  .rtf-badge.faded {
+    opacity: 0.4;
+  }
+
+  /* Backend badge (CPU / CUDA / Metal) */
+  .backend-badge {
+    margin-top: 2px;
+    font-size: 9px;
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    padding: 1px 5px;
+    border-radius: 6px;
+    line-height: 1.4;
+    white-space: nowrap;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    transition: opacity 0.4s ease;
+    z-index: 2;
+  }
+  .backend-badge.faded {
+    opacity: 0.4;
+  }
+
+  /* Performance warning banner */
+  .perf-warning-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--red) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
+    color: var(--red);
+    font-size: 11px;
+    animation: fadeIn 0.15s ease-out;
+  }
+  .perf-warning-bar svg {
+    flex-shrink: 0;
+    color: var(--red);
+  }
+  .perf-warning-text {
+    flex: 1;
+  }
+  .perf-warning-dismiss {
+    flex-shrink: 0;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+    background: transparent;
+    color: var(--red);
+    cursor: pointer;
+  }
+  .perf-warning-dismiss:hover {
+    background: color-mix(in srgb, var(--red) 12%, transparent);
   }
 
   /* Empty state hint for provider switch shortcut */
