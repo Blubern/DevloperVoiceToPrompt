@@ -26,11 +26,17 @@ const SEGMENTATION_SILENCE_MS = "500";
 const INTERIM_PREFER_RATIO = 0.5;
 
 // If no new recognizing event arrives within this duration, flush the pending
-// interim as a final segment.  This is a real standalone timer (not a
-// check-on-next-event) so it fires even when the user stops speaking and
-// Azure sends no further events.  Semantic Segmentation is the primary fix;
+// interim as a final segment.  This is a real standalone timer that fires
+// independently of incoming events (primary path when BackgroundThrottling is
+// disabled on the popup window).  Semantic Segmentation is the upstream fix;
 // this timer is the defense-in-depth fallback for unsupported locales.
 const TIME_GAP_FLUSH_MS = 2000;
+
+// On-arrival stale check: if a recognizing event arrives and the previous
+// interim is older than this, flush it first.  This is the fallback for any
+// environment where the standalone timer is delayed (e.g. OS-level throttling
+// outside our control).  Shorter than TIME_GAP_FLUSH_MS so it fires first.
+const STALE_CHECK_MS = 1500;
 
 // When a new interim is shorter than this fraction of the previous interim
 // AND shares no common prefix, treat it as a turn boundary and flush.
@@ -44,6 +50,7 @@ export class AzureSpeechProvider implements SpeechProvider {
   private restartCount = 0;
   private lastResultId: string | null = null;
   private lastInterimText = "";
+  private lastInterimTimestamp = 0;
   private interimAgeTimer: ReturnType<typeof setTimeout> | null = null;
   private speechEndTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -74,6 +81,7 @@ export class AzureSpeechProvider implements SpeechProvider {
     this.restartCount = 0;
     this.lastResultId = null;
     this.lastInterimText = "";
+    this.lastInterimTimestamp = 0;
 
     this.audioConfig = this.microphoneDeviceId
       ? sdk.AudioConfig.fromMicrophoneInput(this.microphoneDeviceId)
@@ -178,6 +186,22 @@ export class AzureSpeechProvider implements SpeechProvider {
     rec.recognizing = (_s, e) => {
       this.clearSpeechEndTimer();
       const newText = e.result.text;
+      // Ignore empty recognizing events that some SDK versions emit — they
+      // would cancel the age timer and overwrite lastInterimText with "".
+      if (!newText) return;
+
+      const now = Date.now();
+
+      // On-arrival stale check: if the previous interim is older than
+      // STALE_CHECK_MS, Azure failed to emit a finalization (or the standalone
+      // timer was OS-throttled).  Flush before accepting the new turn.
+      if (
+        this.lastInterimText &&
+        this.lastInterimTimestamp > 0 &&
+        now - this.lastInterimTimestamp > STALE_CHECK_MS
+      ) {
+        this.flushPendingInterim("time-gap");
+      }
 
       // Detect turn boundary: Azure started a new recognition turn WITHOUT
       // firing a `recognized` event for the previous one.  This happens when
@@ -185,7 +209,7 @@ export class AzureSpeechProvider implements SpeechProvider {
       // Heuristic: old interim has substantial content, new text is much
       // shorter AND shares no common prefix → flush old as final segment.
       if (
-        this.lastInterimText.length > 15 &&
+        this.lastInterimText.length > 10 &&
         newText.length < this.lastInterimText.length * TURN_BOUNDARY_RATIO &&
         !this.sharePrefix(this.lastInterimText, newText)
       ) {
@@ -193,6 +217,7 @@ export class AzureSpeechProvider implements SpeechProvider {
       }
 
       this.lastInterimText = newText;
+      this.lastInterimTimestamp = now;
       // Reset the age timer on every new interim: if no further events arrive
       // within TIME_GAP_FLUSH_MS, flush as final.  This fires independently
       // of incoming events so the user doesn't have to start speaking again
@@ -233,6 +258,7 @@ export class AzureSpeechProvider implements SpeechProvider {
         }
 
         this.lastInterimText = "";
+        this.lastInterimTimestamp = 0;
         // Reset restart budget on every successful recognition so long
         // sessions don't exhaust the limit.
         this.restartCount = 0;
@@ -371,6 +397,7 @@ export class AzureSpeechProvider implements SpeechProvider {
       traceEvent("warn", `flush-${source}`, `Flushing interim (${this.lastInterimText.length} chars): ${this.lastInterimText.slice(0, 100)}${this.lastInterimText.length > 100 ? "\u2026" : ""}`);
       this.callbacks.onFinal(this.lastInterimText);
       this.lastInterimText = "";
+      this.lastInterimTimestamp = 0;
     }
   }
 
