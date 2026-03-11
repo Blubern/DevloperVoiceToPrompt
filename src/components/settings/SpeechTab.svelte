@@ -27,6 +27,7 @@
     speechTracing = $bindable(),
     audioDevices,
     micWarning,
+    isMac = false,
     error = $bindable(),
   }: {
     speechProvider: "os" | "azure" | "whisper";
@@ -49,6 +50,7 @@
     speechTracing: boolean;
     audioDevices: AudioDevice[];
     micWarning: string;
+    isMac?: boolean;
     error: string;
   } = $props();
 
@@ -88,6 +90,7 @@
   let cliDownloading = $state(false);
   let cliDownloadProgress = $state(0);
   let cliDownloadTotal = $state(0);
+  let cliChecking = $state(false);
   let gpuDetecting = $state(false);
 
   // Server status
@@ -223,8 +226,10 @@
   }
 
   async function refreshCliStatus() {
+    cliChecking = true;
     try { cliStatus = await invoke<CliStatus>("whisper_check_cli"); }
     catch { cliStatus = null; }
+    finally { cliChecking = false; }
   }
 
   async function detectGpu() {
@@ -343,7 +348,7 @@
     </div>
     <div class="notice-content">
       <strong>Local Speech Recognition</strong>
-      <p>Whisper runs entirely on your device using <a href="https://github.com/ggml-org/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via a local whisper-server process. No data is sent to any cloud service. Download the CLI binary and a model below to get started.</p>
+      <p>Whisper runs entirely on your device using <a href="https://github.com/ggml-org/whisper.cpp" target="_blank" rel="noopener noreferrer">whisper.cpp</a> via a local whisper-server process. No data is sent to any cloud service. {#if isMac}Install <code>whisper-cpp</code> with Homebrew, then check for it here.{:else}Download the CLI binary and a model below to get started.{/if}</p>
     </div>
   </div>
 
@@ -351,7 +356,7 @@
   <div class="whisper-setup-checklist">
     <strong>Setup required</strong>
     <ul>
-      <li class:done={cliStatus?.installed}>{cliStatus?.installed ? '✓' : '①'} Download the whisper-server binary</li>
+      <li class:done={cliStatus?.installed}>{cliStatus?.installed ? '✓' : '①'} {isMac ? 'Install whisper-server with Homebrew' : 'Download the whisper-server binary'}</li>
       <li class:done={hasDownloadedModel}>{hasDownloadedModel ? '✓' : '②'} Download at least one model</li>
     </ul>
   </div>
@@ -365,6 +370,11 @@
         <span class="whisper-model-badge downloaded">
           Installed{cliStatus.version ? ` (v${cliStatus.version})` : ''}{cliStatus.variant ? ` — ${cliStatus.variant}` : ''}{cliStatus.source === 'homebrew' ? ' via Homebrew' : ''}
         </span>
+        {#if isMac}
+          <button type="button" class="toggle-btn" onclick={refreshCliStatus} disabled={cliChecking}>
+            {cliChecking ? 'Checking…' : 'Check Again'}
+          </button>
+        {/if}
         {#if cliStatus.source === 'download'}
           <button type="button" class="toggle-btn whisper-delete-btn" onclick={deleteCli}
             disabled={serverStatus?.running === true}
@@ -376,6 +386,17 @@
         <span class="whisper-model-badge downloading">
           {#if cliDownloadTotal > 0}{Math.round(cliDownloadProgress / cliDownloadTotal * 100)}%{:else}Downloading...{/if}
         </span>
+      </div>
+    {:else if isMac}
+      <div class="whisper-cli-setup">
+        <div class="gpu-info">
+          <span class="gpu-badge">Install whisper.cpp with <code>brew install whisper-cpp</code>, then use the check button to refresh detection.</span>
+        </div>
+        <div class="whisper-cli-row">
+          <button type="button" class="toggle-btn" onclick={refreshCliStatus} disabled={cliChecking}>
+            {cliChecking ? 'Checking…' : 'Check Installed'}
+          </button>
+        </div>
       </div>
     {:else}
       <div class="whisper-cli-setup">
@@ -416,9 +437,10 @@
       </div>
     {/if}
     <span class="hint">
-      {#if cliStatus?.installed}whisper-server is ready.{:else}
+      {#if cliStatus?.installed}whisper-server is ready.{:else if isMac}
+        Install via <code>brew install whisper-cpp</code>, then click Check Installed to detect the Homebrew binary.
+      {:else}
         Download the whisper-server binary from <a href="https://github.com/ggml-org/whisper.cpp/releases" target="_blank" rel="noopener noreferrer">whisper.cpp releases</a>.
-        On macOS, you can also install via <code>brew install whisper-cpp</code>.
       {/if}
     </span>
   </div>

@@ -463,7 +463,7 @@
         {/if}
       </div>
     {/if}
-    <span class="hint">The whisper-server binary used for local speech recognition. Install or update from the Speech settings.{#if serverStatus?.running} Stop the server to delete.{/if}</span>
+    <span class="hint">The whisper-server binary used for local speech recognition. Manage downloaded binaries from the Speech settings, or install on macOS with <code>brew install whisper-cpp</code>.{#if serverStatus?.running} Stop the server to delete.{/if}</span>
   </div>
 
   <div class="field">

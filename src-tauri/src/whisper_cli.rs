@@ -610,6 +610,44 @@ fn server_binary_name() -> &'static str {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn first_existing_path(paths: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    paths.into_iter().find(|path| path.is_file())
+}
+
+#[cfg(target_os = "macos")]
+fn brew_prefix_candidates() -> Vec<PathBuf> {
+    let mut prefixes = Vec::new();
+
+    for args in [["--prefix", "whisper-cpp"], ["--prefix"]] {
+        if let Ok(output) = std::process::Command::new("brew").args(args).output() {
+            if output.status.success() {
+                let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !prefix.is_empty() {
+                    prefixes.push(PathBuf::from(prefix));
+                }
+            }
+        }
+    }
+
+    prefixes
+}
+
+#[cfg(target_os = "macos")]
+fn macos_homebrew_server_path() -> Option<PathBuf> {
+    let binary_name = server_binary_name();
+    let mut candidates = vec![
+        PathBuf::from("/opt/homebrew/bin").join(binary_name),
+        PathBuf::from("/usr/local/bin").join(binary_name),
+    ];
+
+    for prefix in brew_prefix_candidates() {
+        candidates.push(prefix.join("bin").join(binary_name));
+    }
+
+    first_existing_path(candidates)
+}
+
 /// Get path to whisper-server, checking:
 /// 1. Downloaded binary in cli_dir
 /// 2. Homebrew (macOS): which whisper-server
@@ -632,12 +670,39 @@ pub fn find_server_executable(app: &tauri::AppHandle) -> Result<CliStatus, Strin
         }
     }
 
-    // 2. Check system PATH
-    let binary_name = if cfg!(target_os = "windows") {
-        "whisper-server.exe"
-    } else {
-        "whisper-server"
-    };
+    // 2. Check system PATH / Homebrew locations
+    let binary_name = server_binary_name();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(path) = macos_homebrew_server_path() {
+            return Ok(CliStatus {
+                installed: true,
+                version: None,
+                variant: None,
+                source: "homebrew".into(),
+                path: Some(path.to_string_lossy().to_string()),
+            });
+        }
+
+        if let Ok(output) = std::process::Command::new("which")
+            .arg(binary_name)
+            .output()
+        {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Ok(CliStatus {
+                        installed: true,
+                        version: None,
+                        variant: None,
+                        source: "homebrew".into(),
+                        path: Some(path),
+                    });
+                }
+            }
+        }
+    }
 
     // Windows: use where.exe; Unix: use which
     #[cfg(target_os = "windows")]
@@ -666,7 +731,7 @@ pub fn find_server_executable(app: &tauri::AppHandle) -> Result<CliStatus, Strin
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         if let Ok(output) = std::process::Command::new("which")
             .arg(binary_name)
@@ -679,7 +744,7 @@ pub fn find_server_executable(app: &tauri::AppHandle) -> Result<CliStatus, Strin
                         installed: true,
                         version: None,
                         variant: None,
-                        source: "homebrew".into(),
+                        source: "manual".into(),
                         path: Some(path),
                     });
                 }
