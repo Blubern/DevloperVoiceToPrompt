@@ -4,7 +4,7 @@
 //
 // Owns the coordination between speech providers and the editor so that:
 // 1. Interim text is never duplicated (dedup guard via `uiCommitted` flag).
-// 2. Expired interim is flushed deadline-style, not via timers.
+// 2. Expired interim is flushed via deadline check + active timer.
 // 3. Behaviour is provider-agnostic and fully unit-testable.
 
 import { traceEvent } from "./speechTraceStore";
@@ -45,6 +45,9 @@ export class InterimCommitManager {
    *  Subsequent `onProviderInterim` calls whose text starts with this
    *  prefix will strip the prefix to avoid re-inserting committed text. */
   private committedPrefix = "";
+  /** Active timer that calls maybeFlushExpired.  Ensures the deadline
+   *  fires even when no external events wake the renderer. */
+  private deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 
   private editor: InterimEditorCallbacks | null = null;
   private onSegmentFinalized: ((text: string) => void) | null = null;
@@ -113,6 +116,7 @@ export class InterimCommitManager {
         }
         this.uiCommitted = false;
         this.editor.insertInterim(delta);
+        this.scheduleDeadlineTimer(); 
         return;
       }
       // Text doesn't share the prefix — new turn, clear prefix.
@@ -124,6 +128,7 @@ export class InterimCommitManager {
     this.lastInterimText = text;
     this.lastInterimTimestamp = this.now();
     this.editor.insertInterim(text);
+    this.scheduleDeadlineTimer();
   }
 
   /**
@@ -139,6 +144,7 @@ export class InterimCommitManager {
       this.lastInterimText = "";
       this.lastInterimTimestamp = 0;
       this.committedPrefix = "";
+      this.clearDeadlineTimer();
       return;
     }
 
@@ -146,9 +152,10 @@ export class InterimCommitManager {
     // moved and auto-committed), inserting via finalizeInterim would create a
     // duplicate at the anchor.  Treat as already-committed.
     if (!this.editor.hasInterim()) {
-      traceEvent("info", "icm:skip-final-no-interim", `Skipping provider final (${text.length} chars) — no interim decoration in editor`);
+      traceEvent("info", "icm:skip-final-no-interim", `Skipping provider final (${text.length} chars) \u2014 no interim decoration in editor`);
       this.lastInterimText = "";
       this.lastInterimTimestamp = 0;
+      this.clearDeadlineTimer();
       return;
     }
 
@@ -180,6 +187,7 @@ export class InterimCommitManager {
     this.lastInterimTimestamp = 0;
     this.uiCommitted = false;
     this.committedPrefix = "";
+    this.clearDeadlineTimer();
   }
 
   // -----------------------------------------------------------------------
@@ -211,6 +219,7 @@ export class InterimCommitManager {
     this.onSegmentFinalized?.(this.lastInterimText);
     this.lastInterimText = "";
     this.lastInterimTimestamp = 0;
+    this.clearDeadlineTimer();
   }
 
   // -----------------------------------------------------------------------
@@ -225,6 +234,9 @@ export class InterimCommitManager {
       this.lastInterimTimestamp > 0 &&
       this.now() - this.lastInterimTimestamp >= INTERIM_DEADLINE_MS
     ) {
+      const age = this.now() - this.lastInterimTimestamp;
+      traceEvent("warn", `icm:flush-expired`, `Deadline expired (${source}, age=${age}ms), flushing interim (${this.lastInterimText.length} chars)`);
+      this.clearDeadlineTimer();
       this.onProviderFinal(this.lastInterimText);
     }
   }
@@ -255,6 +267,29 @@ export class InterimCommitManager {
   /** The current pending interim text (for provider reconciliation). */
   getPendingInterimText(): string {
     return this.lastInterimText;
+  }
+
+  // -----------------------------------------------------------------------
+  // Deadline timer
+  // -----------------------------------------------------------------------
+
+  /** Schedule a setTimeout that will call maybeFlushExpired after the
+   *  deadline.  Resets on every new interim.  This is the active polling
+   *  mechanism that ensures commits happen even when no external events
+   *  (WebSocket messages, user interaction) wake the renderer. */
+  private scheduleDeadlineTimer(): void {
+    this.clearDeadlineTimer();
+    this.deadlineTimer = setTimeout(() => {
+      this.deadlineTimer = null;
+      this.maybeFlushExpired("deadline-timer");
+    }, INTERIM_DEADLINE_MS + 100); // +100ms buffer for timing jitter
+  }
+
+  private clearDeadlineTimer(): void {
+    if (this.deadlineTimer !== null) {
+      clearTimeout(this.deadlineTimer);
+      this.deadlineTimer = null;
+    }
   }
 
   // -----------------------------------------------------------------------
