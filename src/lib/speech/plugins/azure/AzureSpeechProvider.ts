@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
-import type { SpeechCallbacks, SpeechProvider } from "./types";
-import { traceEvent } from "../speechTraceStore";
+import type { SpeechCallbacks, SpeechProvider } from "../../types";
+import { traceEvent } from "../../../speechTraceStore";
 
 // Event coverage:
 // - session:start / session:stop-requested / session:stopped

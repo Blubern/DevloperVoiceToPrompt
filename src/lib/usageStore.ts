@@ -1,4 +1,5 @@
 import { load, type Store } from "@tauri-apps/plugin-store";
+import { providerRegistry } from "./speech/plugins";
 
 export interface ProviderUsage {
   today: number;
@@ -6,12 +7,8 @@ export interface ProviderUsage {
   last30Days: number;
 }
 
-export interface UsageStats {
-  web: ProviderUsage;
-  azure: ProviderUsage;
-  whisper: ProviderUsage;
-  total: ProviderUsage;
-}
+/** Per-provider usage keyed by provider ID, plus a "total" rollup. */
+export type UsageStats = Record<string, ProviderUsage> & { total: ProviderUsage };
 
 let storePromise: Promise<Store> | null = null;
 let migrationDone = false;
@@ -64,11 +61,21 @@ async function migrateIfNeeded(s: Store): Promise<void> {
   migrationDone = true;
 }
 
-export function recordUsage(seconds: number, provider: "os" | "azure" | "whisper"): Promise<void> {
+/** Map provider ID to store key. Legacy: "os" → "daily_web", others → "daily_{id}". */
+function providerStoreKey(provider: string): string {
+  return provider === "os" ? "daily_web" : `daily_${provider}`;
+}
+
+/** All store keys for registered providers (+ legacy "daily_web"). */
+function allProviderStoreKeys(): string[] {
+  return providerRegistry.getIds().map(providerStoreKey);
+}
+
+export function recordUsage(seconds: number, provider: string): Promise<void> {
   if (seconds <= 0) return Promise.resolve();
   return serialized(async () => {
     const s = await getStore();
-    const storeKey = provider === "os" ? "daily_web" : provider === "azure" ? "daily_azure" : "daily_whisper";
+    const storeKey = providerStoreKey(provider);
     const key = todayKey();
     const raw = await s.get<Record<string, number>>(storeKey);
     const daily: Record<string, number> = raw ?? {};
@@ -104,28 +111,29 @@ export async function getUsageStats(): Promise<UsageStats> {
   const s = await getStore();
   await migrateIfNeeded(s);
 
-  const rawWeb = (await s.get<Record<string, number>>("daily_web")) ?? {};
-  const rawAzure = (await s.get<Record<string, number>>("daily_azure")) ?? {};
-  const rawWhisper = (await s.get<Record<string, number>>("daily_whisper")) ?? {};
+  const total: ProviderUsage = { today: 0, thisWeek: 0, last30Days: 0 };
+  const result: Record<string, ProviderUsage> = {};
 
-  const web = computeProviderUsage(rawWeb);
-  const azure = computeProviderUsage(rawAzure);
-  const whisper = computeProviderUsage(rawWhisper);
-  const total: ProviderUsage = {
-    today: web.today + azure.today + whisper.today,
-    thisWeek: web.thisWeek + azure.thisWeek + whisper.thisWeek,
-    last30Days: web.last30Days + azure.last30Days + whisper.last30Days,
-  };
+  for (const id of providerRegistry.getIds()) {
+    const key = providerStoreKey(id);
+    const raw = (await s.get<Record<string, number>>(key)) ?? {};
+    const usage = computeProviderUsage(raw);
+    // Use legacy key "web" for "os" to keep backward compat with UsageTab
+    result[id === "os" ? "web" : id] = usage;
+    total.today += usage.today;
+    total.thisWeek += usage.thisWeek;
+    total.last30Days += usage.last30Days;
+  }
 
-  return { web, azure, whisper, total };
+  return { ...result, total } as UsageStats;
 }
 
 export function resetUsage(): Promise<void> {
   return serialized(async () => {
     const s = await getStore();
-    await s.set("daily_web", {});
-    await s.set("daily_azure", {});
-    await s.set("daily_whisper", {});
+    for (const key of allProviderStoreKeys()) {
+      await s.set(key, {});
+    }
     await s.delete("daily"); // clean up legacy
     await s.save();
   });
@@ -137,7 +145,7 @@ export function pruneOldEntries(): Promise<void> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
 
-    for (const storeKey of ["daily_web", "daily_azure", "daily_whisper"] as const) {
+    for (const storeKey of allProviderStoreKeys()) {
       const raw = await s.get<Record<string, number>>(storeKey);
       if (!raw) continue;
       const pruned: Record<string, number> = {};

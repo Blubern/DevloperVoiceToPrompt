@@ -5,15 +5,14 @@
   import { load, type Store } from "@tauri-apps/plugin-store";
   import type { AppSettings } from "../lib/settingsStore";
   import {
-    SUPPORTED_LANGUAGES,
     saveSettings,
   } from "../lib/settingsStore";
   import {
     createSpeechProvider,
     checkMicrophonePermission,
-    webSpeechAvailable,
     enumerateAudioDevices,
     revokeWorkletUrl,
+    providerRegistry,
     type SpeechCallbacks,
     type SpeechProvider,
     type AudioDevice,
@@ -33,13 +32,8 @@
   import { setTracingEnabled, clearTrace } from "../lib/speechTraceStore";
   import { traceEvent, setMaxEntries } from "../lib/speechTraceStore";
   import {
-    PROVIDER_AZURE,
-    PROVIDER_OS,
-    PROVIDER_WHISPER,
     WHISPER_RTF_WARNING,
     WHISPER_RTF_CRITICAL,
-    cycleProvider,
-    providerLabel,
     EVENT_SETTINGS_UPDATED,
     EVENT_TEMPLATES_UPDATED,
     EVENT_MCP_VOICE_REQUEST,
@@ -137,8 +131,9 @@
   let copilotConnected = $state(false);
   let enhancing = $state(false);
 
-  // Whisper model download check
-  let whisperModelMissing = $state(false);
+  // Plugin-driven readiness check (replaces per-provider hardcoded checks)
+  let pluginReady = $state(true);
+  let pluginError = $state<string | undefined>(undefined);
 
   // Enhancement undo stack (multi-level, resets on copy/close and clear)
   let enhanceUndoStack = $state<string[]>([]);
@@ -181,15 +176,37 @@
   let langDropdownOpen = $state(false);
   let langDropdownFilter = $state("");
 
-  let filteredPopupLanguages = $derived(
-    langDropdownFilter.trim()
-      ? SUPPORTED_LANGUAGES.filter(
-          (l) =>
-            l.label.toLowerCase().includes(langDropdownFilter.trim().toLowerCase()) ||
-            l.code.toLowerCase().includes(langDropdownFilter.trim().toLowerCase())
-        )
-      : SUPPORTED_LANGUAGES
-  );
+  // Current active plugin and its config — drives all dynamic UI
+  let activePlugin = $derived(providerRegistry.get(settings.speech_provider));
+  let activeConfig = $derived(settings.provider_configs?.[settings.speech_provider] ?? activePlugin?.defaultConfig() ?? {});
+
+  // Generic language display derived from plugin metadata
+  let languageDisplayLabels = $derived.by(() => {
+    const plugin = activePlugin;
+    if (!plugin || plugin.languageMode === "none") return [];
+    const config = activeConfig;
+    const langs = plugin.supportedLanguages;
+    if (plugin.languageMode === "multi") {
+      const codes = (config[plugin.languageConfigKey] as string[] | undefined) ?? [];
+      return codes.map((code) => {
+        const lang = langs.find((l) => l.code === code);
+        return lang ? `${lang.label.split(" ")[0]} (${code})` : code;
+      });
+    }
+    // single
+    const code = (config[plugin.languageConfigKey] as string | undefined) ?? "";
+    const lang = langs.find((l) => l.code === code);
+    return [lang ? `${lang.label.split(" ")[0]} (${code})` : code];
+  });
+
+  let filteredPopupLanguages = $derived.by(() => {
+    const langs = activePlugin?.supportedLanguages ?? [];
+    const filter = langDropdownFilter.trim().toLowerCase();
+    if (!filter) return langs;
+    return langs.filter(
+      (l) => l.label.toLowerCase().includes(filter) || l.code.toLowerCase().includes(filter)
+    );
+  });
 
   // Auto-scroll tracking
   let userScrolledUp = false;
@@ -202,25 +219,6 @@
     if (!settings.microphone_device_id) return "Default Mic";
     const dev = audioDevices.find(d => d.deviceId === settings.microphone_device_id);
     return dev ? dev.label : "Default Mic";
-  });
-
-  // Language labels for display: "Name (code)" format
-  let languageDisplayLabels = $derived(
-    settings.languages.map((code) => {
-      const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
-      return lang ? `${lang.label.split(" ")[0]} (${code})` : code;
-    })
-  );
-
-  // OS language display label
-  let osLanguageDisplayLabel = $derived.by(() => {
-    const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.os_language);
-    return lang ? `${lang.label.split(" ")[0]} (${settings.os_language})` : settings.os_language;
-  });
-
-  let whisperLanguageDisplayLabel = $derived.by(() => {
-    const lang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.whisper_language);
-    return lang ? `${lang.label.split(" ")[0]} (${settings.whisper_language})` : settings.whisper_language;
   });
 
   let popupFontFamily = $derived(FONT_FAMILIES[settings.popup_font] ?? FONT_FAMILIES.mono);
@@ -343,14 +341,41 @@
   // Auto-start recording when popup opens / regains focus
   let autoStartDone = $state(false);
 
+  // Unified plugin readiness check — runs whenever provider or config changes.
+  // Uses canStartAsync() if the plugin provides it, otherwise canStart().
+  $effect(() => {
+    const plugin = activePlugin;
+    const config = activeConfig;
+    if (!plugin) {
+      pluginReady = false;
+      pluginError = `Unknown speech provider "${settings.speech_provider}".`;
+      return;
+    }
+    if (plugin.canStartAsync) {
+      let stale = false;
+      plugin.canStartAsync(config).then((result) => {
+        if (stale) return;
+        pluginReady = result.ready;
+        pluginError = result.error;
+      }).catch(() => {
+        if (!stale) {
+          // Fallback to sync check if async fails
+          const result = plugin.canStart(config);
+          pluginReady = result.ready;
+          pluginError = result.error;
+        }
+      });
+      return () => { stale = true; };
+    } else {
+      const result = plugin.canStart(config);
+      pluginReady = result.ready;
+      pluginError = result.error;
+    }
+  });
+
   $effect(() => {
     if (settings.auto_start_recording && status === "idle" && !editedText && !autoStartDone) {
-      // Check provider config validity before auto-starting
-      const canStart =
-        (settings.speech_provider === PROVIDER_AZURE && settings.azure_speech_key && settings.azure_region) ||
-        (settings.speech_provider === PROVIDER_OS && webSpeechAvailable) ||
-        (settings.speech_provider === PROVIDER_WHISPER && settings.whisper_model && !whisperModelMissing);
-      if (canStart) {
+      if (pluginReady) {
         autoStartDone = true;
         // Slight delay to let the popup fully render
         autoStartTimer = setTimeout(() => toggleMic(), 150);
@@ -359,35 +384,6 @@
     return () => {
       if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
     };
-  });
-
-  // Check if selected Whisper model is downloaded; auto-select a downloaded one if not.
-  $effect(() => {
-    if (settings.speech_provider === PROVIDER_WHISPER) {
-      let stale = false;
-      invoke<{ name: string; downloaded: boolean }[]>("whisper_list_models").then((models) => {
-        if (stale) return;
-        const selected = models.find((m) => m.name === settings.whisper_model);
-        if (selected?.downloaded) {
-          whisperModelMissing = false;
-          return;
-        }
-        // Current model is missing or unset – pick the first downloaded model instead.
-        const available = models.find((m) => m.downloaded);
-        if (available) {
-          settings = { ...settings, whisper_model: available.name };
-          saveSettings(settings).catch(e => console.error("Failed to save whisper model fallback:", e));
-          whisperModelMissing = false;
-        } else {
-          whisperModelMissing = !!settings.whisper_model;
-        }
-      }).catch(() => {
-        if (!stale) whisperModelMissing = false;
-      });
-      return () => { stale = true; };
-    } else {
-      whisperModelMissing = false;
-    }
   });
 
   // Close language dropdown when recording starts
@@ -525,23 +521,9 @@
       return;
     }
 
-    if (settings.speech_provider === PROVIDER_AZURE && (!settings.azure_speech_key || !settings.azure_region)) {
-      errorMessage = "Azure Speech key not configured. Go to Settings → Speech.";
-      return;
-    }
-
-    if (settings.speech_provider === PROVIDER_OS && !webSpeechAvailable) {
-      errorMessage = "Web Speech API is not available in this browser.";
-      return;
-    }
-
-    if (settings.speech_provider === PROVIDER_WHISPER && !settings.whisper_model) {
-      errorMessage = "No Whisper model selected. Go to Settings → Speech → Whisper.";
-      return;
-    }
-
-    if (settings.speech_provider === PROVIDER_WHISPER && whisperModelMissing) {
-      errorMessage = "Selected Whisper model not downloaded. Go to Settings → Speech → Whisper to download it.";
+    // Unified plugin readiness check — uses the already-computed pluginReady state
+    if (!pluginReady) {
+      errorMessage = pluginError ?? "Provider cannot start. Check Settings → Speech.";
       return;
     }
 
@@ -605,8 +587,9 @@
           sessionStartTime = Date.now();
           resetSilenceTimer();
           startMaxRecordingTimer();
-          if (settings.speech_provider === PROVIDER_WHISPER) {
-            decodeCycleDuration = settings.whisper_decode_interval * 1000;
+          if (activePlugin?.capabilities.has("realtime-metrics")) {
+            const decodeInterval = (activeConfig.decode_interval as number | undefined) ?? 1;
+            decodeCycleDuration = decodeInterval * 1000;
             decodeCycleStart = performance.now();
             decodeActive = true;
             startDecodeRaf();
@@ -641,11 +624,9 @@
     status = "starting";
     provider.start(callbacks);
 
-    // For non-Whisper providers, start a standalone audio level meter.
-    // Whisper reports audio level via the onAudioLevel callback above.
-    // TODO: Refactor OS/Azure providers to expose their MediaStream so it can be
-    // passed here via existingStream, avoiding a second getUserMedia call.
-    if (settings.speech_provider !== PROVIDER_WHISPER) {
+    // For providers without 'audio-level' capability, start a standalone audio level meter.
+    // Providers with 'audio-level' (e.g. Whisper) report level via the onAudioLevel callback.
+    if (!activePlugin?.capabilities.has("audio-level")) {
       levelMeter = new AudioLevelMeter();
       levelMeter.start((level) => { audioLevel = level; }, settings.microphone_device_id || undefined);
     }
@@ -781,7 +762,7 @@
     } else if (matchesShortcut(e, settings.provider_switch_shortcut)) {
       e.preventDefault();
       if (status !== "listening") {
-        settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
+        settings = { ...settings, speech_provider: providerRegistry.cycle(settings.speech_provider) };
         saveSettings(settings).then(() => emit(EVENT_SETTINGS_UPDATED)).catch(err => console.error("Failed to persist provider change:", err));
       }
     } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
@@ -848,31 +829,46 @@
     setTimeout(() => { showTemplateSavedToast = false; }, 1800);
   }
 
-  // Language selector functions for popup
-  function togglePopupAzureLang(code: string) {
-    const current = settings.languages;
-    let newLangs: string[];
-    if (current.includes(code)) {
-      if (current.length > 1) {
-        newLangs = current.filter((l) => l !== code);
+  // Language selector — unified handler for all providers, driven by plugin.languageMode
+  function handleLanguageToggle(code: string) {
+    const plugin = activePlugin;
+    if (!plugin || plugin.languageMode === "none") return;
+    const providerId = settings.speech_provider;
+    const configKey = plugin.languageConfigKey;
+    const config = { ...(settings.provider_configs?.[providerId] ?? {}) };
+
+    if (plugin.languageMode === "multi") {
+      const current = (config[configKey] as string[] | undefined) ?? [];
+      if (current.includes(code)) {
+        if (current.length > 1) {
+          config[configKey] = current.filter((l) => l !== code);
+        } else {
+          return; // Keep at least one
+        }
       } else {
-        return; // Keep at least one
+        config[configKey] = [...current, code];
       }
     } else {
-      newLangs = [...current, code];
+      config[configKey] = code;
+      langDropdownOpen = false;
     }
-    settings = { ...settings, languages: newLangs };
+
+    // Write back into provider_configs and also update the legacy flat field
+    const newProviderConfigs = { ...settings.provider_configs, [providerId]: config };
+    const flatUpdates = buildFlatFieldUpdates(providerId, configKey, config[configKey]);
+    settings = { ...settings, provider_configs: newProviderConfigs, ...flatUpdates };
     persistLanguageChange();
   }
 
-  function selectPopupSingleLang(code: string) {
-    if (settings.speech_provider === PROVIDER_OS) {
-      settings = { ...settings, os_language: code };
-    } else if (settings.speech_provider === PROVIDER_WHISPER) {
-      settings = { ...settings, whisper_language: code };
-    }
-    langDropdownOpen = false;
-    persistLanguageChange();
+  /**
+   * Bridge: when a language changes via provider_configs, also update the
+   * corresponding flat settings field for backward compatibility.
+   */
+  function buildFlatFieldUpdates(providerId: string, configKey: string, value: unknown): Record<string, unknown> {
+    if (providerId === "os" && configKey === "language") return { os_language: value };
+    if (providerId === "azure" && configKey === "languages") return { languages: value };
+    if (providerId === "whisper" && configKey === "language") return { whisper_language: value };
+    return {};
   }
 
   async function persistLanguageChange() {
@@ -1032,7 +1028,7 @@
         class="provider-toggle"
         onclick={async () => {
           if (status !== "listening") {
-            settings = { ...settings, speech_provider: cycleProvider(settings.speech_provider) };
+            settings = { ...settings, speech_provider: providerRegistry.cycle(settings.speech_provider) };
             try {
               await saveSettings(settings);
               await emit(EVENT_SETTINGS_UPDATED);
@@ -1042,39 +1038,21 @@
           }
         }}
         disabled={status === "listening"}
-        title={`Using ${providerLabel(settings.speech_provider)} — click to switch`}
+        title={`Using ${providerRegistry.getLabel(settings.speech_provider)} — click to switch`}
       >
-        {providerLabel(settings.speech_provider)}
+        {providerRegistry.getLabel(settings.speech_provider)}
       </button>
-      {#if settings.speech_provider === PROVIDER_AZURE && settings.languages.length > 0}
+      {#if activePlugin && activePlugin.languageMode !== "none" && languageDisplayLabels.length > 0}
         {#if status === "listening"}
           <span class="lang-indicator" title={languageDisplayLabels.join(', ')}>{languageDisplayLabels.join(' · ')}</span>
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change languages">
+          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
             {languageDisplayLabels.join(' · ')} ▾
           </button>
         {/if}
-      {:else if settings.speech_provider === PROVIDER_OS}
-        {#if status === "listening"}
-          <span class="lang-indicator" title={settings.os_language}>{osLanguageDisplayLabel}</span>
-        {:else}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
-            {osLanguageDisplayLabel} ▾
-          </button>
-        {/if}
-      {:else if settings.speech_provider === PROVIDER_WHISPER}
-        {#if status === "listening"}
-          <span class="lang-indicator" title={settings.whisper_language}>{whisperLanguageDisplayLabel}</span>
-        {:else}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <button class="lang-indicator lang-selector-btn" onclick={(e) => { e.stopPropagation(); langDropdownOpen = !langDropdownOpen; langDropdownFilter = ''; }} title="Click to change language">
-            {whisperLanguageDisplayLabel} ▾
-          </button>
-        {/if}
       {/if}
-      {#if langDropdownOpen && status !== "listening"}
+      {#if langDropdownOpen && status !== "listening" && activePlugin}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="lang-dropdown" onclick={(e) => e.stopPropagation()}>
@@ -1086,21 +1064,23 @@
           />
           <div class="lang-dropdown-list">
             {#each filteredPopupLanguages as lang}
-              {#if settings.speech_provider === PROVIDER_AZURE}
+              {#if activePlugin.languageMode === "multi"}
+                {@const selectedLangs = (activeConfig[activePlugin.languageConfigKey] as string[] | undefined) ?? []}
                 <label class="lang-dropdown-item">
                   <input
                     type="checkbox"
-                    checked={settings.languages.includes(lang.code)}
-                    onchange={() => togglePopupAzureLang(lang.code)}
+                    checked={selectedLangs.includes(lang.code)}
+                    onchange={() => handleLanguageToggle(lang.code)}
                   />
                   <span>{lang.label}</span>
                   <span class="lang-dropdown-code">{lang.code}</span>
                 </label>
               {:else}
+                {@const selectedLang = (activeConfig[activePlugin.languageConfigKey] as string | undefined) ?? ""}
                 <button
                   class="lang-dropdown-item"
-                  class:selected={settings.speech_provider === PROVIDER_OS ? settings.os_language === lang.code : settings.whisper_language === lang.code}
-                  onclick={() => selectPopupSingleLang(lang.code)}
+                  class:selected={selectedLang === lang.code}
+                  onclick={() => handleLanguageToggle(lang.code)}
                 >
                   <span>{lang.label}</span>
                   <span class="lang-dropdown-code">{lang.code}</span>
@@ -1228,7 +1208,7 @@
             <div class="level-bar" style="width: {Math.round(audioLevel * 100)}%"></div>
           </div>
           <span class="rec-elapsed">{formatElapsed(elapsedSeconds)}</span>
-          {#if settings.speech_provider === PROVIDER_WHISPER}
+          {#if activePlugin?.capabilities.has("realtime-metrics")}
             <span class="rec-bar-badges">
               {#if decodeLatencyMs > 0}
                 <span
@@ -1291,19 +1271,13 @@
             </svg>
             {#if micWarning}
               <span class="empty-state-text">{micWarning}</span>
-            {:else if settings.speech_provider === PROVIDER_AZURE && !settings.azure_speech_key}
-              <span class="empty-state-text">Configure your Azure Speech key in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
-            {:else if settings.speech_provider === PROVIDER_OS && !webSpeechAvailable}
-              <span class="empty-state-text">Web Speech API is not available. Switch to Azure or Whisper in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button></span>
-            {:else if settings.speech_provider === PROVIDER_WHISPER && !settings.whisper_model}
-              <span class="empty-state-text">Download a Whisper model in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
-            {:else if settings.speech_provider === PROVIDER_WHISPER && whisperModelMissing}
-              <span class="empty-state-text">Selected Whisper model is not downloaded. Download it in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to get started</span>
+            {:else if !pluginReady && pluginError}
+              <span class="empty-state-text">{pluginError} <button class="link-btn" onclick={() => invoke('show_settings')}>Open Settings</button></span>
             {:else}
               <span class="empty-state-text">Click the mic or press <kbd>{formatShortcutLabel(settings.popup_voice_shortcut)}</kbd> to start</span>
             {/if}
             {#if settings.provider_switch_shortcut}
-              <span class="empty-state-hint">Press <kbd>{formatShortcutLabel(settings.provider_switch_shortcut)}</kbd> to switch between Web, Azure, and Whisper</span>
+              <span class="empty-state-hint">Press <kbd>{formatShortcutLabel(settings.provider_switch_shortcut)}</kbd> to switch providers</span>
             {:else}
               <span class="empty-state-hint">Configure a provider switch shortcut in <button class="link-btn" onclick={() => invoke('show_settings')}>Settings</button> to quickly switch providers</span>
             {/if}
@@ -1330,7 +1304,7 @@
 
         <!-- Floating mic button anchored to textarea -->
         <div class="mic-float">
-          {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening"}
+          {#if activePlugin?.capabilities.has("realtime-metrics") && status === "listening"}
             <div
               class="decode-ring"
               class:faded={!decodeActive}
@@ -1342,7 +1316,7 @@
       </div>
 
       <!-- Performance warning banner -->
-      {#if settings.speech_provider === PROVIDER_WHISPER && status === "listening" && performanceState === 'critical' && !performanceWarningDismissed}
+      {#if activePlugin?.capabilities.has("realtime-metrics") && status === "listening" && performanceState === 'critical' && !performanceWarningDismissed}
         <div class="perf-warning-bar">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           <span class="perf-warning-text">Model too large for your hardware — consider switching to a smaller model in Settings.</span>

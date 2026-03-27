@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Application settings, stored as a single JSON object in the Tauri store.
 ///
@@ -52,6 +53,8 @@ pub struct AppSettings {
     pub show_in_dock: bool,
     pub speech_tracing: bool,
     pub speech_trace_max_entries: u32,
+    /// Per-provider configuration, keyed by provider ID.
+    pub provider_configs: HashMap<String, serde_json::Value>,
 }
 
 // Default values must stay in sync with `DEFAULT_SETTINGS` in
@@ -103,6 +106,7 @@ impl Default for AppSettings {
             show_in_dock: false,
             speech_tracing: false,
             speech_trace_max_entries: 500,
+            provider_configs: HashMap::new(),
         }
     }
 }
@@ -247,6 +251,7 @@ fn migrate_from_individual_keys(store: &tauri_plugin_store::Store<tauri::Wry>) -
         show_in_dock: get_bool("show_in_dock", defaults.show_in_dock),
         speech_tracing: get_bool("speech_tracing", defaults.speech_tracing),
         speech_trace_max_entries: get_u32("speech_trace_max_entries", defaults.speech_trace_max_entries),
+        provider_configs: HashMap::new(),
     }
 }
 

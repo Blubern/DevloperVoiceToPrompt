@@ -5,6 +5,7 @@ mod copilot;
 pub mod logging;
 pub mod mcp;
 pub mod settings;
+pub mod speech;
 mod tray;
 mod whisper_cli;
 pub mod window_manager;
@@ -46,6 +47,7 @@ pub fn run() {
         .manage(copilot::CopilotState::default())
         .manage(mcp::McpState::default())
         .manage(mcp::McpServerHandle::default())
+        .manage(speech::NativeSpeechRegistry::default())
         .invoke_handler(tauri::generate_handler![
             commands::toggle_popup,
             commands::hide_popup,
@@ -84,6 +86,9 @@ pub fn run() {
             commands::mcp_submit_result,
             commands::mcp_cancel,
             commands::is_mcp_running,
+            speech::native_speech_start,
+            speech::native_speech_stop,
+            speech::native_speech_available,
         ])
         .on_window_event(|window, event| {
             // Hide the main/settings window instead of closing the app
