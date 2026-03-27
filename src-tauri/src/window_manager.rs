@@ -59,10 +59,10 @@ pub fn create_or_toggle_popup(app: &tauri::AppHandle) {
         let popup_y = store.as_ref().and_then(|s| s.get(STORE_KEY_POPUP_Y).and_then(|v| v.as_f64()));
 
         let mut builder = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("/".into()))
-            .title("Voice to Prompt")
+            .title("Developer Voice to Prompt")
             .inner_size(popup_w, popup_h)
             .min_inner_size(350.0, 280.0)
-            .decorations(false)
+            .decorations(true)
             .resizable(true)
             .skip_taskbar(!show_in_dock)
             .always_on_top(on_top)
@@ -100,6 +100,48 @@ pub fn show_settings(app: &tauri::AppHandle) {
         }
         if let Err(e) = win.set_focus() {
             tracing::warn!("Failed to set settings focus: {e}");
+        }
+    }
+}
+
+pub fn show_help(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("help") {
+        if let Err(e) = win.show() {
+            tracing::error!("Failed to show help window: {e}");
+        }
+        if let Err(e) = win.set_focus() {
+            tracing::warn!("Failed to set help focus: {e}");
+        }
+    } else {
+        let _win = WebviewWindowBuilder::new(app, "help", WebviewUrl::App("/".into()))
+            .title("Keyboard Shortcuts")
+            .inner_size(450.0, 380.0)
+            .resizable(false)
+            .center()
+            .build();
+        if let Err(ref e) = _win {
+            tracing::error!("Failed to create help window: {e}");
+        }
+    }
+}
+
+pub fn show_about(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("about") {
+        if let Err(e) = win.show() {
+            tracing::error!("Failed to show about window: {e}");
+        }
+        if let Err(e) = win.set_focus() {
+            tracing::warn!("Failed to set about focus: {e}");
+        }
+    } else {
+        let _win = WebviewWindowBuilder::new(app, "about", WebviewUrl::App("/".into()))
+            .title("About Developer Voice to Prompt")
+            .inner_size(500.0, 520.0)
+            .resizable(false)
+            .center()
+            .build();
+        if let Err(ref e) = _win {
+            tracing::error!("Failed to create about window: {e}");
         }
     }
 }

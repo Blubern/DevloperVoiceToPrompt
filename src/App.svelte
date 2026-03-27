@@ -2,12 +2,14 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { getSettings, type AppSettings } from "./lib/settingsStore";
-  import { WINDOW_MAIN, EVENT_CHECK_FIRST_RUN, EVENT_SETTINGS_UPDATED, PROVIDER_AZURE } from "./lib/constants";
+  import { WINDOW_MAIN, WINDOW_HELP, WINDOW_ABOUT, EVENT_CHECK_FIRST_RUN, EVENT_SETTINGS_UPDATED, PROVIDER_AZURE } from "./lib/constants";
   import Popup from "./components/Popup.svelte";
   import Settings from "./components/Settings.svelte";
+  import Help from "./components/Help.svelte";
+  import About from "./components/About.svelte";
   import { onMount, onDestroy } from "svelte";
 
-  let view = $state<"popup" | "settings">("popup");
+  let view = $state<"popup" | "settings" | "help" | "about">("popup");
   let settings = $state<AppSettings | null>(null);
   let unlisteners: UnlistenFn[] = [];
 
@@ -22,6 +24,10 @@
 
     if (label === WINDOW_MAIN) {
       view = "settings";
+    } else if (label === WINDOW_HELP) {
+      view = "help";
+    } else if (label === WINDOW_ABOUT) {
+      view = "about";
     } else {
       view = "popup";
     }
@@ -70,6 +76,10 @@
   <Popup {settings} />
 {:else if view === "settings"}
   <Settings initialSettings={settings} onSaved={handleSettingsSaved} />
+{:else if view === "help"}
+  <Help />
+{:else if view === "about"}
+  <About />
 {:else}
   <div class="loading">
     <p>Loading...</p>
