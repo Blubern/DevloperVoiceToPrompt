@@ -53,3 +53,15 @@ vi.mock("@tauri-apps/plugin-store", () => {
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
   writeText: vi.fn(() => Promise.resolve()),
 }));
+
+// Default mock return values for AI HTTP commands
+const aiMockDefaults: Record<string, unknown> = {
+  openai_complete: "enhanced text",
+  openai_list_models: [{ id: "gpt-4o", name: "gpt-4o" }],
+  openai_check_connection: true,
+  ollama_complete: "enhanced text",
+  ollama_list_models: [{ id: "llama3", name: "llama3" }],
+  ollama_check_connection: true,
+};
+
+export { aiMockDefaults };

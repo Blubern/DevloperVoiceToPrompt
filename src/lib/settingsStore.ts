@@ -35,11 +35,12 @@ export interface AppSettings {
   max_recording_enabled: boolean;
   max_recording_seconds: number;
   autostart_enabled: boolean;
-  copilot_enabled: boolean;
-  copilot_selected_model: string;
-  copilot_selected_enhancer: string;
-  copilot_delete_sessions: boolean;
+  ai_enabled: boolean;
+  ai_provider: string;
+  ai_selected_enhancer: string;
   prompt_enhancer_shortcut: string;
+  /** Per-AI-provider configuration, keyed by provider ID. */
+  ai_provider_configs: Record<string, Record<string, unknown>>;
   popup_font: string;
   open_popup_on_start: boolean;
   mcp_enabled: boolean;
@@ -86,11 +87,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   max_recording_enabled: true,
   max_recording_seconds: 180,
   autostart_enabled: false,
-  copilot_enabled: false,
-  copilot_selected_model: "",
-  copilot_selected_enhancer: "",
-  copilot_delete_sessions: true,
+  ai_enabled: false,
+  ai_provider: "copilot",
+  ai_selected_enhancer: "",
   prompt_enhancer_shortcut: "CommandOrControl+Shift+E",
+  ai_provider_configs: {},
   popup_font: "mono",
   open_popup_on_start: true,
   mcp_enabled: false,

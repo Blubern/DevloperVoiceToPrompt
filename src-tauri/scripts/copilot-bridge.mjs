@@ -2,8 +2,12 @@
 // Long-running Node.js process that wraps the official @github/copilot-sdk.
 // Communicates with the Rust backend via JSONL over stdin/stdout.
 //
+// The bridge process stays alive as a lightweight JSONL relay.
+// The CopilotClient is created per-call and torn down immediately after
+// each operation to avoid holding locks on the CLI binary (issue #4).
+//
 // Protocol:
-//   Request  (stdin):  { "id": 1, "method": "init"|"auth_status"|"list_models"|"stop" }
+//   Request  (stdin):  { "id": 1, "method": "auth_status"|"list_models"|"enhance" }
 //   Response (stdout): { "id": 1, "result": ... }  or  { "id": 1, "error": "..." }
 
 import { CopilotClient } from "@github/copilot-sdk";
@@ -13,7 +17,9 @@ import { existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-let client = null;
+// Cache the resolved CLI path (doesn't change during process lifetime)
+let cachedCliPath = undefined;
+let cliPathResolved = false;
 
 // ---------------------------------------------------------------------------
 // Resolve the @github/copilot CLI binary.  Tries every strategy in order so
@@ -70,91 +76,106 @@ function findCopilotCli() {
   return undefined;
 }
 
+/**
+ * Create a short-lived CopilotClient, execute `fn`, then stop the client.
+ * This ensures the CLI binary is never held open longer than necessary.
+ */
+async function withClient(fn) {
+  if (!cliPathResolved) {
+    cachedCliPath = findCopilotCli();
+    cliPathResolved = true;
+  }
+  const cliPath = cachedCliPath;
+  if (!cliPath) {
+    throw new Error(
+      "GitHub Copilot CLI not found. Ensure @github/copilot-sdk is installed (npm install) "
+      + "or install the Copilot CLI globally: winget install GitHub.Copilot (Windows) / brew install copilot-cli (macOS)"
+    );
+  }
+  const client = cliPath === "__SDK_SELF_RESOLVE__"
+    ? new CopilotClient()
+    : new CopilotClient({ cliPath });
+  await client.start();
+  try {
+    return await fn(client);
+  } finally {
+    await client.stop().catch(() => {});
+  }
+}
+
 async function handleRequest(req) {
   switch (req.method) {
     case "init": {
-      if (client) {
-        await client.stop().catch(() => {});
+      // Legacy no-op — kept for backward compatibility during transition.
+      // The per-call pattern means no persistent client needs initializing.
+      // We still resolve the CLI path to surface errors early.
+      if (!cliPathResolved) {
+        cachedCliPath = findCopilotCli();
+        cliPathResolved = true;
       }
-      const cliPath = findCopilotCli();
-      if (!cliPath) {
+      if (!cachedCliPath) {
         throw new Error(
           "GitHub Copilot CLI not found. Ensure @github/copilot-sdk is installed (npm install) "
           + "or install the Copilot CLI globally: winget install GitHub.Copilot (Windows) / brew install copilot-cli (macOS)"
         );
       }
-      // When the SDK can resolve @github/copilot itself, omit cliPath
-      if (cliPath === "__SDK_SELF_RESOLVE__") {
-        client = new CopilotClient();
-      } else {
-        client = new CopilotClient({ cliPath });
-      }
-      await client.start();
       return { ok: true };
     }
 
     case "auth_status": {
-      if (!client) throw new Error("Client not initialized");
-      const auth = await client.getAuthStatus();
-      return {
-        authenticated: auth.isAuthenticated ?? false,
-        login: auth.login ?? null,
-        host: auth.host ?? null,
-        status_message: auth.statusMessage ?? null,
-      };
+      return await withClient(async (client) => {
+        const auth = await client.getAuthStatus();
+        return {
+          authenticated: auth.isAuthenticated ?? false,
+          login: auth.login ?? null,
+          host: auth.host ?? null,
+          status_message: auth.statusMessage ?? null,
+        };
+      });
     }
 
     case "list_models": {
-      if (!client) throw new Error("Client not initialized");
-      const models = await client.listModels();
-      return models.map((m) => ({
-        id: m.id,
-        name: m.name,
-        is_premium: m.billing?.is_premium ?? false,
-        multiplier: m.billing?.multiplier ?? 0,
-      }));
+      return await withClient(async (client) => {
+        const models = await client.listModels();
+        return models.map((m) => ({
+          id: m.id,
+          name: m.name,
+          is_premium: m.billing?.is_premium ?? false,
+          multiplier: m.billing?.multiplier ?? 0,
+        }));
+      });
     }
 
     case "stop": {
-      if (client) {
-        await client.stop().catch(() => {});
-        client = null;
-      }
+      // Legacy no-op — nothing to tear down in per-call mode.
       return { ok: true };
     }
 
     case "enhance": {
-      if (!client) throw new Error("Client not initialized");
-      const { model, system_prompt, user_text, delete_session } = req.params ?? {};
+      const { model, system_prompt, user_text } = req.params ?? {};
       if (!model || !system_prompt || !user_text) {
         throw new Error("Missing required params: model, system_prompt, user_text");
       }
-      const session = await client.createSession({
-        model,
-        systemMessage: {
-          mode: "replace",
-          content: system_prompt,
-        },
-        availableTools: [],
-        onPermissionRequest: async () => ({ kind: "denied-by-rules" }),
-      });
-      const sessionId = session.sessionId;
-      try {
-        const response = await session.sendAndWait(
-          { prompt: user_text },
-          30000
-        );
-        return response?.data?.content ?? "";
-      } finally {
-        // destroy() handles local cleanup; deleteSession() removes it from the
-        // Copilot server. Only call deleteSession when explicitly requested.
-        if (delete_session !== false) {
-          await session.destroy().catch(() => {});
-          await client.deleteSession(sessionId).catch(() => {});
-        } else {
+      return await withClient(async (client) => {
+        const session = await client.createSession({
+          model,
+          systemMessage: {
+            mode: "replace",
+            content: system_prompt,
+          },
+          availableTools: [],
+          onPermissionRequest: async () => ({ kind: "denied-by-rules" }),
+        });
+        try {
+          const response = await session.sendAndWait(
+            { prompt: user_text },
+            30000
+          );
+          return response?.data?.content ?? "";
+        } finally {
           await session.destroy().catch(() => {});
         }
-      }
+      });
     }
 
     default:
@@ -183,9 +204,6 @@ rl.on("line", async (line) => {
   }
 });
 
-rl.on("close", async () => {
-  if (client) {
-    await client.stop().catch(() => {});
-  }
+rl.on("close", () => {
   process.exit(0);
 });

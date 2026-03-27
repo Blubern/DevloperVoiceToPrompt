@@ -7,6 +7,11 @@ export const PROVIDER_OS = "os" as const;
 export const PROVIDER_AZURE = "azure" as const;
 export const PROVIDER_WHISPER = "whisper" as const;
 
+// AI provider identifiers
+export const AI_PROVIDER_COPILOT = "copilot" as const;
+export const AI_PROVIDER_OPENAI = "openai" as const;   // reserved
+export const AI_PROVIDER_OLLAMA = "ollama" as const;    // reserved
+
 // Static fallback list — used only by cycleProvider() and providerLabel()
 // below. For the dynamic list of all registered providers, use
 // `providerRegistry.getIds()` and `.getLabel()` from `speech/plugins`.
@@ -47,7 +52,6 @@ export const EVENT_CHECK_FIRST_RUN = "check-first-run" as const;
 export const EVENT_WHISPER_DOWNLOAD_PROGRESS = "whisper-download-progress" as const;
 export const EVENT_WHISPER_CLI_DOWNLOAD_PROGRESS = "whisper-cli-download-progress" as const;
 export const EVENT_MCP_VOICE_REQUEST = "mcp-voice-request" as const;
-export const EVENT_COPILOT_BRIDGE_STATE = "copilot-bridge-state" as const;
 
 // Timer defaults
 export const DEFAULT_SILENCE_TIMEOUT_SECONDS = 30;

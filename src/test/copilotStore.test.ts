@@ -1,14 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  copilotInit,
   copilotAuthStatus,
   copilotListModels,
-  copilotStop,
   copilotEnhance,
-  copilotRestart,
-  copilotIsConnected,
-  copilotDisconnect,
 } from "../lib/copilotStore";
 
 const mockInvoke = vi.mocked(invoke);
@@ -18,12 +13,6 @@ beforeEach(() => {
 });
 
 describe("copilotStore", () => {
-  it("copilotInit calls invoke with correct command", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
-    await copilotInit();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_init", undefined);
-  });
-
   it("copilotAuthStatus calls invoke and returns auth info", async () => {
     const authData = {
       authenticated: true,
@@ -49,33 +38,15 @@ describe("copilotStore", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("copilotStop calls invoke with correct command", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
-    await copilotStop();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_stop", undefined);
-  });
-
-  it("copilotEnhance passes all params including deleteSession=true by default", async () => {
+  it("copilotEnhance passes model, system prompt, and user text", async () => {
     mockInvoke.mockResolvedValueOnce("enhanced text result");
     const result = await copilotEnhance("gpt-4o", "system prompt", "user text");
     expect(mockInvoke).toHaveBeenCalledWith("copilot_enhance", {
       modelId: "gpt-4o",
       systemPrompt: "system prompt",
       userText: "user text",
-      deleteSession: true,
     });
     expect(result).toBe("enhanced text result");
-  });
-
-  it("copilotEnhance passes deleteSession=false when specified", async () => {
-    mockInvoke.mockResolvedValueOnce("result");
-    await copilotEnhance("gpt-4o", "sys", "user", false);
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_enhance", {
-      modelId: "gpt-4o",
-      systemPrompt: "sys",
-      userText: "user",
-      deleteSession: false,
-    });
   });
 
   it("copilotAuthStatus returns unauthenticated state", async () => {
@@ -99,37 +70,12 @@ describe("copilotStore", () => {
   });
 
   it("wraps invoke errors in Error objects via tauriInvoke", async () => {
-    mockInvoke.mockRejectedValueOnce("bridge not running");
-    await expect(copilotInit()).rejects.toThrow('Tauri command "copilot_init" failed: bridge not running');
+    mockInvoke.mockRejectedValueOnce("auth check failed");
+    await expect(copilotAuthStatus()).rejects.toThrow('Tauri command "copilot_auth_status" failed: auth check failed');
   });
 
   it("wraps Error-type rejections via tauriInvoke", async () => {
     mockInvoke.mockRejectedValueOnce(new Error("connection refused"));
-    await expect(copilotStop()).rejects.toThrow('Tauri command "copilot_stop" failed: connection refused');
-  });
-
-  it("copilotRestart calls invoke with correct command", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
-    await copilotRestart();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_restart", undefined);
-  });
-
-  it("copilotIsConnected calls invoke and returns boolean", async () => {
-    mockInvoke.mockResolvedValueOnce(true);
-    const result = await copilotIsConnected();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_is_connected", undefined);
-    expect(result).toBe(true);
-  });
-
-  it("copilotIsConnected returns false when bridge is not running", async () => {
-    mockInvoke.mockResolvedValueOnce(false);
-    const result = await copilotIsConnected();
-    expect(result).toBe(false);
-  });
-
-  it("copilotDisconnect calls invoke with correct command", async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
-    await copilotDisconnect();
-    expect(mockInvoke).toHaveBeenCalledWith("copilot_disconnect", undefined);
+    await expect(copilotListModels()).rejects.toThrow('Tauri command "copilot_list_models" failed: connection refused');
   });
 });
