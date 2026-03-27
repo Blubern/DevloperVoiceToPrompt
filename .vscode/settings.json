@@ -1,0 +1,7 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "cargo check": true,
+        "npx svelte-check": true,
+        "npx vitest": true
+    }
+}
