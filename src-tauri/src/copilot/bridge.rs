@@ -10,7 +10,7 @@ pub(super) struct BridgeProcess {
     pub(super) _child: Child,
     pub(super) stdin: ChildStdin,
     pub(super) stdout: BufReader<ChildStdout>,
-    pub(super) stderr_task: tokio::task::JoinHandle<()>,
+    pub(super) _stderr_task: tokio::task::JoinHandle<()>,
     /// Monotonically increasing counter used to populate the JSON-RPC "id" field.
     ///
     /// IMPORTANT: Responses are matched **by position** (the next line read from

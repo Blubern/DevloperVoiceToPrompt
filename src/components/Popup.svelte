@@ -26,7 +26,7 @@
   import AboutOverlay from "./popup/AboutOverlay.svelte";
   import TemplatesPanel from "./popup/TemplatesPanel.svelte";
   import HistoryPanel from "./popup/HistoryPanel.svelte";
-  import CopilotEnhanceBar from "./popup/CopilotEnhanceBar.svelte";
+  import EnhanceBar from "./popup/EnhanceBar.svelte";
   import SpeechTracePanel from "./popup/SpeechTracePanel.svelte";
   import DictationEditor from "./popup/DictationEditor.svelte";
   import { setTracingEnabled, clearTrace } from "../lib/speechTraceStore";
@@ -44,7 +44,8 @@
   } from "../lib/constants";
   import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
   import { AudioLevelMeter } from "../lib/audioLevelMeter";
-  import { copilotEnhance, type CopilotAuthStatus } from "../lib/copilotStore";
+  import { createAIProvider } from "../lib/ai/aiService";
+  import type { AIProviderIndicator } from "../lib/ai/aiService";
   import { InterimCommitManager } from "../lib/interimCommitManager";
 
   interface Props {
@@ -59,7 +60,7 @@
   let finalSegments = $state<string[]>([]);
   let errorMessage = $state("");
   let dictationEditor: DictationEditor | undefined = $state();
-  let copilotEnhanceBar: CopilotEnhanceBar | undefined = $state();
+  let enhanceBar: EnhanceBar | undefined = $state();
 
   // Track user's edited text separately from speech output
   let editedText = $state("");
@@ -126,9 +127,9 @@
   let showUndoToast = $state(false);
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Copilot state (connection managed by CopilotEnhanceBar, enhance orchestration kept here)
-  let copilotAuth = $state<CopilotAuthStatus | null>(null);
-  let copilotConnected = $state(false);
+  // AI provider state (connection managed by EnhanceBar, enhance orchestration kept here)
+  let aiIndicator = $state<AIProviderIndicator | null>(null);
+  let aiProviderReady = $state(false);
   let enhancing = $state(false);
 
   // Plugin-driven readiness check (replaces per-provider hardcoded checks)
@@ -767,8 +768,8 @@
       }
     } else if (settings.prompt_enhancer_shortcut && matchesShortcut(e, settings.prompt_enhancer_shortcut)) {
       e.preventDefault();
-      // Delegate to CopilotEnhanceBar via component ref
-      copilotEnhanceBar?.triggerEnhance();
+      // Delegate to EnhanceBar via component ref
+      enhanceBar?.triggerEnhance();
     } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && enhanceUndoStack.length > 0) {
       e.preventDefault();
       undoEnhance();
@@ -954,14 +955,14 @@
     return () => { unlisten?.(); };
   });
 
-  // Copilot status callback — used for titlebar avatar display
-  function handleCopilotStatusUpdate(newStatus: string, auth: CopilotAuthStatus | null) {
-    copilotConnected = newStatus === 'connected';
-    copilotAuth = auth;
+  // AI provider status callback — used for titlebar indicator display
+  function handleEnhanceStatusUpdate(ready: boolean, indicator: AIProviderIndicator | null) {
+    aiProviderReady = ready;
+    aiIndicator = indicator;
   }
 
-  // Persist settings changes from CopilotEnhanceBar
-  function handleCopilotSettingsChanged(updated: AppSettings) {
+  // Persist settings changes from EnhanceBar
+  function handleEnhanceSettingsChanged(updated: AppSettings) {
     settings = updated;
   }
 
@@ -977,11 +978,9 @@
     if (enhanceToastTimer) { clearTimeout(enhanceToastTimer); enhanceToastTimer = null; }
   }
 
-  // Execute prompt enhancement — called by CopilotEnhanceBar with selected model and template
-  async function executeEnhance(modelId?: string, templateText?: string) {
+  // Execute prompt enhancement — called by EnhanceBar with selected model and system prompt
+  async function executeEnhance(modelId: string, systemPrompt: string) {
     if (enhancing) return;
-    // When called from keyboard shortcut (no args), use copilotEnhanceBar reference
-    if (!modelId || !templateText) return;
     enhancing = true;
     try {
       // Stop mic first if recording
@@ -990,14 +989,19 @@
       }
       const text = editedText.trim();
       if (!text) return;
-      const systemPrompt = ENHANCE_SYSTEM_PROMPT_WRAPPER + templateText;
-      const result = await copilotEnhance(modelId, systemPrompt, text, settings.copilot_delete_sessions);
+      const fullSystemPrompt = ENHANCE_SYSTEM_PROMPT_WRAPPER + systemPrompt;
+      const providerId = settings.ai_provider;
+      const config = settings.ai_provider_configs?.[providerId] ?? {};
+      const provider = createAIProvider(settings);
+      if (!provider) throw new Error(`No AI provider for '${providerId}'`);
+      const response = await provider.complete({ systemPrompt: fullSystemPrompt, userText: text, model: modelId || undefined });
+      const result = response.text;
       if (!result || !result.trim()) {
         return;
       }
       // Push current text to undo stack before replacing
       enhanceUndoStack = [...enhanceUndoStack, editedText];
-      traceEvent("data", "popup:enhance", `Copilot enhanced | old=${editedText.length} chars → new=${result.length} chars`);
+      traceEvent("data", "popup:enhance", `AI enhanced | old=${editedText.length} chars → new=${result.length} chars`);
       editedText = result;
       dictationEditor?.resetAnchorToEnd();
       // Show enhancement toast
@@ -1158,8 +1162,13 @@
       <button class="titlebar-btn" onclick={() => { helpOpen = !helpOpen; aboutOpen = false; }} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </button>
-      {#if settings.copilot_enabled && copilotConnected && copilotAuth?.login}
-        <img class="copilot-titlebar-avatar" src="https://github.com/{copilotAuth.login}.png?size=40" alt={copilotAuth.login} title={`Signed in as ${copilotAuth.login}`} />
+      {#if settings.ai_enabled && aiProviderReady && aiIndicator}
+        {@const indicatorUrl = settings.theme === 'light' ? aiIndicator.imageUrlLight : aiIndicator.imageUrlDark}
+        {#if indicatorUrl}
+          <img class="ai-titlebar-indicator" src={indicatorUrl} alt={aiIndicator.label} title={aiIndicator.label} />
+        {:else}
+          <span class="ai-titlebar-indicator ai-titlebar-indicator--text" title={aiIndicator.label}>{aiIndicator.label.charAt(0).toUpperCase()}</span>
+        {/if}
       {/if}
       <button class="titlebar-btn" onclick={() => invoke('show_settings')} aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1371,9 +1380,9 @@
           {/if}
         {/if}
 
-        <!-- Copilot enhancer (delegated to sub-component) -->
-        <CopilotEnhanceBar
-          bind:this={copilotEnhanceBar}
+        <!-- AI enhancer (delegated to sub-component) -->
+        <EnhanceBar
+          bind:this={enhanceBar}
           {settings}
           {status}
           {editedText}
@@ -1381,8 +1390,8 @@
           enhanceUndoStackSize={enhanceUndoStack.length}
           onEnhance={executeEnhance}
           onUndo={undoEnhance}
-          onSettingsChanged={handleCopilotSettingsChanged}
-          onStatusUpdate={handleCopilotStatusUpdate}
+          onSettingsChanged={handleEnhanceSettingsChanged}
+          onStatusUpdate={handleEnhanceStatusUpdate}
         />
       </div>
 
@@ -2375,12 +2384,22 @@
     font-size: 10px;
   }
 
-  .copilot-titlebar-avatar {
+  .ai-titlebar-indicator {
     width: 18px;
     height: 18px;
     border-radius: 50%;
     flex-shrink: 0;
     margin: 0 -1px;
+  }
+
+  .ai-titlebar-indicator--text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--ctp-text);
+    background: var(--ctp-surface1);
   }
 
   .enhance-toast {

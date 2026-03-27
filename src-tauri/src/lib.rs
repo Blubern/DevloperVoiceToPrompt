@@ -1,5 +1,6 @@
 use tauri::{Emitter, Manager};
 
+mod ai_http;
 mod commands;
 mod copilot;
 pub mod logging;
@@ -67,14 +68,15 @@ pub fn run() {
             commands::whisper_delete_cli,
             commands::whisper_server_status,
             commands::whisper_hardware_info,
-            copilot::copilot_init,
-            copilot::copilot_restart,
-            copilot::copilot_is_connected,
-            copilot::copilot_disconnect,
             copilot::copilot_auth_status,
             copilot::copilot_list_models,
-            copilot::copilot_stop,
             copilot::copilot_enhance,
+            commands::openai_complete,
+            commands::openai_list_models,
+            commands::openai_check_connection,
+            commands::ollama_complete,
+            commands::ollama_list_models,
+            commands::ollama_check_connection,
             commands::get_logs,
             commands::clear_logs,
             commands::get_log_path,

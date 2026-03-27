@@ -48,12 +48,16 @@ describe("DEFAULT_SETTINGS alignment with Rust backend", () => {
     expect(DEFAULT_SETTINGS.mcp_timeout_seconds).toBe(300);
   });
 
-  it("has correct copilot_enabled default", () => {
-    expect(DEFAULT_SETTINGS.copilot_enabled).toBe(false);
+  it("has correct ai_enabled default", () => {
+    expect(DEFAULT_SETTINGS.ai_enabled).toBe(false);
   });
 
-  it("has correct copilot_delete_sessions default", () => {
-    expect(DEFAULT_SETTINGS.copilot_delete_sessions).toBe(true);
+  it("has correct ai_provider default", () => {
+    expect(DEFAULT_SETTINGS.ai_provider).toBe("copilot");
+  });
+
+  it("has correct ai_selected_enhancer default", () => {
+    expect(DEFAULT_SETTINGS.ai_selected_enhancer).toBe("");
   });
 
   it("has correct history_enabled default", () => {
@@ -129,10 +133,10 @@ describe("DEFAULT_SETTINGS completeness", () => {
       "max_recording_enabled",
       "max_recording_seconds",
       "autostart_enabled",
-      "copilot_enabled",
-      "copilot_selected_model",
-      "copilot_selected_enhancer",
-      "copilot_delete_sessions",
+      "ai_enabled",
+      "ai_provider",
+      "ai_selected_enhancer",
+      "ai_provider_configs",
       "prompt_enhancer_shortcut",
       "popup_font",
       "open_popup_on_start",

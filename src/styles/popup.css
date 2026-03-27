@@ -459,7 +459,7 @@
   }
 }
 
-/* ---- Copilot Enhance Bar (shared between Popup and CopilotEnhanceBar) ---- */
+/* ---- AI Enhance Bar (shared between Popup and EnhanceBar) ---- */
 .copilot-inline {
   display: flex;
   align-items: center;

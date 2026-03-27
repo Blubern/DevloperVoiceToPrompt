@@ -16,7 +16,8 @@
   import TemplatesTab from "./settings/TemplatesTab.svelte";
   import HistoryTab from "./settings/HistoryTab.svelte";
   import UsageTab from "./settings/UsageTab.svelte";
-  import CopilotTab from "./settings/CopilotTab.svelte";
+  import AITab from "./settings/AITab.svelte";
+  import PromptsTab from "./settings/PromptsTab.svelte";
   import LogsTab from "./settings/LogsTab.svelte";
 
   interface Props {
@@ -44,7 +45,7 @@
   let success = $state(false);
   let audioDevices = $state<AudioDevice[]>([]);
   let micWarning = $state("");
-  let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "copilot" | "logs">("general");
+  let activeTab = $state<"general" | "speech" | "phrases" | "templates" | "history" | "usage" | "ai" | "prompts" | "logs">("general");
   let mcpRunning = $state(false);
 
   /** Hydrate form state from a settings object. */
@@ -172,7 +173,8 @@
       <button type="button" class="tab" class:active={activeTab === 'templates'} onclick={() => activeTab = 'templates'}>Templates</button>
       <button type="button" class="tab" class:active={activeTab === 'history'} onclick={() => activeTab = 'history'}>History</button>
       <button type="button" class="tab" class:active={activeTab === 'usage'} onclick={() => activeTab = 'usage'}>Usage</button>
-      <button type="button" class="tab" class:active={activeTab === 'copilot'} onclick={() => activeTab = 'copilot'}>GitHub Copilot</button>
+      <button type="button" class="tab" class:active={activeTab === 'ai'} onclick={() => activeTab = 'ai'}>AI</button>
+      <button type="button" class="tab" class:active={activeTab === 'prompts'} onclick={() => activeTab = 'prompts'}>Prompts</button>
       <button type="button" class="tab" class:active={activeTab === 'logs'} onclick={() => activeTab = 'logs'}>Logs</button>
     </div>
   </div>
@@ -198,8 +200,10 @@
         <HistoryTab bind:historyEnabled={s.history_enabled} bind:historyMaxEntries={s.history_max_entries} />
       {:else if activeTab === 'usage'}
         <UsageTab />
-      {:else if activeTab === 'copilot'}
-        <CopilotTab bind:copilotEnabled={s.copilot_enabled} bind:copilotSelectedModel={s.copilot_selected_model} bind:copilotSelectedEnhancer={s.copilot_selected_enhancer} bind:copilotDeleteSessions={s.copilot_delete_sessions} bind:promptEnhancerShortcut={s.prompt_enhancer_shortcut} />
+      {:else if activeTab === 'ai'}
+        <AITab bind:settings={s} />
+      {:else if activeTab === 'prompts'}
+        <PromptsTab bind:aiSelectedEnhancer={s.ai_selected_enhancer} bind:promptEnhancerShortcut={s.prompt_enhancer_shortcut} />
       {:else if activeTab === 'logs'}
         <LogsTab />
       {/if}
