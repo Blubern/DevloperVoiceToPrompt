@@ -1,6 +1,8 @@
 // Window labels used by Tauri
 export const WINDOW_MAIN = "main" as const;
 export const WINDOW_POPUP = "popup" as const;
+export const WINDOW_HELP = "help" as const;
+export const WINDOW_ABOUT = "about" as const;
 
 // Speech provider identifiers (kept as constants for backward compatibility)
 export const PROVIDER_OS = "os" as const;
@@ -90,7 +92,7 @@ Enhancement instructions:
 /** Known built-in providers. Plugins can register additional IDs (use `string` when accepting any). */
 export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER | (string & {});
 export type RecordingStatus = "idle" | "starting" | "listening" | "error";
-export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP;
+export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP | typeof WINDOW_HELP | typeof WINDOW_ABOUT;
 
 // Font options for the popup editor textarea
 export interface FontOption {

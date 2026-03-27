@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default permissions for the Speech to Text app",
-  "windows": ["main", "popup"],
+  "windows": ["main", "popup", "help", "about"],
   "permissions": [
     "core:default",
     "core:event:default",

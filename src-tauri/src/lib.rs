@@ -56,6 +56,8 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::show_settings,
+            commands::show_help,
+            commands::show_about,
             commands::whisper_list_models,
             commands::whisper_download_model,
             commands::whisper_delete_model,
@@ -93,9 +95,9 @@ pub fn run() {
             speech::native_speech_available,
         ])
         .on_window_event(|window, event| {
-            // Hide the main/settings window instead of closing the app
-            if window.label() == "main" {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // Hide the main/settings and popup windows instead of closing the app
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
                     api.prevent_close();
                     let _ = window.hide();
                     // Restore popup's always_on_top from the stored setting
@@ -104,6 +106,9 @@ pub fn run() {
                         let on_top = settings::load_settings(app).always_on_top;
                         let _ = popup.set_always_on_top(on_top);
                     }
+                } else if window.label() == "popup" {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })

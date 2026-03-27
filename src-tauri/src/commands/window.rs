@@ -17,6 +17,16 @@ pub fn show_settings(app: tauri::AppHandle) {
     crate::window_manager::show_settings(&app);
 }
 
+#[tauri::command]
+pub fn show_help(app: tauri::AppHandle) {
+    crate::window_manager::show_help(&app);
+}
+
+#[tauri::command]
+pub fn show_about(app: tauri::AppHandle) {
+    crate::window_manager::show_about(&app);
+}
+
 /// Toggle Dock (macOS) or Taskbar (Windows) icon visibility at runtime.
 /// On other platforms this is a no-op.
 pub fn set_dock_visibility(app: &tauri::AppHandle, visible: bool) {
@@ -39,7 +49,7 @@ pub fn set_dock_visibility(app: &tauri::AppHandle, visible: bool) {
     }
     #[cfg(target_os = "windows")]
     {
-        for label in ["main", "popup"] {
+        for label in ["main", "popup", "help", "about"] {
             if let Some(win) = app.get_webview_window(label) {
                 let _ = win.set_skip_taskbar(!visible);
             }
