@@ -7,14 +7,14 @@ export interface SpeechCallbacks {
   onFinal: (text: string) => void;
   onError: (error: string) => void;
   onStatusChange: (status: "idle" | "listening" | "error") => void;
-  /** Called by the Whisper provider each time a new decode cycle starts. */
+  /** Fired by providers with the `realtime-metrics` capability when a new decode cycle starts. */
   onDecodeStart?: () => void;
-  /** Called after each Whisper decode with the wall-clock latency in milliseconds. */
+  /** Fired by providers with the `realtime-metrics` capability with decode wall-clock latency in ms. */
   onDecodeLatency?: (ms: number) => void;
-  /** Called with a normalized 0–1 audio level (Whisper provider only). */
+  /** Fired by providers with the `audio-level` capability with a normalized 0–1 audio level. */
   onAudioLevel?: (level: number) => void;
   /**
-   * Called after each Whisper decode with performance metrics.
+   * Fired by providers with the `realtime-metrics` capability after each decode.
    * `rtf` = Real-Time Factor (inference_time / audio_duration). < 1.0 = real-time capable.
    * `backend` = "CUDA" | "Metal" | "CPU" | undefined (from server hardware info).
    */

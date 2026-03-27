@@ -4,7 +4,7 @@ import { tauriInvoke } from "./tauriInvoke";
 export { AZURE_REGIONS, SUPPORTED_LANGUAGES } from "./speechConstants";
 
 export interface AppSettings {
-  speech_provider: "os" | "azure" | "whisper";
+  speech_provider: "os" | "azure" | "whisper" | (string & {});
   os_language: string;
   os_auto_restart: boolean;
   os_max_restarts: number;
@@ -48,6 +48,8 @@ export interface AppSettings {
   show_in_dock: boolean;
   speech_tracing: boolean;
   speech_trace_max_entries: number;
+  /** Per-provider configuration, keyed by provider ID. */
+  provider_configs: Record<string, Record<string, unknown>>;
 }
 
 // DEFAULT_SETTINGS must stay in sync with `impl Default for AppSettings` in
@@ -97,12 +99,55 @@ export const DEFAULT_SETTINGS: AppSettings = {
   show_in_dock: false,
   speech_tracing: false,
   speech_trace_max_entries: 500,
+  provider_configs: {},
 };
 
 export async function getSettings(): Promise<AppSettings> {
-  return tauriInvoke<AppSettings>("get_settings");
+  const settings = await tauriInvoke<AppSettings>("get_settings");
+  return migrateProviderConfigs(settings);
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await tauriInvoke("save_settings", { settings });
+}
+
+// ---------------------------------------------------------------------------
+// Provider config migration — moves flat fields into provider_configs map
+// ---------------------------------------------------------------------------
+
+/**
+ * If `provider_configs` is empty, populate it from the legacy flat fields.
+ * This runs on every load so old settings files are transparently upgraded.
+ * The flat fields are preserved for backward compatibility during the transition.
+ */
+export function migrateProviderConfigs(settings: AppSettings): AppSettings {
+  if (settings.provider_configs && Object.keys(settings.provider_configs).length > 0) {
+    return settings; // Already migrated
+  }
+
+  const provider_configs: Record<string, Record<string, unknown>> = {
+    os: {
+      language: settings.os_language ?? DEFAULT_SETTINGS.os_language,
+      auto_restart: settings.os_auto_restart ?? DEFAULT_SETTINGS.os_auto_restart,
+      max_restarts: settings.os_max_restarts ?? DEFAULT_SETTINGS.os_max_restarts,
+    },
+    azure: {
+      speech_key: settings.azure_speech_key ?? DEFAULT_SETTINGS.azure_speech_key,
+      region: settings.azure_region ?? DEFAULT_SETTINGS.azure_region,
+      languages: settings.languages ?? DEFAULT_SETTINGS.languages,
+      auto_punctuation: settings.auto_punctuation ?? DEFAULT_SETTINGS.auto_punctuation,
+    },
+    whisper: {
+      model: settings.whisper_model ?? DEFAULT_SETTINGS.whisper_model,
+      language: settings.whisper_language ?? DEFAULT_SETTINGS.whisper_language,
+      decode_interval: settings.whisper_decode_interval ?? DEFAULT_SETTINGS.whisper_decode_interval,
+      context_overlap: settings.whisper_context_overlap ?? DEFAULT_SETTINGS.whisper_context_overlap,
+      use_gpu: settings.whisper_use_gpu ?? DEFAULT_SETTINGS.whisper_use_gpu,
+      cli_version: settings.whisper_cli_version ?? DEFAULT_SETTINGS.whisper_cli_version,
+      cli_variant: settings.whisper_cli_variant ?? DEFAULT_SETTINGS.whisper_cli_variant,
+      chunk_seconds: settings.whisper_chunk_seconds ?? DEFAULT_SETTINGS.whisper_chunk_seconds,
+    },
+  };
+
+  return { ...settings, provider_configs };
 }

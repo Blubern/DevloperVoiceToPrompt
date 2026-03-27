@@ -142,6 +142,7 @@ describe("DEFAULT_SETTINGS completeness", () => {
       "show_in_dock",
       "speech_tracing",
       "speech_trace_max_entries",
+      "provider_configs",
     ];
 
     const actualKeys = Object.keys(DEFAULT_SETTINGS).sort();

@@ -2,9 +2,9 @@
 // OS (Web Speech API) provider
 // ---------------------------------------------------------------------------
 
-import type { SpeechCallbacks, SpeechProvider } from "./types";
-import { getSpeechRecognitionCtor } from "./speechHelpers";
-import { traceEvent } from "../speechTraceStore";
+import type { SpeechCallbacks, SpeechProvider } from "../../types";
+import { getSpeechRecognitionCtor } from "../../speechHelpers";
+import { traceEvent } from "../../../speechTraceStore";
 
 // Event coverage:
 // - session:start / session:stop-requested / session:stopped

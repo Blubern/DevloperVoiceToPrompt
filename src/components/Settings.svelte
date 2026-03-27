@@ -188,12 +188,7 @@
           bind:showInDock={s.show_in_dock} bind:speechTracing={s.speech_tracing} bind:speechTraceMaxEntries={s.speech_trace_max_entries}
           {isMac} {isWindows} {mcpRunning} />
       {:else if activeTab === 'speech'}
-        <SpeechTab bind:speechProvider={s.speech_provider} bind:osLanguage={s.os_language} bind:osAutoRestart={s.os_auto_restart} bind:osMaxRestarts={s.os_max_restarts}
-          bind:key={s.azure_speech_key} bind:region={s.azure_region} bind:languages={s.languages} bind:microphoneDeviceId={s.microphone_device_id} bind:autoPunctuation={s.auto_punctuation}
-          bind:whisperModel={s.whisper_model} bind:whisperLanguage={s.whisper_language} bind:whisperChunkSeconds={s.whisper_chunk_seconds}
-          bind:whisperDecodeInterval={s.whisper_decode_interval} bind:whisperContextOverlap={s.whisper_context_overlap}
-          bind:whisperCliVersion={s.whisper_cli_version} bind:whisperCliVariant={s.whisper_cli_variant} bind:whisperUseGpu={s.whisper_use_gpu}
-          bind:speechTracing={s.speech_tracing}
+        <SpeechTab bind:settings={s}
           {audioDevices} {micWarning} {isMac} bind:error />
       {:else if activeTab === 'phrases'}
         <PhrasesTab bind:phraseList={s.phrase_list} />

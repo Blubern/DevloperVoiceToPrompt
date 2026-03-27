@@ -37,6 +37,20 @@ This document covers local setup, build requirements, troubleshooting, and the h
 | `zip` | ZIP extraction for CLI binary management |
 | `serde` / `serde_json` | Serialization |
 
+## Speech Provider Plugin System
+
+Speech providers use a **plugin architecture** — each provider is a self-contained module that registers with a central `SpeechProviderRegistry`. Adding a new provider requires only creating a plugin directory under `src/lib/speech/plugins/`. No changes to Popup, Settings, or other core files.
+
+Three execution contexts are supported:
+
+| Context | Description | Examples |
+|---------|-------------|---------|
+| `browser` | Runs entirely in TypeScript/WebView | Web Speech API, Azure SDK |
+| `native` | Runs entirely in Rust via `NativeSpeechProvider` trait | Apple Speech, Windows Speech *(planned)* |
+| `hybrid` | TS captures audio, Rust processes | Whisper (whisper.cpp server) |
+
+See **[doc/speech-plugin-architecture.md](doc/speech-plugin-architecture.md)** for the full developer guide on creating new providers.
+
 ## Prerequisites
 
 | Dependency | Purpose |

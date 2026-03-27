@@ -2,24 +2,41 @@
 export const WINDOW_MAIN = "main" as const;
 export const WINDOW_POPUP = "popup" as const;
 
-// Speech provider identifiers
+// Speech provider identifiers (kept as constants for backward compatibility)
 export const PROVIDER_OS = "os" as const;
 export const PROVIDER_AZURE = "azure" as const;
 export const PROVIDER_WHISPER = "whisper" as const;
 
-export const PROVIDER_ORDER = [PROVIDER_OS, PROVIDER_AZURE, PROVIDER_WHISPER] as const;
+// Static fallback list — used only by cycleProvider() and providerLabel()
+// below. For the dynamic list of all registered providers, use
+// `providerRegistry.getIds()` and `.getLabel()` from `speech/plugins`.
+const BUILTIN_ORDER = [PROVIDER_OS, PROVIDER_AZURE, PROVIDER_WHISPER] as const;
+const BUILTIN_LABELS: Record<string, string> = {
+  [PROVIDER_OS]: "Web Speech",
+  [PROVIDER_AZURE]: "Azure",
+  [PROVIDER_WHISPER]: "Whisper",
+};
 
+/**
+ * Cycle to the next built-in provider.
+ * @deprecated Prefer `providerRegistry.cycle()` from `speech/plugins`
+ * which dynamically handles all registered providers.
+ */
 export function cycleProvider(
   current: SpeechProviderType,
 ): SpeechProviderType {
-  const idx = PROVIDER_ORDER.indexOf(current);
-  return PROVIDER_ORDER[(idx + 1) % PROVIDER_ORDER.length];
+  const idx = BUILTIN_ORDER.indexOf(current as typeof BUILTIN_ORDER[number]);
+  if (idx === -1) return BUILTIN_ORDER[0];
+  return BUILTIN_ORDER[(idx + 1) % BUILTIN_ORDER.length];
 }
 
+/**
+ * Get human-readable label for a built-in provider ID.
+ * @deprecated Prefer `providerRegistry.getLabel()` from `speech/plugins`
+ * which dynamically handles all registered providers.
+ */
 export function providerLabel(p: SpeechProviderType): string {
-  if (p === PROVIDER_OS) return "Web";
-  if (p === PROVIDER_AZURE) return "Azure";
-  return "Whisper";
+  return BUILTIN_LABELS[p] ?? p;
 }
 
 // Tauri custom event names
@@ -66,7 +83,8 @@ Enhancement instructions:
 `;
 
 // Types
-export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER;
+/** Known built-in providers. Plugins can register additional IDs (use `string` when accepting any). */
+export type SpeechProviderType = typeof PROVIDER_OS | typeof PROVIDER_AZURE | typeof PROVIDER_WHISPER | (string & {});
 export type RecordingStatus = "idle" | "starting" | "listening" | "error";
 export type WindowLabel = typeof WINDOW_MAIN | typeof WINDOW_POPUP;
 

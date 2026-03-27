@@ -3,7 +3,6 @@ import {
   PROVIDER_OS,
   PROVIDER_AZURE,
   PROVIDER_WHISPER,
-  PROVIDER_ORDER,
   cycleProvider,
   providerLabel,
   WINDOW_MAIN,
@@ -12,11 +11,10 @@ import {
 import { matchesShortcut, formatShortcutLabel } from "../lib/useKeyboardShortcuts";
 
 describe("constants", () => {
-  it("has all three providers in PROVIDER_ORDER", () => {
-    expect(PROVIDER_ORDER).toContain(PROVIDER_OS);
-    expect(PROVIDER_ORDER).toContain(PROVIDER_AZURE);
-    expect(PROVIDER_ORDER).toContain(PROVIDER_WHISPER);
-    expect(PROVIDER_ORDER).toHaveLength(3);
+  it("has correct provider string values", () => {
+    expect(PROVIDER_OS).toBe("os");
+    expect(PROVIDER_AZURE).toBe("azure");
+    expect(PROVIDER_WHISPER).toBe("whisper");
   });
 
   it("has correct window labels", () => {
@@ -35,7 +33,7 @@ describe("cycleProvider", () => {
 
 describe("providerLabel", () => {
   it("returns human-readable labels", () => {
-    expect(providerLabel(PROVIDER_OS)).toBe("Web");
+    expect(providerLabel(PROVIDER_OS)).toBe("Web Speech");
     expect(providerLabel(PROVIDER_AZURE)).toBe("Azure");
     expect(providerLabel(PROVIDER_WHISPER)).toBe("Whisper");
   });

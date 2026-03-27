@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 
 import { invoke } from "@tauri-apps/api/core";
-import { WHISPER_SILENCE_RMS_THRESHOLD, WHISPER_STABILITY_COUNT, WHISPER_RTF_WINDOW_SIZE } from "../constants";
-import type { SpeechCallbacks, SpeechProvider } from "./types";
-import { traceEvent } from "../speechTraceStore";
+import { WHISPER_SILENCE_RMS_THRESHOLD, WHISPER_STABILITY_COUNT, WHISPER_RTF_WINDOW_SIZE } from "../../../constants";
+import type { SpeechCallbacks, SpeechProvider } from "../../types";
+import { traceEvent } from "../../../speechTraceStore";
 import {
   cleanText,
   stripOverlap,
@@ -14,7 +14,7 @@ import {
   computeCompaction,
   computeRms,
   uint8ToBase64,
-} from "./whisperHelpers";
+} from "../../whisperHelpers";
 
 // Event coverage:
 // - session:start / session:stop-requested
