@@ -42,3 +42,15 @@ axum = "0.8"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSLocale", "NSError", "NSObjCRuntime"] }
+objc2-speech = { version = "0.3", features = ["SFSpeechRecognizer", "SFSpeechRecognitionTask", "SFSpeechRecognitionResult", "SFSpeechRecognitionRequest", "SFTranscription", "SFTranscriptionSegment"] }
+objc2-avf-audio = { version = "0.3", features = ["AVAudioEngine", "AVAudioNode", "AVAudioIONode", "AVAudioFormat", "AVAudioBuffer", "AVAudioTime", "block2"] }
+block2 = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = [
+    "Media_SpeechRecognition",
+    "Globalization",
+    "Foundation",
+    "Foundation_Collections",
+] }

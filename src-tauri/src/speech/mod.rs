@@ -19,6 +19,11 @@
 //   speech://{provider_id}/performance   → { rtf, avgRtf, inferenceMs, backend? }
 // ---------------------------------------------------------------------------
 
+#[cfg(target_os = "macos")]
+pub mod apple;
+#[cfg(target_os = "windows")]
+pub mod windows;
+
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;

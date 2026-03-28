@@ -4,6 +4,8 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Developer Voice to Prompt needs microphone access for speech-to-text dictation.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Developer Voice to Prompt uses Apple Speech Recognition for native on-device dictation.</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

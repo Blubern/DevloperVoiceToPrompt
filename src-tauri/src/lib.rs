@@ -143,6 +143,21 @@ pub fn run() {
                 }
             }
 
+            // Register platform-specific native speech providers
+            {
+                let registry = app.state::<speech::NativeSpeechRegistry>();
+                #[cfg(target_os = "macos")]
+                {
+                    registry.register(Box::new(speech::apple::AppleSpeechProvider::new()));
+                    tracing::info!("Registered Apple Speech native provider");
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    registry.register(Box::new(speech::windows::WindowsSpeechProvider::new()));
+                    tracing::info!("Registered Windows Speech native provider");
+                }
+            }
+
             // Apply Dock (macOS) / Taskbar (Windows) visibility from saved settings
             commands::set_dock_visibility(app.handle(), user_settings.show_in_dock);
 
