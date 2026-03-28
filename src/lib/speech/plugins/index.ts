@@ -12,4 +12,26 @@ providerRegistry.register(osPlugin);
 providerRegistry.register(azurePlugin);
 providerRegistry.register(whisperPlugin);
 
+// Platform-specific native providers — registered conditionally
+const isMac =
+  typeof navigator !== "undefined" &&
+  (navigator.platform?.toLowerCase().includes("mac") ||
+    navigator.userAgent?.includes("Macintosh"));
+const isWindows =
+  typeof navigator !== "undefined" &&
+  (navigator.platform?.toLowerCase().includes("win") ||
+    navigator.userAgent?.includes("Windows"));
+
+if (isMac) {
+  import("./apple").then(({ default: applePlugin }) => {
+    providerRegistry.register(applePlugin);
+  });
+}
+
+if (isWindows) {
+  import("./windows").then(({ default: windowsPlugin }) => {
+    providerRegistry.register(windowsPlugin);
+  });
+}
+
 export { providerRegistry };
