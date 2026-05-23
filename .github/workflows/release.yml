@@ -158,6 +158,7 @@ jobs:
           name: release-${{ matrix.os }}-${{ matrix.arch }}
           path: renamed/*
           if-no-files-found: error
+          retention-days: 1
 
   release:
     needs: build
@@ -184,3 +185,34 @@ jobs:
           draft: false
           prerelease: false
           files: artifacts/*
+
+  cleanup:
+    needs: [release]
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Delete this run's workflow artifacts
+        uses: actions/github-script@v9
+        with:
+          script: |
+            // Installer files now live on the GitHub Release page;
+            // workflow artifacts are pure transport between jobs.
+            const runId = context.runId;
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { owner: context.repo.owner, repo: context.repo.repo, run_id: runId, per_page: 100 }
+            );
+            let deleted = 0;
+            for (const a of artifacts) {
+              console.log(`Deleting ${a.name} (id: ${a.id}, size: ${a.size_in_bytes})`);
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: a.id
+              });
+              deleted++;
+            }
+            console.log(`Deleted ${deleted} artifact(s) from run ${runId}.`);
